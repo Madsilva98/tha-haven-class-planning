@@ -1,0 +1,34 @@
+[
+  {
+    "id": "sig-class-1",
+    "name": "Signature Class",
+    "type": "signature",
+    "date": "2025-03-07",
+    "seriesIds": [
+      "sig-1",
+      "sig-2",
+      "sig-3",
+      "sig-4",
+      "sig-5",
+      "sig-6",
+      "sig-7"
+    ],
+    "notes": ""
+  },
+  {
+    "id": "c-1773076555629",
+    "name": "Back to Basics 1",
+    "type": "reformer",
+    "date": "2026-03-09",
+    "seriesIds": [
+      "s-1773075868696",
+      "s-1773076217151",
+      "s-1773076373922",
+      "s-1773076841742",
+      "s-1773075652863",
+      "s-1773076648331",
+      "s-1773075063911"
+    ],
+    "notes": ""
+  }
+]

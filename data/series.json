@@ -1,0 +1,1581 @@
+[
+  {
+    "id": "sig-1",
+    "name": "Like A Girl – Legs Opening",
+    "type": "signature",
+    "reformer": {
+      "springs": "2 reds 1 blue",
+      "props": "",
+      "startPosition": "Saying on reformer supine, toes on footbar",
+      "movements": [
+        {
+          "timing": "0'' – 46''",
+          "lyric": "",
+          "movement": "Toes on footbar, open carriage",
+          "breath": "Exhale on effort",
+          "transitionCue": ""
+        },
+        {
+          "timing": "47'' – 1'",
+          "lyric": "Find me up in magic city",
+          "movement": "Pulses",
+          "breath": "Short exhale pulses",
+          "transitionCue": "Reformers pulse, barre pulse"
+        },
+        {
+          "timing": "1' – 1'12''",
+          "lyric": "I work my femininity",
+          "movement": "Hold",
+          "breath": "Steady inhale",
+          "transitionCue": "Reformers hold, barre hold"
+        },
+        {
+          "timing": "1'13'' – 1'40''",
+          "lyric": "Chaka Khan",
+          "movement": "(V position) Toes on footbar, heels together, open carriage",
+          "breath": "Exhale on effort",
+          "transitionCue": "Reformers V-position, barre plié V"
+        },
+        {
+          "timing": "1'41'' – 1'53''",
+          "lyric": "Find me up in magic city",
+          "movement": "Pulses",
+          "breath": "Short exhale pulses",
+          "transitionCue": "Reformers pulse, barre pulse"
+        },
+        {
+          "timing": "1'54'' – 2'6''",
+          "lyric": "I work my femininity",
+          "movement": "Hold",
+          "breath": "Steady inhale",
+          "transitionCue": "Reformers hold, barre hold"
+        },
+        {
+          "timing": "2'7'' – 2'33''",
+          "lyric": "If you fight like a girl",
+          "movement": "Toes on edges of footbar (2nd position externally rotated), open carriage",
+          "breath": "Exhale on effort",
+          "transitionCue": "Reformers wide feet, barre sumo press"
+        },
+        {
+          "timing": "2'34'' – 2'47''",
+          "lyric": "Find me up in magic city",
+          "movement": "Pulses",
+          "breath": "Short exhale pulses",
+          "transitionCue": "Reformers pulse, barre pulse"
+        },
+        {
+          "timing": "2'48''",
+          "lyric": "I work my femininity",
+          "movement": "Hold",
+          "breath": "Steady inhale",
+          "transitionCue": "Reformers hold, barre hold"
+        }
+      ]
+    },
+    "barre": {
+      "props": "Dumbbells 2kg",
+      "startPosition": "Standing, heels up and against box",
+      "movements": [
+        {
+          "timing": "0'' – 46''",
+          "lyric": "",
+          "movement": "Squats with heels up, dumbbells on shoulders",
+          "breath": "Exhale on way down"
+        },
+        {
+          "timing": "47'' – 1'",
+          "lyric": "Find me up in magic city",
+          "movement": "Pulses",
+          "breath": "Short exhale pulses"
+        },
+        {
+          "timing": "1' – 1'12''",
+          "lyric": "I work my femininity",
+          "movement": "Hold",
+          "breath": "Steady"
+        },
+        {
+          "timing": "1'13'' – 1'40''",
+          "lyric": "Chaka Khan",
+          "movement": "Plié in v-position with heels up, dumbbells from hip to shoulder height",
+          "breath": "Exhale lifting"
+        },
+        {
+          "timing": "1'41'' – 1'53''",
+          "lyric": "Find me up in magic city",
+          "movement": "Pulses",
+          "breath": "Short exhale pulses"
+        },
+        {
+          "timing": "1'54'' – 2'6''",
+          "lyric": "I work my femininity",
+          "movement": "Hold",
+          "breath": "Steady"
+        },
+        {
+          "timing": "2'7'' – 2'33''",
+          "lyric": "If you fight like a girl",
+          "movement": "Sumo squat w/ dumbbells shoulder press",
+          "breath": "Exhale pressing up"
+        },
+        {
+          "timing": "2'34'' – 2'47''",
+          "lyric": "Find me up in magic city",
+          "movement": "Pulses",
+          "breath": "Short exhale pulses"
+        },
+        {
+          "timing": "2'48''",
+          "lyric": "I work my femininity",
+          "movement": "Hold",
+          "breath": "Steady"
+        }
+      ]
+    },
+    "muscles": [
+      "Adductors",
+      "Glutes",
+      "Hip flexors",
+      "Quadriceps",
+      "Core"
+    ],
+    "cues": "Erro comum: permitir que os joelhos caiam para dentro durante a abertura - cue 'keep knees tracking over toes'. Muitos alunos fazem o movimento muito rápido perdendo controle - enfatizar 'slow and controlled opening, resist the spring'. Atenção para não arquear as costas excessivamente - lembrar 'maintain neutral spine, engage your core'.",
+    "status": "approved",
+    "song": "Like A Girl – Lizzo",
+    "introCue": "Set up on the reformer lying supine with toes on the footbar and 2 red 1 blue springs, or grab your 2kg dumbbells standing in front of the reformer with heels up against the box. We're opening with parallel squats - toes on footbar opening carriage on reformer or squats with dumbbells on shoulders at barre - then we pulse and hold. Next we move to V-position with heels together on reformer or plié with heels together and against the box, dumbbells going from hip to shoulder height, pulse and hold again. Finally we take toes to edges of footbar in 2nd position on reformer or sumo squats with shoulder press, finishing with our final pulse and hold. Let's fire up those legs and open with power.",
+    "targetZone": "Warm-Up",
+    "primaryZone": "Warm-Up"
+  },
+  {
+    "id": "sig-2",
+    "name": "Sports Car – Glute Bridge",
+    "type": "signature",
+    "reformer": {
+      "springs": "1 red + Band",
+      "props": "Band on knees",
+      "startPosition": "Lying supine, heels on footbar",
+      "movements": [
+        {
+          "timing": "0'' – 30''",
+          "lyric": "Hey cute jeans",
+          "movement": "Glute bridge on heels",
+          "breath": "Exhale lifting hips",
+          "transitionCue": ""
+        },
+        {
+          "timing": "31'' – 46''",
+          "lyric": "In the alley in the back",
+          "movement": "Hold up – open knees and pulse",
+          "breath": "Steady breath",
+          "transitionCue": "stay up — and open the knees"
+        },
+        {
+          "timing": "47'' – 1'3''",
+          "lyric": "I think I know",
+          "movement": "Hold up – open and close carriage",
+          "breath": "Exhale closing",
+          "transitionCue": "keep hips up — reformer: open the carriage / mat: one leg up then the other"
+        },
+        {
+          "timing": "1'4'' – 1'23''",
+          "lyric": "Pretty blue street lights",
+          "movement": "One leg to tabletop, hold bridge up, open and close carriage (with single leg)",
+          "breath": "Exhale extending",
+          "transitionCue": "stay up — Reformer: lift leg to tabletop open and close; Barre: single-leg bridge up down"
+        },
+        {
+          "timing": "1'24'' – 1'31''",
+          "lyric": "On the corner on the bench",
+          "movement": "Stay up and Pulse",
+          "breath": "Short exhales",
+          "transitionCue": "and we pulse"
+        },
+        {
+          "timing": "1'31'' – 1'51''",
+          "lyric": "I think you know",
+          "movement": "Other leg to tabletop, hold bridge up, open and close carriage (with single leg)",
+          "breath": "Exhale extending",
+          "transitionCue": "switch — left leg table top"
+        },
+        {
+          "timing": "1'52'' – 2'7''",
+          "lyric": "I think you know 2nd",
+          "movement": "Stay up and Pulse",
+          "breath": "Short exhales",
+          "transitionCue": "and we pulse"
+        }
+      ]
+    },
+    "barre": {
+      "props": "Ankle weights + band on knees",
+      "startPosition": "Lying supine on mat, heels up",
+      "movements": [
+        {
+          "timing": "0'' – 30''",
+          "lyric": "Hey cute jeans",
+          "movement": "Glute bridge on toes",
+          "breath": "Exhale lifting hips"
+        },
+        {
+          "timing": "31'' – 46''",
+          "lyric": "In the alley in the back",
+          "movement": "Hold up – open knees and pulse",
+          "breath": "Steady"
+        },
+        {
+          "timing": "47'' – 1'3''",
+          "lyric": "I think I know",
+          "movement": "Hold bridge up – one leg lifts to tabletop at a time",
+          "breath": "Exhale lifting"
+        },
+        {
+          "timing": "1'4'' – 1'23''",
+          "lyric": "Pretty blue street lights",
+          "movement": "One leg to tabletop – single-leg bridge up down",
+          "breath": "Exhale on up"
+        },
+        {
+          "timing": "1'24'' – 1'31''",
+          "lyric": "On the corner on the bench",
+          "movement": "Stay up and Pulse",
+          "breath": "Short exhales"
+        },
+        {
+          "timing": "1'31'' – 1'51''",
+          "lyric": "I think you know",
+          "movement": "Other leg to tabletop – single-leg bridge up down",
+          "breath": "Exhale on up"
+        },
+        {
+          "timing": "1'52'' – 2'7''",
+          "lyric": "I think you know 2nd",
+          "movement": "Stay up and Pulse",
+          "breath": "Short exhales"
+        }
+      ]
+    },
+    "muscles": [
+      "Glutes",
+      "Hamstrings",
+      "Core stabilisers",
+      "Hip abductors (band)"
+    ],
+    "cues": "Knees aligned with second toe throughout. Cue: 'pressiona o calcanhar contra o footbar como se quisesses afastá-lo'. Single-leg extension challenges balance.",
+    "status": "approved",
+    "song": "Sports Car – Tate McRae",
+    "introCue": "Set up on the reformer lying supine with heels on the footbar and 1 red plus band springs, with the band around your knees, or on the mat with ankle weights and band around knees, lying supine with heels up. We're starting with glute bridge - reformer: heels on footbar; mat: heels up. Then we hold the bridge up and pulse the knees open. Next we stay up - reformer: open close the carriage; mat: lift one leg to tabletop at a time. Then we take one leg to tabletop and hold bridge up - reformer: opening closing carriage; mat: single leg tabletop up down, followed by pulses. We switch to the other leg for tabletop, hold up - reformer: open close carriage; mat: other leg tabletop up down, finishing with final pulses. Let's fire up those glutes and get moving.",
+    "targetZone": "Glutes, Quads",
+    "primaryZone": "Glutes"
+  },
+  {
+    "id": "sig-3",
+    "name": "Best Friend – Ab Series",
+    "type": "signature",
+    "reformer": {
+      "springs": "1 red ",
+      "props": "Hands in straps",
+      "startPosition": "Lying supine",
+      "movements": [
+        {
+          "timing": "10'' – 30''",
+          "lyric": "That's my best friend",
+          "movement": "Legs tabletop – Crunch",
+          "breath": "Exhale crunching",
+          "transitionCue": ""
+        },
+        {
+          "timing": "31'' – 51''",
+          "lyric": "Beep beep",
+          "movement": "Crunch hold – extend one leg at a time",
+          "breath": "Exhale extending",
+          "transitionCue": "hold and extend one leg at a time before returning it to tabletop"
+        },
+        {
+          "timing": "52'' – 1'1''",
+          "lyric": "I hit her phone with the tea",
+          "movement": "Pulse",
+          "breath": "Short exhales",
+          "transitionCue": "legs tabletop and we pulse"
+        },
+        {
+          "timing": "1'2'' – 1'21''",
+          "lyric": "That my best friend, she a real bad bitch",
+          "movement": "Pause",
+          "breath": "Steady",
+          "transitionCue": "pause, relax"
+        },
+        {
+          "timing": "1'22'' – 1'51''",
+          "lyric": "That my best friend if you need a freak",
+          "movement": "Legs tabletop, hands next to hio (carriage open) – one foot touches floor keeping 90°",
+          "breath": "Exhale lowering",
+          "transitionCue": "legs tabletop, carriage open, lower one foot at a time, keep 90°"
+        },
+        {
+          "timing": "1'52'' – 2'11''",
+          "lyric": "That my best friend, she a real bad bitch",
+          "movement": "Crunch + legs extend 45° – back to tabletop",
+          "breath": "Exhale extending",
+          "transitionCue": "g back to first exercise but legs extend when we crunch"
+        },
+        {
+          "timing": "2'12''",
+          "lyric": "You the baddest and you know it",
+          "movement": "Hold crunch with legs extended",
+          "breath": "Steady",
+          "transitionCue": "hold, breathe"
+        }
+      ]
+    },
+    "barre": {
+      "props": "",
+      "startPosition": "Lying supine on mat, hands behind head",
+      "movements": [
+        {
+          "timing": "10'' – 30''",
+          "lyric": "That's my best friend",
+          "movement": "Legs tabletop – Crunch",
+          "breath": "Exhale crunching"
+        },
+        {
+          "timing": "31'' – 51''",
+          "lyric": "Beep beep",
+          "movement": "Crunch hold – extend one leg at a time",
+          "breath": "Exhale extending"
+        },
+        {
+          "timing": "52'' – 1'1''",
+          "lyric": "I hit her phone with the tea",
+          "movement": "Pulse",
+          "breath": "Short exhales"
+        },
+        {
+          "timing": "1'2'' – 1'21''",
+          "lyric": "That my best friend, she a real bad bitch",
+          "movement": "Pause",
+          "breath": "Steady"
+        },
+        {
+          "timing": "1'22'' – 1'51''",
+          "lyric": "That my best friend if you need a freak",
+          "movement": "Legs tabletop – one foot touches floor keeping 90°",
+          "breath": "Exhale lowering"
+        },
+        {
+          "timing": "1'52'' – 2'11''",
+          "lyric": "That my best friend, she a real bad bitch",
+          "movement": "Crunch + legs extend 45° – back to tabletop",
+          "breath": "Exhale extending"
+        },
+        {
+          "timing": "2'12''",
+          "lyric": "You the baddest and you know it",
+          "movement": "Hold crunch with legs extended",
+          "breath": "Steady"
+        }
+      ]
+    },
+    "muscles": [
+      "Rectus abdominis",
+      "Obliques",
+      "Hip flexors",
+      "Transversus abdominis"
+    ],
+    "cues": "Keep the lower back imprinted. Cue: 'sente o umbigo a afastar-se do chão'. Cabeça apoiada nas mãos se o pescoço cansar.",
+    "status": "approved",
+    "song": "Best Friend – Saweetie ft. Doja Cat",
+    "introCue": "Set up on the reformer with 1 red spring, hands in straps, lying supine hands pointing towards the ceiling, or on mat lying supine with hands behind head. We're starting with legs in tabletop position for crunches. Then we hold the crunch and extend one leg at a time, followed by pulses. After a brief pause, we move to legs tabletop and one foot touches the floor keeping 90 degree - reformer: hands next to hips with carriage open, trying to touch floor. Next we crunch with legs extending to 45 degrees and back to tabletop. We finish holding the crunch with legs extended. Let's work that core!",
+    "targetZone": "Core",
+    "primaryZone": "Core"
+  },
+  {
+    "id": "sig-4",
+    "name": "Woman – Lunge & Skates",
+    "type": "signature",
+    "reformer": {
+      "springs": "1 red",
+      "props": "Short box",
+      "startPosition": "Standing, one foot in platform extender the other against box with heel up",
+      "movements": [
+        {
+          "timing": "20'' – 1'13''",
+          "lyric": "Woman let me be",
+          "movement": "Lunge right",
+          "breath": "Exhale forward",
+          "transitionCue": ""
+        },
+        {
+          "timing": "1'14'' – 1'30''",
+          "lyric": "Refrão",
+          "movement": "Skates right",
+          "breath": "Exhale extending",
+          "transitionCue": "skate it back"
+        },
+        {
+          "timing": "1'31'' – 2'15''",
+          "lyric": "I can be your lady",
+          "movement": "Lunge left",
+          "breath": "Exhale forward",
+          "transitionCue": "back to lunge"
+        },
+        {
+          "timing": "2'16''",
+          "lyric": "Refrão",
+          "movement": "Skates left",
+          "breath": "Exhale extending",
+          "transitionCue": "skate it out"
+        }
+      ]
+    },
+    "barre": {
+      "props": "Elastic and slider",
+      "startPosition": "Standing, elastic behind front foot, slider beneath back foot",
+      "movements": [
+        {
+          "timing": "20'' – 1'13''",
+          "lyric": "Woman let me be",
+          "movement": "Lunge right – arms lift with elastic when going down",
+          "breath": "Exhale lowering"
+        },
+        {
+          "timing": "1'14'' – 1'30''",
+          "lyric": "Refrão",
+          "movement": "Skates right – arms stay up",
+          "breath": "Exhale extending"
+        },
+        {
+          "timing": "1'31'' – 2'15''",
+          "lyric": "I can be your lady",
+          "movement": "Lunge left – arms lift with elastic when going down",
+          "breath": "Exhale lowering"
+        },
+        {
+          "timing": "2'16''",
+          "lyric": "Refrão",
+          "movement": "Skates left – arms stay up",
+          "breath": "Exhale extending"
+        }
+      ]
+    },
+    "muscles": [
+      "Quadriceps",
+      "Glutes",
+      "Hamstrings",
+      "Core",
+      "Calves"
+    ],
+    "cues": "Erro comum: permitir que o joelho da frente ultrapasse os dedos do pé no lunge - manter o joelho alinhado sobre o tornozelo. No skates, evitar inclinar demais o tronco para a frente - manter o core ativado e coluna neutra. Usar o comando 'press down through your heel' para ativação correta dos glúteos.",
+    "status": "approved",
+    "song": "Woman – Doja Cat",
+    "introCue": "Set up on the reformer with 1 red spring and short box, standing with one feet on carriage extender and the other against the box, or at barre standing with elastic below front foot and slider underneath back foot\n\nWe're starting with lunges - reformer: pressing the carriage out and in; barre: sliding forward and back with arms lifting with the elastic when going down. Then we move to skates - fron knee stays flexed and back leg flexes, We repeat the lunges with other leg, then finish with more skates. Let's work those legs and glutes!",
+    "targetZone": "Quads, Glutes, Balance",
+    "primaryZone": "Quads"
+  },
+  {
+    "id": "sig-5",
+    "name": "Bad Girls – Plank Series",
+    "type": "signature",
+    "reformer": {
+      "springs": "1 blue",
+      "props": "Short box",
+      "startPosition": "Forearm on box, knees down, feet on platform extender",
+      "movements": [
+        {
+          "timing": "7'' – 20''",
+          "lyric": "Live fast die young",
+          "movement": "Bear hold",
+          "breath": "Steady",
+          "transitionCue": "knees lift 2cm"
+        },
+        {
+          "timing": "21'' – 40''",
+          "lyric": "The chain hits my chest",
+          "movement": "Bear to plank",
+          "breath": "Exhale to plank",
+          "transitionCue": "Reformer open and close to plank, barre add slider knee pulls."
+        },
+        {
+          "timing": "41'' – 55''",
+          "lyric": "Suki Suki",
+          "movement": "Bear to plank",
+          "breath": "Exhale to plank",
+          "transitionCue": "Reformer keep going; barre switch to other foot chest."
+        },
+        {
+          "timing": "56'' – 1'7''",
+          "lyric": "Live fast die young",
+          "movement": "Plank hold",
+          "breath": "Steady",
+          "transitionCue": "hold the plank"
+        },
+        {
+          "timing": "1'8'' – 1'40''",
+          "lyric": "The chain hits my chest",
+          "movement": "Plank to pike",
+          "breath": "Exhale piking",
+          "transitionCue": "Keep your plank strong, now pike up to the sky."
+        },
+        {
+          "timing": "1'41'' – 1'52''",
+          "lyric": "The chain hits my chest",
+          "movement": "Rest",
+          "breath": "Recovery",
+          "transitionCue": "rest a moment"
+        },
+        {
+          "timing": "1'53'' – 2'6''",
+          "lyric": "Get back, get down",
+          "movement": "Plank hold, side to side",
+          "breath": "Steady",
+          "transitionCue": "Open to plank, rock hips side to side"
+        },
+        {
+          "timing": "2'7'' – 2'21''",
+          "lyric": "Going nought to bitch",
+          "movement": "Plank hold, pulse to one side",
+          "breath": "Short exhales",
+          "transitionCue": "Stay one side, start pulsing!"
+        },
+        {
+          "timing": "2'22'' – 2'33''",
+          "lyric": "Shift gear",
+          "movement": "Plank hold, pulse to other side",
+          "breath": "Short exhales",
+          "transitionCue": "other side"
+        },
+        {
+          "timing": "2'34''",
+          "lyric": "Get back, get down",
+          "movement": "End",
+          "breath": "",
+          "transitionCue": "Rest"
+        }
+      ]
+    },
+    "barre": {
+      "props": "Slider",
+      "startPosition": "Bear hold",
+      "movements": [
+        {
+          "timing": "7'' – 20''",
+          "lyric": "Live fast die young",
+          "movement": "Bear hold",
+          "breath": "Steady"
+        },
+        {
+          "timing": "21'' – 40''",
+          "lyric": "The chain hits my chest",
+          "movement": "Plank + one foot to chest (slider)",
+          "breath": "Exhale pulling"
+        },
+        {
+          "timing": "41'' – 55''",
+          "lyric": "Suki Suki",
+          "movement": "Plank + other foot to chest (slider)",
+          "breath": "Exhale pulling"
+        },
+        {
+          "timing": "56'' – 1'7''",
+          "lyric": "Live fast die young",
+          "movement": "Plank hold",
+          "breath": "Steady"
+        },
+        {
+          "timing": "1'8'' – 1'40''",
+          "lyric": "The chain hits my chest",
+          "movement": "Plank to pike",
+          "breath": "Exhale piking"
+        },
+        {
+          "timing": "1'41'' – 1'52''",
+          "lyric": "The chain hits my chest",
+          "movement": "Rest",
+          "breath": "Recovery"
+        },
+        {
+          "timing": "1'53'' – 2'6''",
+          "lyric": "Get back, get down",
+          "movement": "Plank hold, side to side",
+          "breath": "Steady"
+        },
+        {
+          "timing": "2'7'' – 2'21''",
+          "lyric": "Going nought to bitch",
+          "movement": "Plank hold, pulse to one side",
+          "breath": "Short exhales"
+        },
+        {
+          "timing": "2'22'' – 2'33''",
+          "lyric": "Shift gear",
+          "movement": "Plank hold, pulse to other side",
+          "breath": "Short exhales"
+        },
+        {
+          "timing": "2'34''",
+          "lyric": "Get back, get down",
+          "movement": "End",
+          "breath": ""
+        }
+      ]
+    },
+    "muscles": [
+      "core",
+      "shoulders",
+      "glutes",
+      "legs",
+      "back"
+    ],
+    "cues": "Common errors: allowing hips to sag in plank, rushing transitions without control, placing too much weight on shoulders. Verbal cues: 'Mantenham o core ativo durante toda a série', 'Transições lentas e controladas', 'Ombros afastados das orelhas'.",
+    "status": "approved",
+    "song": "Bad Girls – M.I.A.",
+    "introCue": "Set up on the reformer with 1 blue spring and short box, forearms on box with knees down and feet on platform extender, or at barre in bear hold position with slider nearby.\n\nWe're starting with bear hold - reformer: holding position on box; barre: bear hold on floor. Then bear to plank transitions - reformer: moving from bear to plank by opening carriage; barre: plank and bring one foot to chest using slider (then switch leg). We hold plank, then move to plank to pike - reformer: closing carriage with legs straight; barre: same movement. After a quick rest, we finish with plank hold side to side and pulses - reformer: shifting weight side to side in plank; barre: same lateral movement. Let's fire up that core!",
+    "targetZone": "Core",
+    "primaryZone": "Core"
+  },
+  {
+    "id": "sig-6",
+    "name": "Yo Perreo Sola – Upper Body",
+    "type": "signature",
+    "reformer": {
+      "springs": "1 blue 1 white",
+      "props": "Hands in straps, short box facing back",
+      "startPosition": "Seated on short box facing back",
+      "movements": [
+        {
+          "timing": "20'' – 41''",
+          "lyric": "Yo perreo sola",
+          "movement": "Bicep curl",
+          "breath": "Exhale curling",
+          "transitionCue": ""
+        },
+        {
+          "timing": "42'' – 1'2''",
+          "lyric": "Que ningun baboso",
+          "movement": "Open arms",
+          "breath": "Exhale opening",
+          "transitionCue": "open the arms and close at shoulder height "
+        },
+        {
+          "timing": "1'3'' – 1'21''",
+          "lyric": "Ella está soltera",
+          "movement": "Bicep curl with open arms",
+          "breath": "Exhale curling",
+          "transitionCue": "keep arms open and curl "
+        },
+        {
+          "timing": "1'21'' – 1'40''",
+          "lyric": "Ella perrea sola",
+          "movement": "Shoulder press",
+          "breath": "Exhale pressing",
+          "transitionCue": "bring it to a shoulder press"
+        },
+        {
+          "timing": "1'41'' – 2'1''",
+          "lyric": "Tiene una amiga problemática",
+          "movement": "Triceps",
+          "breath": "Exhale pressing",
+          "transitionCue": "hands next to hips and extend to the back"
+        },
+        {
+          "timing": "2'2'' – 2'10''",
+          "lyric": "Y me dice papi (slow)",
+          "movement": "Hold",
+          "breath": "Steady",
+          "transitionCue": "hold arms open"
+        },
+        {
+          "timing": "2'11'' – 2'30''",
+          "lyric": "Ante' tú me pichaba",
+          "movement": "Offering",
+          "breath": "Exhale lifting",
+          "transitionCue": "hands next to hips and extend to the front"
+        },
+        {
+          "timing": "2'31''",
+          "lyric": "To perreo sola",
+          "movement": "Hug moon over head",
+          "breath": "Steady",
+          "transitionCue": "arms from hip to side open to above head"
+        }
+      ]
+    },
+    "barre": {
+      "props": "Dumbbells, sumo squat hold",
+      "startPosition": "Sumo squat hold",
+      "movements": [
+        {
+          "timing": "20'' – 41''",
+          "lyric": "Yo perreo sola",
+          "movement": "Bicep curl",
+          "breath": "Exhale curling"
+        },
+        {
+          "timing": "42'' – 1'2''",
+          "lyric": "Que ningun baboso",
+          "movement": "Open arms",
+          "breath": "Exhale opening"
+        },
+        {
+          "timing": "1'3'' – 1'21''",
+          "lyric": "Ella está soltera",
+          "movement": "Bicep curl with open arms",
+          "breath": "Exhale curling"
+        },
+        {
+          "timing": "1'21'' – 1'40''",
+          "lyric": "Ella perrea sola",
+          "movement": "Shoulder press",
+          "breath": "Exhale pressing"
+        },
+        {
+          "timing": "1'41'' – 2'1''",
+          "lyric": "Tiene una amiga problemática",
+          "movement": "Triceps",
+          "breath": "Exhale pressing"
+        },
+        {
+          "timing": "2'2'' – 2'10''",
+          "lyric": "Y me dice papi (slow)",
+          "movement": "Hold",
+          "breath": "Steady"
+        },
+        {
+          "timing": "2'11'' – 2'30''",
+          "lyric": "Ante' tú me pichaba",
+          "movement": "Offering",
+          "breath": "Exhale lifting"
+        },
+        {
+          "timing": "2'31''",
+          "lyric": "To perreo sola",
+          "movement": "Hug moon over head",
+          "breath": "Steady"
+        }
+      ]
+    },
+    "muscles": [
+      "Biceps",
+      "Triceps",
+      "Deltoids",
+      "Rhomboids",
+      "Core (sumo hold)"
+    ],
+    "cues": "Manter o sumo squat durante toda a série no barre — costas direitas, joelhos abertos. Reformer: omoplatas para baixo e para trás durante o curl. Cue: 'as omoplatas deslizam para os bolsos das calças'.",
+    "status": "approved",
+    "song": "Yo Perreo Sola – Bad Bunny",
+    "introCue": "Set up on the reformer with 1 blue 1 white springs, hands in straps, short box facing back - seated on box facing back. At barre, grab your dumbbells and hold sumo squat position.\n\nWe're starting with bicep curls - reformer: pulling straps up; barre: curling dumbbells in sumo squat. Then open arms - reformer: opening straps wide; barre: opening arms wide. Next bicep curl with open arms - reformer: combining both movements; barre: same combination. Then shoulder press - reformer: pressing straps overhead; barre: pressing dumbbells up. Moving to triceps - reformer: extending straps back; barre: tricep extensions. We hold the position, then offering - reformer: offering straps forward; barre: offering dumbbells. We finish with hug moon overhead - reformer: hugging straps over head; barre: same movement with dumbbells. Let's work that upper body!",
+    "targetZone": "Arms, Back",
+    "primaryZone": "Arms"
+  },
+  {
+    "id": "sig-7",
+    "name": "Bootylicious – Side-Lying Hip",
+    "type": "signature",
+    "reformer": {
+      "springs": "1 blue 1 white",
+      "props": "Strap in knee crease",
+      "startPosition": "Side-lying, strap in knee crease, knees together",
+      "movements": [
+        {
+          "timing": "0'' – 37''",
+          "lyric": "",
+          "movement": "Open knees",
+          "breath": "Exhale opening",
+          "transitionCue": "reformer open, barre leg up"
+        },
+        {
+          "timing": "38'' – 55''",
+          "lyric": "You gotta do much better",
+          "movement": "Pulse open",
+          "breath": "Short exhales",
+          "transitionCue": "Reformer pulse open, barre pulse that leg up!"
+        },
+        {
+          "timing": "56'' – 1'15''",
+          "lyric": "I don't think you're ready",
+          "movement": "Extend leg to footbar and bring back",
+          "breath": "Exhale extending",
+          "transitionCue": "Reformer extend leg out above footbar, barre bend and straighten knee keeping leg up"
+        },
+        {
+          "timing": "Switch side",
+          "lyric": "Baby can you handle this",
+          "movement": "Switch sides",
+          "breath": "",
+          "transitionCue": "Reformer switch sides, barre keep leg up and bend knee"
+        },
+        {
+          "timing": "1'43'' – 2'10''",
+          "lyric": "I don't think you're ready",
+          "movement": "Open knees",
+          "breath": "Exhale opening",
+          "transitionCue": "Reformer open knees, barre left leg up down"
+        },
+        {
+          "timing": "2'11'' – 2'27''",
+          "lyric": "I shake my jelly",
+          "movement": "Pulse open",
+          "breath": "Short exhales",
+          "transitionCue": "Reformer pulse open, barre pulse that leg up!"
+        },
+        {
+          "timing": "2'28'' – 2'48''",
+          "lyric": "I don't think you're ready",
+          "movement": "Extend leg to footbar and bring back",
+          "breath": "Exhale extending",
+          "transitionCue": "Reformer extend leg to footbar, barre extend and flex knee"
+        },
+        {
+          "timing": "2'49''",
+          "lyric": "I don't think you're ready",
+          "movement": "Rest",
+          "breath": "Recovery",
+          "transitionCue": "Reformer rest, barre keep leg up and bend knee."
+        }
+      ]
+    },
+    "barre": {
+      "props": "",
+      "startPosition": "Standing, hands in hips, torso hinging forward, front leg with heel on block, back leg with toes touching floor",
+      "movements": [
+        {
+          "timing": "0'' – 37''",
+          "lyric": "",
+          "movement": "Right leg goes up and down",
+          "breath": "Exhale lifting"
+        },
+        {
+          "timing": "38'' – 55''",
+          "lyric": "You gotta do much better",
+          "movement": "Pulses up",
+          "breath": "Short exhales"
+        },
+        {
+          "timing": "56'' – 1'15''",
+          "lyric": "I don't think you're ready",
+          "movement": "Leg stays up, extend and flex knee ",
+          "breath": "Exhale extending"
+        },
+        {
+          "timing": "Switch side",
+          "lyric": "",
+          "movement": "Pulses with knee bent",
+          "breath": ""
+        },
+        {
+          "timing": "1'43'' – 2'10''",
+          "lyric": "I don't think you're ready",
+          "movement": "Left goes up and down",
+          "breath": "Exhale lifting"
+        },
+        {
+          "timing": "2'11'' – 2'27''",
+          "lyric": "I shake my jelly",
+          "movement": "Pulses up",
+          "breath": "Short exhales"
+        },
+        {
+          "timing": "2'28'' – 2'48''",
+          "lyric": "I don't think you're ready",
+          "movement": "Leg stays up, extend and flex knee ",
+          "breath": "Exhale extending"
+        },
+        {
+          "timing": "2'49''",
+          "lyric": "I don't think you're ready",
+          "movement": "Pulses with knee bent",
+          "breath": "Short exhales"
+        }
+      ]
+    },
+    "muscles": [
+      "Glutes medius",
+      "Glutes maximus",
+      "Hip abductors",
+      "TFL",
+      "Core stabilisers"
+    ],
+    "cues": "Pelvis must not rotate back when knee opens. Cue: 'as ancas ficam empilhadas uma sobre a outra'. Barre: supporting leg slightly soft, never locked.",
+    "status": "approved",
+    "song": "Bootylicious – Destiny's Child",
+    "introCue": "Set up on the reformer with 1 blue 1 white springs, strap in knee crease, side-lying with knees together. At barre, standing with hands on hips, torso hinging forward, front leg heel on block, back leg toes touching floor.\n\nReformer: opening top knee against strap; barre: right leg goes up and down behind you. Then pulses - reformer: pulsing knee open; barre: pulsing leg up. Next, reformer: extend leg straight to footbar and back bending knee, barre: leg stays up behind you, extend and flex knee. Reformer: flip to other side; while barre: pulse with knee bent. Same sequence on second side. Let's work those hips and glutes!",
+    "targetZone": "Glutes",
+    "primaryZone": "Glutes"
+  },
+  {
+    "introCue": "",
+    "id": "s-1773074750842",
+    "name": "Footwork",
+    "type": "reformer",
+    "status": "approved",
+    "reformer": {
+      "springs": "2 red + 1 blue",
+      "props": "",
+      "startPosition": "Supine, ",
+      "movements": [
+        {
+          "timing": "",
+          "lyric": "",
+          "movement": "Toes apart heels together",
+          "breath": "",
+          "transitionCue": ""
+        },
+        {
+          "timing": "",
+          "lyric": "",
+          "movement": "Wrap toes on bar",
+          "breath": "",
+          "transitionCue": ""
+        },
+        {
+          "timing": "",
+          "lyric": "",
+          "movement": "Heels on bar",
+          "breath": "",
+          "transitionCue": ""
+        },
+        {
+          "timing": "",
+          "lyric": "",
+          "movement": "High half toe",
+          "breath": "",
+          "transitionCue": ""
+        },
+        {
+          "timing": "",
+          "lyric": "",
+          "movement": "Lower & Lift",
+          "breath": "",
+          "transitionCue": ""
+        }
+      ]
+    },
+    "barre": {
+      "props": "",
+      "startPosition": "",
+      "movements": [
+        {
+          "timing": "",
+          "lyric": "",
+          "movement": "",
+          "breath": "",
+          "transitionCue": ""
+        }
+      ]
+    },
+    "muscles": [],
+    "cues": "STOTT 3 ou 4 springs",
+    "song": "",
+    "videoUrl": "",
+    "targetZone": "Warm-Up",
+    "primaryZone": "Warm-Up"
+  },
+  {
+    "introCue": "Set up on the reformer with 2 red and 1 blue springs, heels on footbar in parallel position.\n\nWe're starting in parallel - press out and in with control. Then we move to first position - heels together, toes apart. Next, second position - wide legs, toes turned out. Back to first position, then finish in parallel. Focus on controlled movement and strong leg connection throughout. Let's work those legs!",
+    "id": "s-1773074880831",
+    "name": "Second Position",
+    "type": "reformer",
+    "status": "approved",
+    "reformer": {
+      "springs": "2 red + 1 blue",
+      "props": "",
+      "startPosition": "Heels on footbar",
+      "movements": [
+        {
+          "timing": "",
+          "lyric": "",
+          "movement": "Parallel",
+          "breath": "",
+          "transitionCue": ""
+        },
+        {
+          "timing": "",
+          "lyric": "",
+          "movement": "Laterally rotated",
+          "breath": "",
+          "transitionCue": ""
+        },
+        {
+          "timing": "",
+          "lyric": "",
+          "movement": "Medially Rotated",
+          "breath": "",
+          "transitionCue": ""
+        }
+      ]
+    },
+    "barre": {
+      "props": "",
+      "startPosition": "",
+      "movements": [
+        {
+          "timing": "",
+          "lyric": "",
+          "movement": "",
+          "breath": "",
+          "transitionCue": ""
+        }
+      ]
+    },
+    "muscles": [],
+    "cues": "STOTT 3 or 4 springs",
+    "song": "",
+    "videoUrl": "",
+    "targetZone": "Warm-Up",
+    "primaryZone": "Warm-Up"
+  },
+  {
+    "introCue": "",
+    "id": "s-1773074968561",
+    "name": "Single leg",
+    "type": "reformer",
+    "status": "approved",
+    "reformer": {
+      "springs": "1 red 1 blue",
+      "props": "",
+      "startPosition": "Toes on footbar, other leg table top",
+      "movements": [
+        {
+          "timing": "",
+          "lyric": "",
+          "movement": "One leg bent",
+          "breath": "",
+          "transitionCue": ""
+        },
+        {
+          "timing": "",
+          "lyric": "",
+          "movement": "Bicycle",
+          "breath": "",
+          "transitionCue": ""
+        },
+        {
+          "timing": "",
+          "lyric": "",
+          "movement": "Single heel",
+          "breath": "",
+          "transitionCue": ""
+        }
+      ]
+    },
+    "barre": {
+      "props": "",
+      "startPosition": "",
+      "movements": [
+        {
+          "timing": "",
+          "lyric": "",
+          "movement": "",
+          "breath": "",
+          "transitionCue": ""
+        }
+      ]
+    },
+    "muscles": [],
+    "cues": "",
+    "song": "",
+    "videoUrl": "",
+    "targetZone": "Quads",
+    "primaryZone": "Quads"
+  },
+  {
+    "introCue": "",
+    "id": "s-1773075063911",
+    "name": "Bend & Stretch to Short Spine",
+    "type": "reformer",
+    "status": "approved",
+    "reformer": {
+      "springs": "1 red 1 blue",
+      "props": "Feet in straps",
+      "startPosition": "Supine",
+      "movements": [
+        {
+          "timing": "",
+          "lyric": "",
+          "movement": "Bend & Stretch parallel",
+          "breath": "",
+          "transitionCue": ""
+        },
+        {
+          "timing": "",
+          "lyric": "",
+          "movement": "Bend & Stretch laterally rotated",
+          "breath": "",
+          "transitionCue": ""
+        },
+        {
+          "timing": "",
+          "lyric": "",
+          "movement": "Lift & Lower paralell",
+          "breath": "",
+          "transitionCue": ""
+        },
+        {
+          "timing": "",
+          "lyric": "",
+          "movement": "Short spine stretch (só até 90º)",
+          "breath": "",
+          "transitionCue": ""
+        },
+        {
+          "timing": "",
+          "lyric": "",
+          "movement": "Short spine",
+          "breath": "",
+          "transitionCue": ""
+        }
+      ]
+    },
+    "barre": {
+      "props": "",
+      "startPosition": "",
+      "movements": [
+        {
+          "timing": "",
+          "lyric": "",
+          "movement": "",
+          "breath": "",
+          "transitionCue": ""
+        }
+      ]
+    },
+    "muscles": [],
+    "cues": "STOTT 2 springs",
+    "song": "",
+    "videoUrl": "",
+    "targetZone": "Hamstrings, Quads",
+    "primaryZone": "Hamstrings"
+  },
+  {
+    "introCue": "",
+    "id": "s-1773075652863",
+    "name": "Midback to Hundred",
+    "type": "reformer",
+    "status": "approved",
+    "reformer": {
+      "springs": "1 red",
+      "props": "Hands in straps",
+      "startPosition": "Supine, legs tabletop",
+      "movements": [
+        {
+          "timing": "",
+          "lyric": "",
+          "movement": "Midback straight down",
+          "breath": "",
+          "transitionCue": ""
+        },
+        {
+          "timing": "",
+          "lyric": "",
+          "movement": "+ one leg stretch",
+          "breath": "",
+          "transitionCue": ""
+        },
+        {
+          "timing": "",
+          "lyric": "",
+          "movement": "+ 2 leg stretch",
+          "breath": "",
+          "transitionCue": ""
+        },
+        {
+          "timing": "",
+          "lyric": "",
+          "movement": "Igual a levantar cabeça e peito",
+          "breath": "",
+          "transitionCue": ""
+        },
+        {
+          "timing": "",
+          "lyric": "",
+          "movement": "Coordination ou Hundred",
+          "breath": "",
+          "transitionCue": ""
+        },
+        {
+          "timing": "",
+          "lyric": "",
+          "movement": "",
+          "breath": "",
+          "transitionCue": ""
+        }
+      ]
+    },
+    "barre": {
+      "props": "",
+      "startPosition": "",
+      "movements": [
+        {
+          "timing": "",
+          "lyric": "",
+          "movement": "",
+          "breath": "",
+          "transitionCue": ""
+        }
+      ]
+    },
+    "muscles": [],
+    "cues": "",
+    "song": "",
+    "videoUrl": "",
+    "targetZone": "Core",
+    "primaryZone": "Core"
+  },
+  {
+    "introCue": "",
+    "id": "s-1773075868696",
+    "name": "Round back + footwork on box warm up",
+    "type": "reformer",
+    "status": "approved",
+    "reformer": {
+      "springs": "2 red",
+      "props": "Short box + circle",
+      "startPosition": "",
+      "movements": [
+        {
+          "timing": "",
+          "lyric": "",
+          "movement": "Rock pelvis",
+          "breath": "",
+          "transitionCue": "",
+          "notes": "teste"
+        },
+        {
+          "timing": "",
+          "lyric": "",
+          "movement": "Twist",
+          "breath": "",
+          "transitionCue": ""
+        },
+        {
+          "timing": "",
+          "lyric": "",
+          "movement": "Round back ",
+          "breath": "",
+          "transitionCue": ""
+        },
+        {
+          "timing": "",
+          "lyric": "",
+          "movement": "Round back + twist",
+          "breath": "",
+          "transitionCue": ""
+        },
+        {
+          "timing": "",
+          "lyric": "",
+          "movement": "Straight back",
+          "breath": "",
+          "transitionCue": ""
+        },
+        {
+          "timing": "",
+          "lyric": "",
+          "movement": "Straight back + twist",
+          "breath": "",
+          "transitionCue": ""
+        },
+        {
+          "timing": "",
+          "lyric": "",
+          "movement": "Heels together toes apart on box + lift arm",
+          "breath": "",
+          "transitionCue": ""
+        },
+        {
+          "timing": "",
+          "lyric": "",
+          "movement": "Second position toes on box + twist",
+          "breath": "",
+          "transitionCue": ""
+        }
+      ]
+    },
+    "barre": {
+      "props": "",
+      "startPosition": "",
+      "movements": [
+        {
+          "timing": "",
+          "lyric": "",
+          "movement": "",
+          "breath": "",
+          "transitionCue": ""
+        }
+      ]
+    },
+    "muscles": [],
+    "cues": "",
+    "song": "",
+    "videoUrl": "",
+    "targetZone": "Warm-Up, Mobility",
+    "primaryZone": "Warm-Up"
+  },
+  {
+    "introCue": "",
+    "id": "s-1773076217151",
+    "name": "Tree ",
+    "type": "reformer",
+    "status": "approved",
+    "reformer": {
+      "springs": "",
+      "props": "Short bx",
+      "startPosition": "Feet under footstrap",
+      "movements": [
+        {
+          "timing": "",
+          "lyric": "",
+          "movement": "Knee to chest",
+          "breath": "",
+          "transitionCue": ""
+        },
+        {
+          "timing": "",
+          "lyric": "",
+          "movement": "Estend leg 3x",
+          "breath": "",
+          "transitionCue": ""
+        },
+        {
+          "timing": "",
+          "lyric": "",
+          "movement": "Rock pelvis back + C curve",
+          "breath": "",
+          "transitionCue": ""
+        },
+        {
+          "timing": "",
+          "lyric": "",
+          "movement": "Climb down leg until horizontal",
+          "breath": "",
+          "transitionCue": ""
+        },
+        {
+          "timing": "",
+          "lyric": "",
+          "movement": "",
+          "breath": "",
+          "transitionCue": ""
+        }
+      ]
+    },
+    "barre": {
+      "props": "",
+      "startPosition": "",
+      "movements": [
+        {
+          "timing": "",
+          "lyric": "",
+          "movement": "",
+          "breath": "",
+          "transitionCue": ""
+        }
+      ]
+    },
+    "muscles": [],
+    "cues": "",
+    "song": "",
+    "videoUrl": "",
+    "targetZone": "Core",
+    "primaryZone": "Core"
+  },
+  {
+    "introCue": "Set up on the reformer with 1 blue and 1 white springs, hands in straps, facing the back of the reformer with legs straight out in front of you.\n\nThis back rowing series is all about strengthening your posterior chain - your upper back, rear delts, and deep postural muscles. We'll be working through different arm patterns that challenge your back extensors while maintaining core stability. Think about creating length through your spine as you work against the spring resistance. This is fantastic for counteracting forward head posture and rounded shoulders. Focus on quality movement and really feel those back muscles firing. Let's build some beautiful posture!",
+    "id": "s-1773076373922",
+    "name": "Back rowing preps",
+    "type": "reformer",
+    "status": "approved",
+    "reformer": {
+      "springs": "1 blue 1 white",
+      "props": "Hand in straps",
+      "startPosition": "Facing back of reformer, legs straight",
+      "movements": [
+        {
+          "timing": "",
+          "lyric": "",
+          "movement": "Plow",
+          "breath": "",
+          "transitionCue": "",
+          "notes": ""
+        },
+        {
+          "timing": "",
+          "lyric": "",
+          "movement": "Open elbows",
+          "breath": "",
+          "transitionCue": ""
+        },
+        {
+          "timing": "",
+          "lyric": "",
+          "movement": "Airplane",
+          "breath": "",
+          "transitionCue": ""
+        },
+        {
+          "timing": "",
+          "lyric": "",
+          "movement": "Bicep curls",
+          "breath": "",
+          "transitionCue": ""
+        },
+        {
+          "timing": "",
+          "lyric": "",
+          "movement": "Triceps",
+          "breath": "",
+          "transitionCue": ""
+        },
+        {
+          "timing": "",
+          "lyric": "",
+          "movement": "Roll down",
+          "breath": "",
+          "transitionCue": ""
+        },
+        {
+          "timing": "",
+          "lyric": "",
+          "movement": "Roll down with biceps curl 10x",
+          "breath": "",
+          "transitionCue": ""
+        },
+        {
+          "timing": "",
+          "lyric": "",
+          "movement": "Roll down with obliques 10x",
+          "breath": "",
+          "transitionCue": ""
+        }
+      ]
+    },
+    "barre": {
+      "props": "",
+      "startPosition": "",
+      "movements": [
+        {
+          "timing": "",
+          "lyric": "",
+          "movement": "",
+          "breath": "",
+          "transitionCue": ""
+        }
+      ]
+    },
+    "muscles": [],
+    "cues": "STOTT 1 or 2 springs",
+    "song": "",
+    "videoUrl": "",
+    "targetZone": "Arms, Back, Core",
+    "primaryZone": "Arms"
+  },
+  {
+    "introCue": "",
+    "id": "s-1773076648331",
+    "name": "Hip lift and roll",
+    "type": "reformer",
+    "status": "approved",
+    "reformer": {
+      "springs": "2 red",
+      "props": "",
+      "startPosition": "Supine, heels in bar",
+      "movements": [
+        {
+          "timing": "",
+          "lyric": "",
+          "movement": "Hip lift (2cm from carriage + open and close)",
+          "breath": "",
+          "transitionCue": ""
+        },
+        {
+          "timing": "",
+          "lyric": "",
+          "movement": "Hip roll (full bridge + open and close)",
+          "breath": "",
+          "transitionCue": ""
+        },
+        {
+          "timing": "",
+          "lyric": "",
+          "movement": "",
+          "breath": "",
+          "transitionCue": ""
+        }
+      ]
+    },
+    "barre": {
+      "props": "",
+      "startPosition": "",
+      "movements": [
+        {
+          "timing": "",
+          "lyric": "",
+          "movement": "",
+          "breath": "",
+          "transitionCue": ""
+        }
+      ]
+    },
+    "muscles": [],
+    "cues": "",
+    "song": "",
+    "videoUrl": "",
+    "targetZone": "Quads, Glutes, Hamstrings",
+    "primaryZone": "Quads"
+  },
+  {
+    "introCue": "",
+    "id": "s-1773076841742",
+    "name": "Side splits v1",
+    "type": "reformer",
+    "status": "approved",
+    "reformer": {
+      "springs": "1 red",
+      "props": "Option dumbells",
+      "startPosition": "",
+      "movements": [
+        {
+          "timing": "",
+          "lyric": "",
+          "movement": "Abduction (open arms from hips to side)",
+          "breath": "",
+          "transitionCue": ""
+        },
+        {
+          "timing": "",
+          "lyric": "",
+          "movement": "Abdution w/ squat (open arms from hips to front)",
+          "breath": "",
+          "transitionCue": ""
+        },
+        {
+          "timing": "",
+          "lyric": "",
+          "movement": "Abduction w/ skates (triceps)",
+          "breath": "",
+          "transitionCue": ""
+        }
+      ]
+    },
+    "barre": {
+      "props": "",
+      "startPosition": "",
+      "movements": [
+        {
+          "timing": "",
+          "lyric": "",
+          "movement": "",
+          "breath": "",
+          "transitionCue": ""
+        }
+      ]
+    },
+    "muscles": [],
+    "cues": "",
+    "song": "",
+    "videoUrl": "",
+    "targetZone": "Glutes, Balance",
+    "primaryZone": "Glutes"
+  }
+]
