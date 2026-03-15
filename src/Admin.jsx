@@ -47,6 +47,13 @@ const StudiosPage = () => {
     load();
   };
 
+  const deleteStudio = async (studioId, studioName) => {
+    if (!window.confirm(`Apagar o studio "${studioName}"? Os membros ficarão sem studio.`)) return;
+    await supabase.from('profiles').update({ studio_id: null, role: 'instructor' }).eq('studio_id', studioId);
+    await supabase.from('studios').delete().eq('id', studioId);
+    load();
+  };
+
   if (loading) return <div style={{ color: C.mist, padding: 24 }}>A carregar…</div>;
 
   return (
@@ -93,6 +100,7 @@ const StudiosPage = () => {
                     </select>
                   </div>
                 )}
+                <button onClick={() => deleteStudio(s.id, s.name)} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, border: '1px solid #fca5a5', background: 'transparent', color: '#b91c1c', cursor: 'pointer', fontFamily: "'Satoshi',sans-serif", whiteSpace: 'nowrap' }}>Apagar</button>
               </div>
             </div>
           );
@@ -108,6 +116,7 @@ const UsersPage = () => {
   const [studios, setStudios] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [studioFilter, setStudioFilter] = useState('');
 
   const load = async () => {
     const [{ data: u }, { data: s }] = await Promise.all([
@@ -131,16 +140,26 @@ const UsersPage = () => {
     setUsers(p => p.map(u => u.id === userId ? { ...u, studio_id: studioId || null } : u));
   };
 
-  const filtered = users.filter(u =>
-    !search || (u.name || '').toLowerCase().includes(search.toLowerCase()) || u.id.includes(search)
-  );
+  const filtered = users.filter(u => {
+    const matchesSearch = !search || (u.name || '').toLowerCase().includes(search.toLowerCase()) || u.id.includes(search);
+    const matchesStudio = !studioFilter || (studioFilter === 'none' ? !u.studio_id : u.studio_id === studioFilter);
+    return matchesSearch && matchesStudio;
+  });
 
   if (loading) return <div style={{ color: C.mist, padding: 24 }}>A carregar…</div>;
 
   return (
     <div>
-      <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Pesquisar por nome ou ID…"
-        style={{ ...inputStyle, marginBottom: 16, maxWidth: 320 }} />
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Pesquisar por nome ou ID…"
+          style={{ ...inputStyle, maxWidth: 280 }} />
+        <select value={studioFilter} onChange={e => setStudioFilter(e.target.value)}
+          style={{ fontSize: 13, padding: '8px 12px', borderRadius: 8, border: `1px solid ${C.stone}`, fontFamily: "'Satoshi',sans-serif", color: C.ink, background: C.white }}>
+          <option value="">Todos os studios</option>
+          <option value="none">Sem studio</option>
+          {studios.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+        </select>
+      </div>
       <div style={{ background: C.white, borderRadius: 12, border: `1px solid ${C.stone}`, overflow: 'hidden' }}>
         <div style={tableHeader}>Utilizadores ({filtered.length})</div>
         {filtered.map(u => (
