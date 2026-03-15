@@ -142,8 +142,8 @@ export default function Onboarding({ user, profile, onComplete }) {
           {/* Step 3: Zones */}
           {step === 3 && (
             <div>
-              <h3 style={{ fontFamily: "'Clash Display',sans-serif", fontSize: 18, fontWeight: 600, color: C.ink, margin: '0 0 6px' }}>Zonas que trabalhas mais?</h3>
-              <p style={{ fontSize: 13, color: C.mist, marginBottom: 16 }}>Selecciona as zonas corporais que utilizas com mais frequência.</p>
+              <h3 style={{ fontFamily: "'Clash Display',sans-serif", fontSize: 18, fontWeight: 600, color: C.ink, margin: '0 0 6px' }}>Como queres classificar as tuas séries?</h3>
+              <p style={{ fontSize: 13, color: C.mist, marginBottom: 16 }}>Selecciona as zonas para organizar e filtrar as tuas séries.</p>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
                 {availableZones.map(z => <CheckPill key={z} label={z} active={selectedZones.includes(z)} onClick={() => toggleZone(z)} />)}
               </div>

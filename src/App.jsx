@@ -430,7 +430,7 @@ const api = {
     catch(e) { console.error(e); }
   },
   async loadProfile(userId) {
-    const { data } = await supabase.from('profiles').select('*, studios(id, name, slug)').eq('id', userId).maybeSingle();
+    const { data } = await supabase.from('profiles').select('*, studios(id, name, slug, settings)').eq('id', userId).maybeSingle();
     return data;
   },
   async upsertProfile(profile) {
@@ -2407,8 +2407,125 @@ const AulaView = ({ cls, allSeries, onBack, onEditClass, onDeleteClass, onUpdate
   );
 };
 
+// ─── AI CLASS BUILDER ─────────────────────────────────────────────────────────
+const DEFAULT_STUDIO_CLASS_TYPES = ['Reformer', 'Matwork', 'Barre', 'Cycling'];
+const DEFAULT_STUDIO_ZONES = ['Glutes', 'Hamstrings', 'Quads', 'Inner Thighs', 'Calves', 'Core', 'Back', 'Arms', 'Shoulders', 'Chest', 'Full Body', 'Cardio', 'Warm-Up', 'Mobility', 'Flexibility', 'Balance'];
+
+const AIClassBuilder = ({ available, allSeries, cls, aiStyle, onApply }) => {
+  const [open, setOpen] = React.useState(false);
+  const [goal, setGoal] = React.useState('');
+  const [loading, setLoading] = React.useState(false);
+  const [suggestions, setSuggestions] = React.useState(null);
+  const toast_ = useToast();
+
+  const generate = async () => {
+    if (!goal.trim()) return;
+    setLoading(true);
+    setSuggestions(null);
+    try {
+      const libraryCtx = available.map(s =>
+        `id:${s.id} | ${s.name} | ${s.type} | zona:${s.targetZone||'–'} | springs:${s.reformer?.springs||'–'}`
+      ).join('\n');
+      const systemPrompt = [
+        'You are an expert Pilates instructor assistant for The Haven studio.',
+        aiStyle ? `Instructor style: ${aiStyle}` : '',
+      ].filter(Boolean).join('\n');
+      const userPrompt = `Build a ${cls.type} class for this goal: "${goal.trim()}"
+
+Available series (id | name | type | zone | springs):
+${libraryCtx}
+
+Return a JSON array (max 10 items) ordered for the class flow:
+[{"id":"<series-id>","reason":"<1 line reason>"}]
+Only use IDs from the available list. Return only the JSON array, no explanation.`;
+
+      const res = await fetch('/api/ai', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ system: systemPrompt, messages: [{ role: 'user', content: userPrompt }], max_tokens: 1500 }),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      const text = (data.content?.[0]?.text || '').replace(/```json|```/g, '').trim();
+      const parsed = JSON.parse(text);
+      const availIds = new Set(available.map(s => s.id));
+      setSuggestions(parsed.filter(x => x.id && availIds.has(x.id)));
+    } catch (e) {
+      toast_?.('Erro ao gerar sugestão: ' + e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!open) return (
+    <div onClick={() => setOpen(true)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', background: `${C.blue}20`, border: `1px solid ${C.blue}50`, borderRadius: 10, marginBottom: 12, cursor: 'pointer' }}>
+      <span style={{ fontSize: 14, color: '#1a4a7a' }}>✦</span>
+      <span style={{ fontFamily: "'Satoshi',sans-serif", fontWeight: 600, fontSize: 13, color: '#1a4a7a', flex: 1 }}>Sugerir séries com IA</span>
+      <span style={{ fontSize: 12, color: '#1a4a7a' }}>↓</span>
+    </div>
+  );
+
+  return (
+    <div style={{ background: `${C.blue}20`, border: `1px solid ${C.blue}50`, borderRadius: 10, padding: 16, marginBottom: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+        <span style={{ fontSize: 14, color: '#1a4a7a' }}>✦</span>
+        <span style={{ fontFamily: "'Satoshi',sans-serif", fontWeight: 600, fontSize: 13, color: '#1a4a7a', flex: 1 }}>Sugerir séries com IA</span>
+        <button onClick={() => { setOpen(false); setSuggestions(null); setGoal(''); }} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: '#1a4a7a', fontWeight: 600, fontFamily: "'Satoshi',sans-serif" }}>Fechar ↑</button>
+      </div>
+      <div style={{ display: 'flex', gap: 8, marginBottom: suggestions ? 12 : 0 }}>
+        <input
+          value={goal} onChange={e => setGoal(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && !loading && goal.trim() && generate()}
+          placeholder="Descreve o objetivo da aula (ex: cardio de glúteos, força para iniciantes…)"
+          style={{ flex: 1, padding: '9px 12px', borderRadius: 8, border: `1px solid ${C.blue}`, fontFamily: "'Satoshi',sans-serif", fontSize: 13, outline: 'none', background: C.white }}
+        />
+        <button onClick={generate} disabled={loading || !goal.trim()} style={{
+          padding: '9px 18px', borderRadius: 8, border: 'none',
+          background: loading || !goal.trim() ? C.stone : '#1a4a7a',
+          color: C.white, fontWeight: 700, fontSize: 13,
+          cursor: loading || !goal.trim() ? 'not-allowed' : 'pointer',
+          fontFamily: "'Satoshi',sans-serif", whiteSpace: 'nowrap',
+        }}>
+          {loading ? 'A gerar…' : '✦ Gerar'}
+        </button>
+      </div>
+      {suggestions && (
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: '#1a4a7a', textTransform: 'uppercase', letterSpacing: '0.06em', flex: 1 }}>
+              Sugestão — {suggestions.length} série{suggestions.length !== 1 ? 's' : ''}
+            </span>
+            <button onClick={() => onApply(suggestions.map(x => x.id))} style={{
+              padding: '5px 14px', borderRadius: 6, border: 'none', background: '#1a4a7a',
+              color: C.white, fontWeight: 700, fontSize: 12, cursor: 'pointer', fontFamily: "'Satoshi',sans-serif",
+            }}>Adicionar todas</button>
+          </div>
+          {suggestions.map((sug, i) => {
+            const ser = allSeries.find(s => s.id === sug.id);
+            if (!ser) return null;
+            return (
+              <div key={sug.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: C.white, borderRadius: 8, border: `1px solid ${C.blue}40`, marginBottom: 5 }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: C.mist, minWidth: 20 }}>{String(i + 1).padStart(2, '0')}</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: C.ink }}>{ser.name}</div>
+                  {sug.reason && <div style={{ fontSize: 11, color: C.mist, marginTop: 1 }}>{sug.reason}</div>}
+                </div>
+                <Badge label={ser.type} color={ser.type === 'reformer' ? 'teal' : ser.type === 'barre' ? 'coral' : 'gold'} />
+                <button onClick={() => onApply([sug.id])} style={{
+                  background: 'none', border: `1px solid ${C.blue}`, borderRadius: 6,
+                  padding: '4px 10px', cursor: 'pointer', color: '#1a4a7a',
+                  fontSize: 11, fontWeight: 600, fontFamily: "'Satoshi',sans-serif",
+                }}>+ Adicionar</button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
+
 // ─── CLASS BUILDER ────────────────────────────────────────────────────────────
-const ClassBuilder = ({ allSeries, classes, onSave, onDeleteClass, onViewAula, initialEditCls }) => {
+const ClassBuilder = ({ allSeries, classes, onSave, onDeleteClass, onViewAula, initialEditCls, aiStyle }) => {
   const [cls, setCls]     = useState(initialEditCls||null);
   const [editing, setEditing] = useState(!!initialEditCls);
 
@@ -2478,6 +2595,16 @@ const ClassBuilder = ({ allSeries, classes, onSave, onDeleteClass, onViewAula, i
         </div>
         <div style={{paddingBottom:2}}><Badge label={cls.type==="signature"?"✦ Signature":cls.type==="reformer"?"Reformer":"Barre"} color={cls.type==="signature"?"gold":cls.type==="reformer"?"teal":"coral"}/></div>
       </div>
+      <AIClassBuilder
+        available={available}
+        allSeries={allSeries}
+        cls={cls}
+        aiStyle={aiStyle}
+        onApply={ids => setCls(p => {
+          const toAdd = ids.filter(id => !p.seriesIds.includes(id));
+          return { ...p, seriesIds: [...p.seriesIds, ...toAdd] };
+        })}
+      />
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
         <div>
           <div style={{fontSize:12,fontWeight:700,color:C.slate,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:10}}>Aula ({cls.seriesIds.length} séries)</div>
@@ -2669,11 +2796,42 @@ const StudioPage = ({ profile, user, onProfileUpdate }) => {
   const [joinSlug, setJoinSlug] = useState('');
   const [joinError, setJoinError] = useState('');
   const [joining, setJoining] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [editClassTypes, setEditClassTypes] = useState([]);
+  const [editZones, setEditZones] = useState([]);
+  const [newClassType, setNewClassType] = useState('');
+  const [newZone, setNewZone] = useState('');
+  const [savingSettings, setSavingSettings] = useState(false);
   const toast_ = useToast();
   const confirm_ = useConfirm();
 
   const studio = profile?.studios;
   const isAdmin = ['admin', 'studio_owner', 'super_admin', 'backoffice_admin'].includes(profile?.role);
+
+  useEffect(() => {
+    if (studio?.settings) {
+      setEditClassTypes(studio.settings.class_types || DEFAULT_STUDIO_CLASS_TYPES);
+      setEditZones(studio.settings.zones || DEFAULT_STUDIO_ZONES);
+    } else {
+      setEditClassTypes(DEFAULT_STUDIO_CLASS_TYPES);
+      setEditZones(DEFAULT_STUDIO_ZONES);
+    }
+  }, [studio]);
+
+  const saveSettings = async () => {
+    setSavingSettings(true);
+    const { error } = await supabase.from('studios').update({
+      settings: { ...(studio?.settings || {}), class_types: editClassTypes, zones: editZones },
+    }).eq('id', profile.studio_id);
+    setSavingSettings(false);
+    if (!error) {
+      toast_?.('Definições guardadas');
+      const updated = await api.loadProfile(user.id);
+      onProfileUpdate(updated);
+    } else {
+      toast_?.('Erro ao guardar definições');
+    }
+  };
 
   useEffect(() => {
     if (!profile?.studio_id) { setLoading(false); return; }
@@ -2800,6 +2958,63 @@ const StudioPage = ({ profile, user, onProfileUpdate }) => {
           <button onClick={generateInvite} style={{ padding: '8px 18px', borderRadius: 8, border: 'none', background: C.crimson, color: C.cream, fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: "'Satoshi',sans-serif", whiteSpace: 'nowrap' }}>
             Gerar convite
           </button>
+        </div>
+      )}
+
+      {isAdmin && (
+        <div style={{ marginTop: 24, background: C.white, borderRadius: 12, border: `1px solid ${C.stone}`, overflow: 'hidden' }}>
+          <button onClick={() => setSettingsOpen(p => !p)} style={{ width: '100%', display: 'flex', alignItems: 'center', padding: '14px 20px', background: 'none', border: 'none', cursor: 'pointer', borderBottom: settingsOpen ? `1px solid ${C.stone}` : 'none' }}>
+            <span style={{ fontWeight: 700, fontSize: 13, color: C.mist, letterSpacing: '0.05em', textTransform: 'uppercase', flex: 1, textAlign: 'left', fontFamily: "'Satoshi',sans-serif" }}>Definições do Studio</span>
+            <span style={{ fontSize: 12, color: C.mist }}>{settingsOpen ? '↑' : '↓'}</span>
+          </button>
+          {settingsOpen && (
+            <div style={{ padding: '20px 20px 24px' }}>
+
+              {/* Class Types */}
+              <div style={{ marginBottom: 20 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: C.mist, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Tipos de Aula</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+                  {editClassTypes.map(t => (
+                    <span key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 12px', borderRadius: 20, background: C.cream, border: `1px solid ${C.stone}`, fontSize: 13, fontWeight: 500, color: C.ink, fontFamily: "'Satoshi',sans-serif" }}>
+                      {t}
+                      <button onClick={() => setEditClassTypes(p => p.filter(x => x !== t))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.mist, fontSize: 13, lineHeight: 1, padding: 0, display: 'flex', alignItems: 'center' }}>×</button>
+                    </span>
+                  ))}
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <input value={newClassType} onChange={e => setNewClassType(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') { const v = newClassType.trim(); if (v && !editClassTypes.map(x => x.toLowerCase()).includes(v.toLowerCase())) { setEditClassTypes(p => [...p, v]); setNewClassType(''); } } }}
+                    placeholder="Adicionar tipo…" style={{ flex: 1, padding: '7px 12px', borderRadius: 8, border: `1px solid ${C.stone}`, fontFamily: "'Satoshi',sans-serif", fontSize: 13, outline: 'none' }} />
+                  <button onClick={() => { const v = newClassType.trim(); if (v && !editClassTypes.map(x => x.toLowerCase()).includes(v.toLowerCase())) { setEditClassTypes(p => [...p, v]); setNewClassType(''); } }}
+                    style={{ padding: '7px 14px', borderRadius: 8, border: `1px solid ${C.stone}`, background: 'transparent', color: C.ink, fontWeight: 600, fontSize: 13, cursor: 'pointer', fontFamily: "'Satoshi',sans-serif" }}>+ Adicionar</button>
+                </div>
+              </div>
+
+              {/* Zones */}
+              <div style={{ marginBottom: 20 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: C.mist, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Zonas</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+                  {editZones.map(z => (
+                    <span key={z} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 12px', borderRadius: 20, background: C.cream, border: `1px solid ${C.stone}`, fontSize: 13, fontWeight: 500, color: C.ink, fontFamily: "'Satoshi',sans-serif" }}>
+                      {z}
+                      <button onClick={() => setEditZones(p => p.filter(x => x !== z))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.mist, fontSize: 13, lineHeight: 1, padding: 0, display: 'flex', alignItems: 'center' }}>×</button>
+                    </span>
+                  ))}
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <input value={newZone} onChange={e => setNewZone(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') { const v = newZone.trim(); if (v && !editZones.map(x => x.toLowerCase()).includes(v.toLowerCase())) { setEditZones(p => [...p, v]); setNewZone(''); } } }}
+                    placeholder="Adicionar zona…" style={{ flex: 1, padding: '7px 12px', borderRadius: 8, border: `1px solid ${C.stone}`, fontFamily: "'Satoshi',sans-serif", fontSize: 13, outline: 'none' }} />
+                  <button onClick={() => { const v = newZone.trim(); if (v && !editZones.map(x => x.toLowerCase()).includes(v.toLowerCase())) { setEditZones(p => [...p, v]); setNewZone(''); } }}
+                    style={{ padding: '7px 14px', borderRadius: 8, border: `1px solid ${C.stone}`, background: 'transparent', color: C.ink, fontWeight: 600, fontSize: 13, cursor: 'pointer', fontFamily: "'Satoshi',sans-serif" }}>+ Adicionar</button>
+                </div>
+              </div>
+
+              <button onClick={saveSettings} disabled={savingSettings} style={{ padding: '9px 24px', borderRadius: 8, border: 'none', background: savingSettings ? C.stone : C.crimson, color: C.cream, fontWeight: 700, fontSize: 13, cursor: savingSettings ? 'not-allowed' : 'pointer', fontFamily: "'Satoshi',sans-serif" }}>
+                {savingSettings ? 'A guardar…' : 'Guardar definições'}
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -3071,6 +3286,7 @@ export default function HavenInstructor() {
             onDeleteClass={deleteClass}
             onViewAula={c=>setScreen({mode:"aula",cls:c,fromLibrary:false})}
             initialEditCls={screen.cls||null}
+            aiStyle={aiStyle}
           />
         )}
 
