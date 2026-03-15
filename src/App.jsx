@@ -1,6 +1,12 @@
 import React, { useState, useEffect } from "react";
 import { supabase } from './supabase.js';
 import Auth from './Auth.jsx';
+import Onboarding from './Onboarding.jsx';
+
+// Capture invite code from URL and store it for use after login
+const urlParams = new URLSearchParams(window.location.search);
+const pendingInvite = urlParams.get('invite');
+if (pendingInvite) localStorage.setItem('pending_invite', pendingInvite);
 
 const C = {
   // The Haven brand palette
@@ -2717,6 +2723,15 @@ const StudioPage = ({ profile, user, onProfileUpdate }) => {
 
   const copySlug = () => { navigator.clipboard.writeText(studio?.slug || ''); toast_?.('Código copiado'); };
 
+  const generateInvite = async () => {
+    const code = Math.random().toString(36).slice(2, 10).toUpperCase();
+    const { error } = await supabase.from('invitations').insert({ studio_id: profile.studio_id, code, invited_by: user.id });
+    if (error) { toast_?.('Erro ao gerar convite'); return; }
+    const link = `${window.location.origin}?invite=${code}`;
+    navigator.clipboard.writeText(link);
+    toast_?.('Link de convite copiado para a área de transferência');
+  };
+
   if (!profile?.studio_id) return (
     <div style={{ maxWidth: 500, margin: '40px auto' }}>
       <h2 style={{ fontFamily:"'Clash Display',sans-serif", fontSize: 22, fontWeight: 500, color: C.crimson, marginBottom: 4 }}>Studio</h2>
@@ -2777,9 +2792,16 @@ const StudioPage = ({ profile, user, onProfileUpdate }) => {
         ))}
       </div>
 
-      <div style={{ marginTop: 16, padding: 16, background: `${C.blue}30`, borderRadius: 10, fontSize: 13, color: '#1a4a7a' }}>
-        Partilha o código <strong>{studio?.slug}</strong> com outros Instructors para que se possam juntar ao studio.
-      </div>
+      {(isAdmin || profile?.role === 'studio_owner') && (
+        <div style={{ marginTop: 16, display: 'flex', alignItems: 'center', gap: 12, padding: 16, background: `${C.blue}30`, borderRadius: 10 }}>
+          <div style={{ flex: 1, fontSize: 13, color: '#1a4a7a' }}>
+            Gera um link de convite e partilha-o com Instructors. O link expira em 30 dias.
+          </div>
+          <button onClick={generateInvite} style={{ padding: '8px 18px', borderRadius: 8, border: 'none', background: C.crimson, color: C.cream, fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: "'Satoshi',sans-serif", whiteSpace: 'nowrap' }}>
+            Gerar convite
+          </button>
+        </div>
+      )}
     </div>
   );
 };
@@ -2823,7 +2845,20 @@ export default function HavenInstructor() {
       if (s  && Array.isArray(s)  && s.length)  setSeries(s);
       if (cl && Array.isArray(cl))               setClasses(cl);
       if (st && typeof st.value === 'string')    setAiStyle(st.value);
-      const p = await api.loadProfile(user.id);
+      let p = await api.loadProfile(user.id);
+
+      // Handle pending invite code
+      const inviteCode = localStorage.getItem('pending_invite');
+      if (inviteCode && p && !p.studio_id) {
+        const { data: inv } = await supabase.from('invitations').select('*, studios(id,name)').eq('code', inviteCode).gt('expires_at', new Date().toISOString()).is('accepted_by', null).maybeSingle();
+        if (inv) {
+          await supabase.from('profiles').update({ studio_id: inv.studio_id }).eq('id', user.id);
+          await supabase.from('invitations').update({ accepted_by: user.id, accepted_at: new Date().toISOString() }).eq('id', inv.id);
+          p = await api.loadProfile(user.id);
+        }
+        localStorage.removeItem('pending_invite');
+      }
+
       setProfile(p);
       setDataLoaded(true);
     })();
@@ -2914,6 +2949,13 @@ export default function HavenInstructor() {
 
   if (authLoading) return <div style={{minHeight:"100vh",background:C.cream,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Satoshi',sans-serif",color:C.mist}}>A carregar…</div>;
   if (!user) return <Auth />;
+  if (dataLoaded && profile && !profile.onboarded) return (
+    <Onboarding user={user} profile={profile} onComplete={async (newAiStyle) => {
+      const p = await api.loadProfile(user.id);
+      setProfile(p);
+      if (newAiStyle) setAiStyle(newAiStyle);
+    }}/>
+  );
 
   return (
     <ToastProvider>

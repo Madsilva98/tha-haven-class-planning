@@ -49,7 +49,7 @@ export default function Auth() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
-  const [studioMode, setStudioMode] = useState('create'); // 'create' | 'join' | 'none'
+  const [studioMode, setStudioMode] = useState('none'); // 'join' | 'none'
   const [studioName, setStudioName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -158,7 +158,7 @@ export default function Auth() {
                 <div>
                   <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: C.mist, marginBottom: 8, letterSpacing: '0.04em', textTransform: 'uppercase' }}>Studio <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>(opcional)</span></label>
                   <div style={{ display: 'flex', gap: 4, marginBottom: 8 }}>
-                    {[['none','Sem studio'],['create','Criar'],['join','Juntar']].map(([v,l]) => (
+                    {[['none','Sem studio'],['join','Tenho código']].map(([v,l]) => (
                       <button key={v} type="button" onClick={() => { setStudioMode(v); setStudioName(''); }} style={{ flex:1, padding: '6px 0', borderRadius: 6, border: `1px solid ${studioMode===v?C.crimson:C.stone}`, background: studioMode===v?`${C.crimson}10`:'transparent', color: studioMode===v?C.crimson:C.mist, fontFamily: "'Satoshi',sans-serif", fontWeight: 600, fontSize: 12, cursor: 'pointer' }}>{l}</button>
                     ))}
                   </div>
