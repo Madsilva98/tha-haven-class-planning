@@ -2932,7 +2932,7 @@ export default function HavenInstructor() {
           <div style={{flex:1}}/>
           <div style={{display:"flex",alignItems:"center",gap:8}}>
             <div style={{display:"flex",gap:2,background:`rgba(0,0,0,0.15)`,padding:3,borderRadius:8}}>
-              {[["movements","Movimentos"],["library","Séries"],["builder","Aulas"],...(profile?.studio_id?[["studio","Studio"]]:[])] .map(([id,lbl])=>(
+              {[["movements","Movimentos"],["library","Séries"],["builder","Aulas"],["studio","Studio"]].map(([id,lbl])=>(
                 <button key={id} onClick={()=>goTab(id)} style={{fontFamily:"'Satoshi', sans-serif",fontWeight:600,fontSize:12,padding:"6px 16px",borderRadius:6,border:"none",cursor:"pointer",background:screen.mode===id?C.cream:"transparent",color:screen.mode===id?C.crimson:`${C.cream}80`,transition:"all 0.15s"}}>{lbl}</button>
               ))}
             </div>
