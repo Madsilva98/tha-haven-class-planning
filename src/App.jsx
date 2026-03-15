@@ -2673,7 +2673,7 @@ const StudioPage = ({ profile, user, onProfileUpdate }) => {
   const confirm_ = useConfirm();
 
   const studio = profile?.studios;
-  const isAdmin = profile?.role === 'admin';
+  const isAdmin = ['admin', 'studio_owner', 'super_admin', 'backoffice_admin'].includes(profile?.role);
 
   useEffect(() => {
     if (!profile?.studio_id) { setLoading(false); return; }
