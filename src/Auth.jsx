@@ -49,6 +49,7 @@ export default function Auth() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
+  const [studioMode, setStudioMode] = useState('create'); // 'create' | 'join' | 'none'
   const [studioName, setStudioName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -74,25 +75,23 @@ export default function Auth() {
 
     const userId = data.user?.id;
     if (userId) {
-      // Create studio if name provided
       let studioId = null;
-      if (studioName.trim()) {
+      let role = 'instructor';
+
+      if (studioMode === 'create' && studioName.trim()) {
         const slug = studioName.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-');
         const { data: studio } = await supabase
           .from('studios')
           .insert({ name: studioName.trim(), slug: `${slug}-${userId.slice(0,6)}` })
-          .select()
-          .single();
+          .select().single();
         studioId = studio?.id || null;
+        role = 'admin';
+      } else if (studioMode === 'join' && studioName.trim()) {
+        const { data: found } = await supabase.from('studios').select('id').eq('slug', studioName.trim()).maybeSingle();
+        studioId = found?.id || null;
       }
 
-      // Create profile
-      await supabase.from('profiles').insert({
-        id: userId,
-        name: name.trim(),
-        studio_id: studioId,
-        role: studioId ? 'admin' : 'instructor',
-      });
+      await supabase.from('profiles').insert({ id: userId, name: name.trim(), studio_id: studioId, role });
     }
 
     setInfo('Conta criada! Verifica o teu email para confirmar.');
@@ -157,8 +156,14 @@ export default function Auth() {
 
               {mode === 'signup' && (
                 <div>
-                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: C.mist, marginBottom: 5, letterSpacing: '0.04em', textTransform: 'uppercase' }}>Studio <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>(opcional)</span></label>
-                  <input style={inputStyle} type="text" placeholder="Nome do teu studio" value={studioName} onChange={e => setStudioName(e.target.value)} />
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: C.mist, marginBottom: 8, letterSpacing: '0.04em', textTransform: 'uppercase' }}>Studio <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>(opcional)</span></label>
+                  <div style={{ display: 'flex', gap: 4, marginBottom: 8 }}>
+                    {[['none','Sem studio'],['create','Criar'],['join','Juntar']].map(([v,l]) => (
+                      <button key={v} type="button" onClick={() => { setStudioMode(v); setStudioName(''); }} style={{ flex:1, padding: '6px 0', borderRadius: 6, border: `1px solid ${studioMode===v?C.crimson:C.stone}`, background: studioMode===v?`${C.crimson}10`:'transparent', color: studioMode===v?C.crimson:C.mist, fontFamily: "'Satoshi',sans-serif", fontWeight: 600, fontSize: 12, cursor: 'pointer' }}>{l}</button>
+                    ))}
+                  </div>
+                  {studioMode === 'create' && <input style={inputStyle} type="text" placeholder="Nome do studio" value={studioName} onChange={e => setStudioName(e.target.value)} />}
+                  {studioMode === 'join' && <input style={inputStyle} type="text" placeholder="Código do studio" value={studioName} onChange={e => setStudioName(e.target.value)} />}
                 </div>
               )}
 

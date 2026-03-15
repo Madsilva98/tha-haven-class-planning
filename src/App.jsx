@@ -348,7 +348,8 @@ const seriesToDB = (s, userId) => ({
   muscles: s.muscles || [], cues: s.cues || null,
   target_zone: s.targetZone || null, primary_zone: s.primaryZone || null,
   reformer: s.reformer || null, barre: s.barre || null,
-  video_url: s.videoUrl || null, created_by: userId, visibility: 'personal',
+  video_url: s.videoUrl || null, created_by: userId,
+  visibility: s.visibility || 'personal', studio_id: s.studioId || null,
   updated_at: new Date().toISOString(),
 });
 const seriesFromDB = row => ({
@@ -360,6 +361,7 @@ const seriesFromDB = row => ({
   reformer: row.reformer || { springs:'', props:'', startPosition:'', movements:[{ timing:'', lyric:'', movement:'', breath:'', transitionCue:'' }] },
   barre: row.barre || { props:'', startPosition:'', movements:[{ timing:'', lyric:'', movement:'', breath:'', transitionCue:'' }] },
   videoUrl: row.video_url || '', createdAt: row.created_at ? row.created_at.split('T')[0] : '',
+  createdBy: row.created_by || null, visibility: row.visibility || 'personal', studioId: row.studio_id || null,
 });
 const classToDB = (c, userId) => ({
   id: c.id, name: c.name, type: c.type, date: c.date || null,
@@ -378,11 +380,11 @@ const api = {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return fallback;
       if (key === 'series') {
-        const { data, error } = await supabase.from('series').select('*').eq('created_by', user.id).order('created_at', { ascending: true });
+        const { data, error } = await supabase.from('series').select('*').order('created_at', { ascending: true });
         return (!error && data) ? data.map(seriesFromDB) : fallback;
       }
       if (key === 'classes') {
-        const { data, error } = await supabase.from('classes').select('*').eq('created_by', user.id).order('created_at', { ascending: true });
+        const { data, error } = await supabase.from('classes').select('*').order('created_at', { ascending: true });
         return (!error && data) ? data.map(classFromDB) : fallback;
       }
       if (key === 'aistyle') {
@@ -420,6 +422,14 @@ const api = {
   async removeClass(id) {
     try { await supabase.from('classes').delete().eq('id', id); }
     catch(e) { console.error(e); }
+  },
+  async loadProfile(userId) {
+    const { data } = await supabase.from('profiles').select('*, studios(id, name, slug)').eq('id', userId).maybeSingle();
+    return data;
+  },
+  async upsertProfile(profile) {
+    const { error } = await supabase.from('profiles').upsert(profile, { onConflict: 'id' });
+    return error;
   },
 };
 
@@ -769,7 +779,8 @@ const CardCueGen = ({ series, rowIndex, rows, aiStyle, onUpdate, nonsig, getCurr
 };
 
 // ─── SERIES CARD (expandable) ─────────────────────────────────────────────────
-const SeriesCard = ({ series, onEdit, onDelete, onUpdateSeries, aiStyle, modalityFilter=null }) => {
+const SeriesCard = ({ series, onEdit, onDelete, onUpdateSeries, aiStyle, modalityFilter=null, currentUserId=null, hasStudio=false, onCopy=null, onPublish=null, onUnpublish=null, onMakePublic=null }) => {
+  const isOwner = !currentUserId || series.createdBy === currentUserId;
   const isSig = series.type === "signature";
   const [expanded, setExpanded] = useState(false);
   const [showR, setShowR] = useState(modalityFilter !== "barre");
@@ -931,6 +942,8 @@ const SeriesCard = ({ series, onEdit, onDelete, onUpdateSeries, aiStyle, modalit
               border:`1.5px solid ${series.status==="approved"?"#3a6a9a":"#b8b0aa"}`,
               fontSize:11,color:series.status==="approved"?"#1a4a7a":"#8a7f78",fontWeight:700
             }}>{series.status==="approved"?"✓":"…"}</span>
+            {series.visibility==='studio'&&<span style={{fontSize:10,fontWeight:700,letterSpacing:"0.05em",padding:"2px 8px",borderRadius:20,background:"#e8f0fe",color:"#1a56db",border:"1px solid #c3d3f8"}}>STUDIO</span>}
+            {series.visibility==='public'&&<span style={{fontSize:10,fontWeight:700,letterSpacing:"0.05em",padding:"2px 8px",borderRadius:20,background:"#ecfdf5",color:"#059669",border:"1px solid #a7f3d0"}}>PÚBLICO</span>}
             {series.song&&<span style={{fontSize:12,color:C.mist,display:"inline-flex",alignItems:"center",gap:4}}><Icon name="music" size={11}/>{series.song}</span>}
             {(()=>{
               const zones = (series.targetZone||"").split(",").map(x=>x.trim()).filter(Boolean);
@@ -955,7 +968,11 @@ const SeriesCard = ({ series, onEdit, onDelete, onUpdateSeries, aiStyle, modalit
         </div>
         <div style={{display:"flex",gap:6,flexShrink:0,alignItems:"center"}} onClick={e=>e.stopPropagation()}>
           {expanded&&(<>
-            <Btn small variant="ghost" onClick={e=>{e.stopPropagation();onEdit(series);}}><Icon name="edit" size={13}/> Editar</Btn>
+            {isOwner&&<Btn small variant="ghost" onClick={e=>{e.stopPropagation();onEdit(series);}}><Icon name="edit" size={13}/> Editar</Btn>}
+            {!isOwner&&onCopy&&<Btn small variant="ghost" onClick={e=>{e.stopPropagation();onCopy(series);}}><Icon name="copy" size={13}/> Copiar</Btn>}
+            {isOwner&&hasStudio&&series.visibility==='personal'&&onPublish&&<Btn small variant="ghost" onClick={e=>{e.stopPropagation();onPublish(series);}} style={{color:"#1a56db"}}>↑ Studio</Btn>}
+            {isOwner&&series.visibility==='studio'&&onUnpublish&&<Btn small variant="ghost" onClick={e=>{e.stopPropagation();onUnpublish(series);}} style={{color:C.mist}}>Tornar privada</Btn>}
+            {isOwner&&series.visibility!=='public'&&onMakePublic&&<Btn small variant="ghost" onClick={e=>{e.stopPropagation();onMakePublic(series);}} style={{color:"#059669"}}>↑ Público</Btn>}
           </>)}
         </div>
         <span style={{ color:C.mist, display:"inline-flex", transition:"transform 0.2s",
@@ -2639,9 +2656,138 @@ const MovementLibraryPage = ({ series, onUpdateSeries, aiStyle }) => {
 };
 
 
+// ─── STUDIO PAGE ─────────────────────────────────────────────────────────────
+const StudioPage = ({ profile, user, onProfileUpdate }) => {
+  const [members, setMembers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [joinSlug, setJoinSlug] = useState('');
+  const [joinError, setJoinError] = useState('');
+  const [joining, setJoining] = useState(false);
+  const toast_ = useToast();
+  const confirm_ = useConfirm();
+
+  const studio = profile?.studios;
+  const isAdmin = profile?.role === 'admin';
+
+  useEffect(() => {
+    if (!profile?.studio_id) { setLoading(false); return; }
+    supabase.from('profiles').select('id, name, role, created_at').eq('studio_id', profile.studio_id)
+      .then(({ data }) => { setMembers(data || []); setLoading(false); });
+  }, [profile?.studio_id]);
+
+  const changeRole = async (memberId, newRole) => {
+    await supabase.from('profiles').update({ role: newRole }).eq('id', memberId);
+    setMembers(prev => prev.map(m => m.id === memberId ? { ...m, role: newRole } : m));
+    toast_?.('Papel actualizado');
+  };
+
+  const removeMember = async memberId => {
+    if (!await confirm_?.('Remover este membro do studio?', { confirmLabel: 'Remover' })) return;
+    await supabase.from('profiles').update({ studio_id: null, role: 'instructor' }).eq('id', memberId);
+    setMembers(prev => prev.filter(m => m.id !== memberId));
+  };
+
+  const handleJoin = async e => {
+    e.preventDefault();
+    setJoinError(''); setJoining(true);
+    const { data: found } = await supabase.from('studios').select('id, name').eq('slug', joinSlug.trim()).maybeSingle();
+    if (!found) { setJoinError('Studio não encontrado. Verifica o código.'); setJoining(false); return; }
+    const err = await api.upsertProfile({ id: user.id, studio_id: found.id, role: 'instructor' });
+    if (err) { setJoinError(err.message); setJoining(false); return; }
+    const updated = await api.loadProfile(user.id);
+    onProfileUpdate(updated);
+    setJoining(false);
+    toast_?.(`Juntaste-te ao studio "${found.name}"`);
+  };
+
+  const handleCreate = async e => {
+    e.preventDefault();
+    const name = joinSlug.trim();
+    if (!name) return;
+    setJoining(true);
+    const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + user.id.slice(0, 6);
+    const { data: studio_, error } = await supabase.from('studios').insert({ name, slug }).select().single();
+    if (error) { setJoinError(error.message); setJoining(false); return; }
+    await api.upsertProfile({ id: user.id, studio_id: studio_.id, role: 'admin' });
+    const updated = await api.loadProfile(user.id);
+    onProfileUpdate(updated);
+    setJoining(false);
+    toast_?.(`Studio "${name}" criado`);
+  };
+
+  const copySlug = () => { navigator.clipboard.writeText(studio?.slug || ''); toast_?.('Código copiado'); };
+
+  if (!profile?.studio_id) return (
+    <div style={{ maxWidth: 500, margin: '40px auto' }}>
+      <h2 style={{ fontFamily:"'Clash Display',sans-serif", fontSize: 22, fontWeight: 500, color: C.crimson, marginBottom: 4 }}>Studio</h2>
+      <p style={{ color: C.mist, fontSize: 13, marginBottom: 24 }}>Ainda não fazes parte de um studio. Cria um novo ou junta-te a um existente.</p>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ background: C.white, borderRadius: 12, border: `1px solid ${C.stone}`, padding: 20 }}>
+          <div style={{ fontWeight: 700, fontSize: 14, color: C.ink, marginBottom: 10 }}>Criar novo studio</div>
+          <form onSubmit={handleCreate} style={{ display: 'flex', gap: 8 }}>
+            <input value={joinSlug} onChange={e => setJoinSlug(e.target.value)} placeholder="Nome do studio" required style={{ flex: 1, padding: '8px 12px', borderRadius: 8, border: `1px solid ${C.stone}`, fontFamily: "'Satoshi',sans-serif", fontSize: 13, outline: 'none' }}/>
+            <button type="submit" disabled={joining} style={{ padding: '8px 18px', borderRadius: 8, border: 'none', background: C.crimson, color: C.cream, fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: "'Satoshi',sans-serif" }}>Criar</button>
+          </form>
+        </div>
+        <div style={{ background: C.white, borderRadius: 12, border: `1px solid ${C.stone}`, padding: 20 }}>
+          <div style={{ fontWeight: 700, fontSize: 14, color: C.ink, marginBottom: 10 }}>Juntar-me a um studio existente</div>
+          <form onSubmit={handleJoin} style={{ display: 'flex', gap: 8 }}>
+            <input value={joinSlug} onChange={e => setJoinSlug(e.target.value)} placeholder="Código do studio" required style={{ flex: 1, padding: '8px 12px', borderRadius: 8, border: `1px solid ${C.stone}`, fontFamily: "'Satoshi',sans-serif", fontSize: 13, outline: 'none' }}/>
+            <button type="submit" disabled={joining} style={{ padding: '8px 18px', borderRadius: 8, border: `1px solid ${C.stone}`, background: 'transparent', color: C.ink, fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: "'Satoshi',sans-serif" }}>Juntar</button>
+          </form>
+          {joinError && <div style={{ color: '#b91c1c', fontSize: 12, marginTop: 8 }}>{joinError}</div>}
+        </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={{ maxWidth: 700 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
+        <div>
+          <h2 style={{ fontFamily:"'Clash Display',sans-serif", fontSize: 22, fontWeight: 500, color: C.crimson, margin: 0 }}>{studio?.name || 'Studio'}</h2>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+            <span style={{ fontSize: 12, color: C.mist }}>Código de convite:</span>
+            <code style={{ fontSize: 12, background: C.stone, padding: '2px 8px', borderRadius: 6, color: C.ink }}>{studio?.slug}</code>
+            <button onClick={copySlug} style={{ background: 'none', border: 'none', color: C.crimson, fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>Copiar</button>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ background: C.white, borderRadius: 12, border: `1px solid ${C.stone}`, overflow: 'hidden' }}>
+        <div style={{ padding: '14px 20px', borderBottom: `1px solid ${C.stone}`, fontWeight: 700, fontSize: 13, color: C.mist, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+          Membros ({members.length})
+        </div>
+        {loading ? (
+          <div style={{ padding: 24, color: C.mist, fontSize: 13 }}>A carregar…</div>
+        ) : members.map(m => (
+          <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 20px', borderBottom: `1px solid ${C.stone}` }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 600, fontSize: 14, color: C.ink }}>{m.name || '(sem nome)'}</div>
+              <div style={{ fontSize: 12, color: C.mist }}>{m.id === user.id ? 'Tu' : ''}</div>
+            </div>
+            <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 10px', borderRadius: 20, background: m.role === 'admin' ? `${C.crimson}18` : C.stone, color: m.role === 'admin' ? C.crimson : C.mist }}>{m.role === 'admin' ? 'Admin' : 'Instructor'}</span>
+            {isAdmin && m.id !== user.id && (<>
+              <button onClick={() => changeRole(m.id, m.role === 'admin' ? 'instructor' : 'admin')} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, border: `1px solid ${C.stone}`, background: 'transparent', color: C.ink, cursor: 'pointer', fontFamily: "'Satoshi',sans-serif" }}>
+                {m.role === 'admin' ? '→ Instructor' : '→ Admin'}
+              </button>
+              <button onClick={() => removeMember(m.id)} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, border: `1px solid ${C.stone}`, background: 'transparent', color: '#b91c1c', cursor: 'pointer', fontFamily: "'Satoshi',sans-serif" }}>Remover</button>
+            </>)}
+          </div>
+        ))}
+      </div>
+
+      <div style={{ marginTop: 16, padding: 16, background: `${C.blue}30`, borderRadius: 10, fontSize: 13, color: '#1a4a7a' }}>
+        Partilha o código <strong>{studio?.slug}</strong> com outros Instructors para que se possam juntar ao studio.
+      </div>
+    </div>
+  );
+};
+
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
 export default function HavenInstructor() {
   const [user,    setUser]    = useState(null);
+  const [profile, setProfile] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [series,  setSeries]  = useState(SIGNATURE_SERIES);
   const [classes, setClasses] = useState(DEFAULT_CLASSES);
@@ -2662,7 +2808,7 @@ export default function HavenInstructor() {
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
-      if (!session) { setDataLoaded(false); setSeries(SIGNATURE_SERIES); setClasses(DEFAULT_CLASSES); setAiStyle(""); }
+      if (!session) { setDataLoaded(false); setSeries(SIGNATURE_SERIES); setClasses(DEFAULT_CLASSES); setAiStyle(""); setProfile(null); }
     });
     return () => subscription.unsubscribe();
   }, []);
@@ -2677,6 +2823,8 @@ export default function HavenInstructor() {
       if (s  && Array.isArray(s)  && s.length)  setSeries(s);
       if (cl && Array.isArray(cl))               setClasses(cl);
       if (st && typeof st.value === 'string')    setAiStyle(st.value);
+      const p = await api.loadProfile(user.id);
+      setProfile(p);
       setDataLoaded(true);
     })();
   }, [user]);
@@ -2708,6 +2856,33 @@ export default function HavenInstructor() {
     }
   };
   const updateClass = async c => { setClasses(p=>p.map(x=>x.id===c.id?c:x)); toast("Aula guardada"); if (user) api.upsertClass(c, user.id); };
+
+  const publishToStudio = async s => {
+    if (!profile?.studio_id) return;
+    const updated = { ...s, visibility: 'studio', studioId: profile.studio_id };
+    setSeries(p=>p.map(x=>x.id===s.id?updated:x));
+    await supabase.from('series').update({ visibility:'studio', studio_id: profile.studio_id }).eq('id', s.id);
+    toast("Série publicada no studio");
+  };
+  const unpublishFromStudio = async s => {
+    const updated = { ...s, visibility: 'personal', studioId: null };
+    setSeries(p=>p.map(x=>x.id===s.id?updated:x));
+    await supabase.from('series').update({ visibility:'personal', studio_id: null }).eq('id', s.id);
+    toast("Série tornada privada");
+  };
+  const makeSeriesPublic = async s => {
+    const updated = { ...s, visibility: 'public' };
+    setSeries(p=>p.map(x=>x.id===s.id?updated:x));
+    await supabase.from('series').update({ visibility:'public' }).eq('id', s.id);
+    toast("Série publicada para toda a plataforma");
+  };
+  const copyToLibrary = async s => {
+    const newId = `copy-${Date.now()}`;
+    const copy = { ...s, id: newId, visibility: 'personal', studioId: null, createdBy: user.id, createdAt: new Date().toISOString().split('T')[0] };
+    setSeries(p=>[...p, copy]);
+    if (user) api.upsertSeries(copy, user.id);
+    toast("Série copiada para a tua biblioteca");
+  };
 
   const filteredSeries = series.filter(s=>{
     if(filterType==="all")      return true;
@@ -2757,7 +2932,7 @@ export default function HavenInstructor() {
           <div style={{flex:1}}/>
           <div style={{display:"flex",alignItems:"center",gap:8}}>
             <div style={{display:"flex",gap:2,background:`rgba(0,0,0,0.15)`,padding:3,borderRadius:8}}>
-              {[["movements","Movimentos"],["library","Séries"],["builder","Aulas"]].map(([id,lbl])=>(
+              {[["movements","Movimentos"],["library","Séries"],["builder","Aulas"],...(profile?.studio_id?[["studio","Studio"]]:[])] .map(([id,lbl])=>(
                 <button key={id} onClick={()=>goTab(id)} style={{fontFamily:"'Satoshi', sans-serif",fontWeight:600,fontSize:12,padding:"6px 16px",borderRadius:6,border:"none",cursor:"pointer",background:screen.mode===id?C.cream:"transparent",color:screen.mode===id?C.crimson:`${C.cream}80`,transition:"all 0.15s"}}>{lbl}</button>
               ))}
             </div>
@@ -2820,6 +2995,12 @@ export default function HavenInstructor() {
                             onDelete={deleteSeries}
                             onUpdateSeries={saveSeries}
                             aiStyle={aiStyle}
+                            currentUserId={user?.id}
+                            hasStudio={!!profile?.studio_id}
+                            onCopy={copyToLibrary}
+                            onPublish={publishToStudio}
+                            onUnpublish={unpublishFromStudio}
+                            onMakePublic={makeSeriesPublic}
                           />
                         </React.Fragment>
                       );
@@ -2827,6 +3008,11 @@ export default function HavenInstructor() {
                   })()}
                 </div>
               </>
+        )}
+
+        {/* ── STUDIO ── */}
+        {screen.mode==="studio"&&(
+          <StudioPage profile={profile} user={user} onProfileUpdate={p=>setProfile(p)}/>
         )}
 
         {/* ── MOVEMENTS ── */}
