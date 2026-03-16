@@ -3402,7 +3402,7 @@ export default function HavenInstructor() {
   }, []);
 
   if (authLoading) return <div style={{minHeight:"100vh",background:C.cream,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Satoshi',sans-serif",color:C.mist}}>A carregar…</div>;
-  if (!user && shareTokenParam) return <ShareView token={shareTokenParam} />;
+  if (shareTokenParam) return <ShareView token={shareTokenParam} />;
   if (!user) return <Auth />;
   if (dataLoaded && profile?.role === 'client') return <ClientPortal user={user} profile={profile} />;
   if (dataLoaded && profile && !profile.onboarded) return (
