@@ -340,7 +340,7 @@ const EMPTY_SERIES = { introCue:"",
   id:"", name:"", type:"reformer", status:"testing",
   reformer:{ springs:"", props:"", startPosition:"", movements:[{ timing:"", lyric:"", movement:"", breath:"", transitionCue:"" }] },
   barre:{ props:"", startPosition:"", movements:[{ timing:"", lyric:"", movement:"", breath:"", transitionCue:"" }] },
-  muscles:[], cues:"", song:"", videoUrl:"", targetZone:"", primaryZone:"", openCue:"", closeCue:"", createdAt:"",
+  muscles:[], cues:"", song:"", videoUrl:"", targetZone:"", primaryZone:"", openCue:"", closeCue:"", createdAt:"", duration: null,
 };
 
 const DEFAULT_CLASSES = [
@@ -358,6 +358,7 @@ const seriesToDB = (s, userId) => ({
   video_url: s.videoUrl || null, created_by: userId,
   visibility: s.visibility || 'personal', studio_id: s.studioId || null,
   updated_at: new Date().toISOString(),
+  duration: s.duration ?? null,
 });
 const seriesFromDB = row => ({
   id: row.id, name: row.name, type: row.type, status: row.status || 'testing',
@@ -369,6 +370,7 @@ const seriesFromDB = row => ({
   barre: row.barre || { props:'', startPosition:'', movements:[{ timing:'', lyric:'', movement:'', breath:'', transitionCue:'' }] },
   videoUrl: row.video_url || '', createdAt: row.created_at ? row.created_at.split('T')[0] : '',
   createdBy: row.created_by || null, visibility: row.visibility || 'personal', studioId: row.studio_id || null,
+  duration: row.duration ?? null,
 });
 const classToDB = (c, userId) => ({
   id: c.id, name: c.name, type: c.type, date: c.date || null,
@@ -446,6 +448,39 @@ const api = {
   },
 };
 
+
+// ─── DURATION PARSER ─────────────────────────────────────────────────────────
+const parseTimeStr = t => {
+  if (!t || typeof t !== 'string') return null;
+  const m = t.match(/(\d+)'(\d+)/);
+  if (m) return parseInt(m[1]) * 60 + parseInt(m[2]);
+  const mMin = t.match(/^(\d+)'$/);
+  if (mMin) return parseInt(mMin[1]) * 60;
+  return null;
+};
+
+const parseDuration = series => {
+  const movs = [
+    ...(series?.reformer?.movements || []),
+    ...((series?.type === 'signature' || series?.type === 'barre') ? (series?.barre?.movements || []) : []),
+  ];
+  let lastSecs = null;
+  for (const m of movs) {
+    if (!m?.timing) continue;
+    const parts = m.timing.split('–').map(s => s.trim());
+    const end = parts.length > 1 ? parts[parts.length - 1] : parts[0];
+    const secs = parseTimeStr(end);
+    if (secs !== null) lastSecs = secs;
+  }
+  return lastSecs;
+};
+
+const formatDuration = secs => {
+  if (secs === null || secs === undefined) return null;
+  const m = Math.floor(secs / 60);
+  const s = secs % 60;
+  return s > 0 ? `~${m}'${String(s).padStart(2,'0')}''` : `~${m}'`;
+};
 
 // ─── EXAMPLES STORE (few-shot learning) ─────────────────────────────────────
 const examplesStore = {
@@ -957,6 +992,7 @@ const SeriesCard = ({ series, onEdit, onDelete, onUpdateSeries, aiStyle, modalit
           <div style={{ display:"flex", gap:6, flexWrap:"wrap", alignItems:"center" }}>
             {isSig  && <Badge label="Signature" color="gold"/>}
             {!isSig && <Badge label={series.type==="reformer"?"Reformer":"Barre"} color={series.type==="reformer"?"teal":"coral"}/>}
+            {(()=>{ const dur = parseDuration(series) ?? series.duration ?? null; const label = formatDuration(dur); return label ? <span style={{fontSize:10,fontWeight:600,color:C.mist,background:C.stone,borderRadius:20,padding:'2px 8px'}}>{label}</span> : null; })()}
             <span title={series.status==="approved"?"Aprovada":"Em teste"} style={{
               display:"inline-flex",alignItems:"center",justifyContent:"center",
               width:20,height:20,borderRadius:"50%",flexShrink:0,
@@ -1954,10 +1990,12 @@ const AulaSeriesCard = ({
   ser, idx, isSig,
   modR, modB, setModR, setModB,
   showSetup, showIntro, showCues, showInstrNotes,
-  showTiming, showLyric, showBreath,
-  aiStyle, onEdit, onUpdateSeries, setSeriesList, MovTable
+  showTiming, showLyric,
+  aiStyle, onEdit, onUpdateSeries, setSeriesList, MovTable,
+  teachingMode=false
 }) => {
   const [collapsed, setCollapsed] = React.useState(false);
+  const isExpanded = !collapsed || teachingMode;
   const [localCues, setLocalCues] = React.useState(ser.cues||"");
   const [generating, setGenerating] = React.useState(false);
 
@@ -1987,25 +2025,25 @@ const AulaSeriesCard = ({
     <div style={{background:C.white,borderRadius:14,border:`1px solid ${C.stone}`,overflow:"hidden",transition:"box-shadow 0.2s",boxShadow:collapsed?"none":"0 2px 12px rgba(0,0,0,0.05)"}}>
 
       {/* Card header */}
-      <div style={{padding:"14px 20px",display:"flex",alignItems:"center",gap:10,cursor:"pointer",borderBottom:collapsed?"none":`1px solid ${C.stone}`}}
-        onClick={()=>setCollapsed(p=>!p)}>
+      <div style={{padding:"14px 20px",display:"flex",alignItems:"center",gap:10,cursor:"pointer",borderBottom:isExpanded?`1px solid ${C.stone}`:"none"}}
+        onClick={()=>{ if(!teachingMode) setCollapsed(p=>!p); }}>
         <span style={{fontFamily:"'Clash Display', sans-serif",fontSize:9,fontWeight:600,letterSpacing:"0.18em",textTransform:"uppercase",color:C.mist,flexShrink:0}}>0{idx+1}</span>
-        <span style={{fontFamily:"'Clash Display', sans-serif",fontSize:18,fontWeight:500,color:C.ink,flex:1}}>{ser.name}</span>
+        <span style={{fontFamily:"'Clash Display', sans-serif",fontSize:teachingMode?22:18,fontWeight:500,color:C.ink,flex:1}}>{ser.name}</span>
         {ser.song&&<span style={{display:"inline-flex",alignItems:"center",gap:4,color:C.mist,fontSize:12,flexShrink:0}}><Icon name="music" size={11}/>{ser.song}</span>}
-        <div className="no-print" style={{display:"flex",gap:6,alignItems:"center",flexShrink:0}} onClick={e=>e.stopPropagation()}>
+        {!teachingMode&&<div className="no-print" style={{display:"flex",gap:6,alignItems:"center",flexShrink:0}} onClick={e=>e.stopPropagation()}>
           {isSig&&<>
             <Toggle label="Reformer" active={modR[ser.id]!==false} onClick={()=>setModR(p=>({...p,[ser.id]:!p[ser.id]}))} color={C.reformer}/>
             <Toggle label="Barre"    active={modB[ser.id]!==false} onClick={()=>setModB(p=>({...p,[ser.id]:!p[ser.id]}))} color={C.barre}/>
           </>}
           <Btn small variant="ghost" onClick={onEdit}><Icon name="edit" size={13}/> Editar série</Btn>
-        </div>
-        <span style={{color:C.mist,display:"inline-flex",transition:"transform 0.2s",transform:collapsed?"rotate(0deg)":"rotate(180deg)",flexShrink:0}}>
+        </div>}
+        {!teachingMode&&<span style={{color:C.mist,display:"inline-flex",transition:"transform 0.2s",transform:collapsed?"rotate(0deg)":"rotate(180deg)",flexShrink:0}}>
           <Icon name="chevron" size={15}/>
-        </span>
+        </span>}
       </div>
 
       {/* Card body */}
-      {!collapsed&&(
+      {isExpanded&&(
         <div style={{padding:"14px 20px",display:"flex",flexDirection:"column",gap:12}}>
 
           {showSetup&&isSig&&(
@@ -2033,18 +2071,6 @@ const AulaSeriesCard = ({
           {showIntro&&<IntroCue series={ser} aiStyle={aiStyle} readOnly={false}
             onChange={v=>updateSer({...ser,introCue:v})}/>}
 
-          {(ser.openCue||ser.closeCue)&&(
-            <div style={{display:"flex",flexDirection:"column",gap:4}}>
-              {ser.openCue&&<div style={{display:"flex",gap:8,alignItems:"flex-start",fontSize:12,color:"#2a5a4a"}}>
-                <span style={{fontWeight:700,flexShrink:0,fontSize:10,paddingTop:1}}>▶ INÍCIO</span>
-                <span style={{fontStyle:"italic",lineHeight:1.5}}>{ser.openCue}</span>
-              </div>}
-              {ser.closeCue&&<div style={{display:"flex",gap:8,alignItems:"flex-start",fontSize:12,color:"#5a3a2a"}}>
-                <span style={{fontWeight:700,flexShrink:0,fontSize:10,paddingTop:1}}>■ FIM</span>
-                <span style={{fontStyle:"italic",lineHeight:1.5}}>{ser.closeCue}</span>
-              </div>}
-            </div>
-          )}
           <MovTable ser={ser}/>
 
           {showInstrNotes&&(
@@ -2078,12 +2104,55 @@ const AulaSeriesCard = ({
   );
 };
 
+// ─── BREATH CELL ──────────────────────────────────────────────────────────────
+const BreathCell = ({ movement, breath, notes }) => {
+  const [hovered, setHovered] = React.useState(false);
+  return (
+    <span style={{position:'relative',display:'inline-block',width:'100%'}} onMouseEnter={()=>setHovered(true)} onMouseLeave={()=>setHovered(false)}>
+      <span style={{cursor:breath?'help':'default'}}>
+        {movement||<span style={{color:C.stone}}>—</span>}
+        {notes&&<span style={{marginLeft:3,fontSize:9,color:C.mist}}>●</span>}
+        {breath&&<span style={{marginLeft:4,fontSize:9,color:C.mist,opacity:0.7}}>·</span>}
+      </span>
+      {hovered&&breath&&(
+        <span style={{position:'absolute',bottom:'calc(100% + 4px)',left:0,zIndex:100,background:C.ink,color:C.cream,fontSize:10,fontWeight:500,fontStyle:'italic',padding:'3px 8px',borderRadius:6,whiteSpace:'nowrap',pointerEvents:'none',boxShadow:'0 2px 8px rgba(0,0,0,0.2)'}}>{breath}</span>
+      )}
+      <span className="breath-print" style={{display:'none',fontSize:'0.85em',fontStyle:'italic',color:'#666',marginTop:1}}>{breath}</span>
+    </span>
+  );
+};
+
+// ─── FORK MODAL ───────────────────────────────────────────────────────────────
+const ForkModal = ({ seriesName, classCount, onApplyAll, onFork, onCancel }) => (
+  <div style={{position:'fixed',inset:0,zIndex:10000,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={onCancel}>
+    <div style={{position:'absolute',inset:0,background:'rgba(41,35,35,0.35)',backdropFilter:'blur(2px)'}}/>
+    <div style={{position:'relative',background:C.white,borderRadius:16,padding:'28px 32px',boxShadow:'0 20px 60px rgba(0,0,0,0.18)',maxWidth:420,width:'90%'}} onClick={e=>e.stopPropagation()}>
+      <div style={{fontFamily:"'Clash Display',sans-serif",fontSize:17,fontWeight:500,color:C.crimson,marginBottom:10}}>Guardar alterações</div>
+      <p style={{fontFamily:"'Satoshi',sans-serif",fontSize:14,color:C.ink,margin:'0 0 20px',lineHeight:1.55}}>
+        <strong>{seriesName}</strong> aparece em <strong>{classCount} aulas</strong>. Como queres guardar?
+      </p>
+      <div style={{display:'flex',flexDirection:'column',gap:8}}>
+        <button onClick={onApplyAll} style={{padding:'10px 18px',borderRadius:8,border:'none',background:C.crimson,color:C.cream,fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:"'Satoshi',sans-serif",textAlign:'left'}}>
+          Guardar em todas as aulas
+          <div style={{fontSize:11,fontWeight:400,opacity:0.8,marginTop:2}}>A série actualiza-se em todas as {classCount} aulas</div>
+        </button>
+        <button onClick={onFork} style={{padding:'10px 18px',borderRadius:8,border:`1px solid ${C.stone}`,background:'transparent',color:C.ink,fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:"'Satoshi',sans-serif",textAlign:'left'}}>
+          Criar versão nova só para esta aula
+          <div style={{fontSize:11,fontWeight:400,color:C.mist,marginTop:2}}>As outras aulas mantêm a versão anterior</div>
+        </button>
+        <button onClick={onCancel} style={{padding:'8px',background:'none',border:'none',color:C.mist,fontSize:12,cursor:'pointer',fontFamily:"'Satoshi',sans-serif"}}>Cancelar</button>
+      </div>
+    </div>
+  </div>
+);
+
 // ─── AULA VIEW (merged Ver + Modo Aula) ───────────────────────────────────────
-const AulaView = ({ cls, allSeries, onBack, onEditClass, onDeleteClass, onUpdateSeries, onUpdateClass, aiStyle }) => {
+const AulaView = ({ cls, allSeries, onBack, onEditClass, onDeleteClass, onUpdateSeries, onUpdateClass, aiStyle, allClasses=[], onSaveFork }) => {
   const [seriesList, setSeriesList] = useState(()=>cls.seriesIds.map(id=>allSeries.find(s=>s.id===id)).filter(Boolean));
   const [editingId, setEditingId] = useState(null);
   const [notes, setNotes] = useState(cls.notes||"");
   const [shareToken, setShareToken] = useState(cls.shareToken||null);
+  const [forkModal, setForkModal] = useState(null);
   const currentCls = React.useMemo(()=>({...cls, notes}), [cls, notes]);
   const toast_ = useToast();
 
@@ -2099,7 +2168,7 @@ const AulaView = ({ cls, allSeries, onBack, onEditClass, onDeleteClass, onUpdate
     navigator.clipboard.writeText(`${window.location.origin}?share=${token}`);
     toast_?.('Link de partilha copiado!');
   };
-  const [showBreath,     setShowBreath]     = useState(false);
+  const [teachingMode,   setTeachingMode]   = useState(false);
   const [showLyric,      setShowLyric]      = useState(false);
   const [showTiming,     setShowTiming]     = useState(false);
   const [showSetup,      setShowSetup]      = useState(true);
@@ -2114,7 +2183,16 @@ const AulaView = ({ cls, allSeries, onBack, onEditClass, onDeleteClass, onUpdate
 
   const isSig   = cls.type==="signature";
 
-  const saveEdit = updated => { onUpdateSeries(updated); setSeriesList(p=>p.map(s=>s.id===updated.id?updated:s)); setEditingId(null); };
+  const saveEdit = updated => {
+    const usedIn = (allClasses||[]).filter(c => c.seriesIds.includes(updated.id));
+    if (usedIn.length > 1) {
+      setForkModal({ updated, classCount: usedIn.length });
+    } else {
+      onUpdateSeries(updated);
+      setSeriesList(p=>p.map(s=>s.id===updated.id?updated:s));
+      setEditingId(null);
+    }
+  };
 
   const buildRows = ser => {
     const rM=ser.reformer?.movements||[], bM=ser.barre?.movements||[];
@@ -2146,11 +2224,10 @@ const AulaView = ({ cls, allSeries, onBack, onEditClass, onDeleteClass, onUpdate
               {showTiming&&<th style={{fontSize:12,fontWeight:600,color:C.mist,textAlign:"left",padding:"8px 12px"}}>Timing</th>}
               {showLyric &&<th style={{fontSize:12,fontWeight:600,color:C.mist,textAlign:"left",padding:"8px 12px"}}>Lyric</th>}
               {showR&&<th style={{fontSize:12,fontWeight:600,color:C.reformer,textAlign:"left",padding:"8px 12px"}}>Reformer</th>}
-              {showR&&showBreath&&<th style={{fontSize:12,fontWeight:600,color:`${C.reformer}90`,textAlign:"left",padding:"8px 12px"}}>Breath R</th>}
               {showB&&<th style={{fontSize:12,fontWeight:600,color:"#c0507a",textAlign:"left",padding:"8px 12px"}}>Barre</th>}
-              {showB&&showBreath&&<th style={{fontSize:12,fontWeight:600,color:"#c0507a",textAlign:"left",padding:"8px 12px"}}>Breath B</th>}
             </tr></thead>
             <tbody>
+              {ser.openCue&&<tr style={{background:'#e8f5e9'}}><td colSpan={99} style={{padding:'6px 12px',fontStyle:'italic',fontSize:13,color:'#2e7d32'}}><span style={{fontWeight:700,marginRight:8,fontSize:11}}>↳ Abertura</span>{ser.openCue}</td></tr>}
               {rows.map((row,i)=>{
                 const cue=row.transitionCue?.trim(), rk=`${ser.id}-${i}`;
                 return (
@@ -2190,14 +2267,13 @@ const AulaView = ({ cls, allSeries, onBack, onEditClass, onDeleteClass, onUpdate
                     <tr style={{borderBottom:`1px solid ${C.stone}`,background:C.white}}>
                       {showTiming&&<td style={{fontSize:13,padding:"8px 12px",color:C.mist,whiteSpace:"nowrap"}}>{row.timing}</td>}
                       {showLyric &&<td style={{fontSize:13,padding:"8px 12px",color:C.mist,fontStyle:"italic"}}>{row.lyric}</td>}
-                      {showR&&<td title={row.r?.notes||undefined} style={{fontSize:13,padding:"8px 10px",color:C.ink,fontWeight:600,cursor:row.r?.notes?"help":"default"}}>{row.r?.movement||<span style={{color:C.stone}}>—</span>}{row.r?.notes&&<span style={{marginLeft:3,fontSize:9,color:C.mist}}>●</span>}</td>}
-                      {showR&&showBreath&&<td style={{fontSize:11,padding:"8px 10px",color:C.mist}}>{row.r?.breath||""}</td>}
-                      {showB&&<td title={row.b?.notes||undefined} style={{fontSize:13,padding:"8px 10px",color:C.ink,fontWeight:600,cursor:row.b?.notes?"help":"help"}}>{row.b?.movement||<span style={{color:C.stone}}>—</span>}{row.b?.notes&&<span style={{marginLeft:3,fontSize:9,color:C.mist}}>●</span>}</td>}
-                      {showB&&showBreath&&<td style={{fontSize:11,padding:"8px 10px",color:C.mist}}>{row.b?.breath||""}</td>}
+                      {showR&&<td style={{fontSize:13,padding:"8px 10px",color:C.ink,fontWeight:600}}><BreathCell movement={row.r?.movement} breath={row.r?.breath} notes={row.r?.notes}/></td>}
+                      {showB&&<td style={{fontSize:13,padding:"8px 10px",color:C.ink,fontWeight:600}}><BreathCell movement={row.b?.movement} breath={row.b?.breath} notes={row.b?.notes}/></td>}
                     </tr>
                   </React.Fragment>
                 );
               })}
+              {ser.closeCue&&<tr style={{background:'#f5ece8'}}><td colSpan={99} style={{padding:'6px 12px',fontStyle:'italic',fontSize:13,color:'#6d3a1f'}}><span style={{fontWeight:700,marginRight:8,fontSize:11}}>↳ Fecho</span>{ser.closeCue}</td></tr>}
             </tbody>
           </table>
         </div>
@@ -2206,11 +2282,11 @@ const AulaView = ({ cls, allSeries, onBack, onEditClass, onDeleteClass, onUpdate
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
           {showR&&<div style={{background:`${C.reformer}08`,borderRadius:10,padding:12,border:`1px solid ${C.reformer}30`}}>
             <div style={{fontSize:10,fontWeight:700,color:C.reformer,textTransform:"uppercase",marginBottom:8}}>Reformer</div>
-            {ser.reformer?.movements?.map((m,i)=><div key={i} style={{borderBottom:`1px solid ${C.stone}`,padding:"6px 0",display:"flex",gap:8}}><span style={{flex:1,fontSize:13,fontWeight:500,color:C.ink}}>{m.movement}</span>{showBreath&&<span style={{fontSize:11,color:C.mist}}>{m.breath}</span>}</div>)}
+            {ser.reformer?.movements?.map((m,i)=><div key={i} style={{borderBottom:`1px solid ${C.stone}`,padding:"6px 0",display:"flex",gap:8}}><span style={{flex:1,fontSize:13,fontWeight:500,color:C.ink}}><BreathCell movement={m.movement} breath={m.breath} notes={m.notes}/></span></div>)}
           </div>}
           {showB&&<div style={{background:`${C.barre}20`,borderRadius:10,padding:12,border:`1px solid ${C.barre}60`}}>
             <div style={{fontSize:10,fontWeight:700,color:C.barre,textTransform:"uppercase",marginBottom:8}}>Barre</div>
-            {ser.barre?.movements?.map((m,i)=><div key={i} style={{borderBottom:`1px solid ${C.stone}`,padding:"6px 0",display:"flex",gap:8}}><span style={{flex:1,fontSize:13,fontWeight:500,color:C.ink}}>{m.movement}</span>{showBreath&&<span style={{fontSize:11,color:C.mist}}>{m.breath}</span>}</div>)}
+            {ser.barre?.movements?.map((m,i)=><div key={i} style={{borderBottom:`1px solid ${C.stone}`,padding:"6px 0",display:"flex",gap:8}}><span style={{flex:1,fontSize:13,fontWeight:500,color:C.ink}}><BreathCell movement={m.movement} breath={m.breath} notes={m.notes}/></span></div>)}
           </div>}
         </div>
       );
@@ -2222,9 +2298,9 @@ const AulaView = ({ cls, allSeries, onBack, onEditClass, onDeleteClass, onUpdate
           {showTiming&&choreo&&<th style={{fontSize:12,fontWeight:600,color:C.mist,textAlign:"left",padding:"8px 12px"}}>Timing</th>}
           {showLyric&&choreo&&<th style={{fontSize:12,fontWeight:600,color:C.mist,textAlign:"left",padding:"8px 12px"}}>Lyric</th>}
           <th style={{fontSize:10,fontWeight:700,color:C.white,textAlign:"left",padding:"6px 10px"}}>Movement</th>
-          {showBreath&&<th style={{fontSize:12,fontWeight:600,color:C.mist,textAlign:"left",padding:"8px 12px"}}>Breath</th>}
         </tr></thead>
         <tbody>
+          {ser.openCue&&<tr style={{background:'#e8f5e9'}}><td colSpan={99} style={{padding:'6px 12px',fontStyle:'italic',fontSize:13,color:'#2e7d32'}}><span style={{fontWeight:700,marginRight:8,fontSize:11}}>↳ Abertura</span>{ser.openCue}</td></tr>}
           {d?.movements?.map((m,i)=>{
             const cue=m.transitionCue?.trim();
             const nsRk=`${ser.id}-ns-${i}`;
@@ -2265,14 +2341,12 @@ const AulaView = ({ cls, allSeries, onBack, onEditClass, onDeleteClass, onUpdate
                 <tr style={{borderBottom:`1px solid ${C.stone}`,background:C.white}}>
                   {showTiming&&choreo&&<td style={{fontSize:13,padding:"8px 12px",color:C.mist,whiteSpace:"nowrap"}}>{m.timing}</td>}
                   {showLyric&&choreo&&<td style={{fontSize:13,padding:"8px 12px",color:C.mist,fontStyle:"italic"}}>{m.lyric}</td>}
-                  <td title={m.notes||undefined} style={{fontSize:13,padding:"8px 10px",color:C.ink,fontWeight:600,cursor:m.notes?"help":"default"}}>
-                    {m.movement}{m.notes&&<span style={{marginLeft:4,fontSize:9,color:C.mist}}>●</span>}
-                  </td>
-                  {showBreath&&<td style={{fontSize:11,padding:"8px 10px",color:C.mist}}>{m.breath}</td>}
+                  <td style={{fontSize:13,padding:"8px 10px",color:C.ink,fontWeight:600}}><BreathCell movement={m.movement} breath={m.breath} notes={m.notes}/></td>
                 </tr>
               </React.Fragment>
             );
           })}
+          {ser.closeCue&&<tr style={{background:'#f5ece8'}}><td colSpan={99} style={{padding:'6px 12px',fontStyle:'italic',fontSize:13,color:'#6d3a1f'}}><span style={{fontWeight:700,marginRight:8,fontSize:11}}>↳ Fecho</span>{ser.closeCue}</td></tr>}
         </tbody>
       </table>
     );
@@ -2385,6 +2459,10 @@ const AulaView = ({ cls, allSeries, onBack, onEditClass, onDeleteClass, onUpdate
           /* Hide all interactive elements */
           .print-series-card button,
           .print-series-card [draggable] > span:first-child { display: none !important; }
+
+          * { font-size: 10.5px !important; }
+          .breath-print { display: block !important; }
+          .print-hide { display: none !important; }
         }
       `}</style>
 
@@ -2398,6 +2476,7 @@ const AulaView = ({ cls, allSeries, onBack, onEditClass, onDeleteClass, onUpdate
           {onEditClass&&<Btn small variant="ghost" onClick={()=>onEditClass(currentCls)}><Icon name="edit" size={13}/> Editar aula</Btn>}
           <Btn small variant="ghost" onClick={handleShare}><Icon name="link" size={13}/> Partilhar</Btn>
           <Btn small variant="ghost" onClick={()=>window.print()}><Icon name="print" size={13}/> PDF</Btn>
+          <Btn small onClick={()=>setTeachingMode(true)} style={{background:C.crimson,color:C.cream}}>▶ Modo Aula</Btn>
           {onDeleteClass&&<Btn small variant="danger" onClick={()=>onDeleteClass(cls.id)}><Icon name="x" size={13}/> Apagar aula</Btn>}
         </div>
       </div>
@@ -2407,16 +2486,15 @@ const AulaView = ({ cls, allSeries, onBack, onEditClass, onDeleteClass, onUpdate
           <div style={{fontFamily:"'Clash Display', sans-serif",fontSize:22,fontWeight:500,color:C.ink}}>{cls.name}</div>
           {cls.date&&<div style={{fontSize:12,color:C.mist,marginTop:2,marginBottom:10}}>{cls.date}</div>}
           {/* Toggles row — visible on screen between title and content */}
-          <div style={{display:"flex",gap:5,flexWrap:"wrap",marginTop:10}}>
+          {!teachingMode&&<div style={{display:"flex",gap:5,flexWrap:"wrap",marginTop:10}}>
             {tBtn("Timing",showTiming,()=>setShowTiming(p=>!p))}
             {tBtn("Lyric",showLyric,()=>setShowLyric(p=>!p))}
-            {tBtn("Breath",showBreath,()=>setShowBreath(p=>!p))}
             {tBtn("Setup",showSetup,()=>setShowSetup(p=>!p))}
             {tBtn("Intro",showIntro,()=>setShowIntro(p=>!p))}
             {tBtn("Cues",showCues,()=>setShowCues(p=>!p))}
             {tBtn("Instr Notes",showInstrNotes,()=>setShowInstrNotes(p=>!p))}
             {tBtn("Notas da Aula",showAulaNotes,()=>setShowAulaNotes(p=>!p))}
-          </div>
+          </div>}
         </div>
         {/* PDF-only header */}
         <div className="print-only" style={{display:"none",textAlign:"left",marginBottom:8}}>
@@ -2447,12 +2525,13 @@ const AulaView = ({ cls, allSeries, onBack, onEditClass, onDeleteClass, onUpdate
               <AulaSeriesCard ser={ser} idx={idx} isSig={isSig}
                 modR={modR} modB={modB} setModR={setModR} setModB={setModB}
                 showSetup={showSetup} showIntro={showIntro} showCues={showCues} showInstrNotes={showInstrNotes}
-                showTiming={showTiming} showLyric={showLyric} showBreath={showBreath}
+                showTiming={showTiming} showLyric={showLyric}
                 aiStyle={aiStyle}
                 onEdit={()=>setEditingId(ser.id)}
                 onUpdateSeries={onUpdateSeries}
                 setSeriesList={setSeriesList}
                 MovTable={MovTable}
+                teachingMode={teachingMode}
               />
 
             )}
@@ -2460,6 +2539,13 @@ const AulaView = ({ cls, allSeries, onBack, onEditClass, onDeleteClass, onUpdate
         ))}
         </div>
       </div>
+      {teachingMode&&(
+        <button onClick={()=>setTeachingMode(false)} style={{position:'fixed',top:16,right:16,zIndex:9999,padding:'8px 18px',borderRadius:8,border:'none',background:C.crimson,color:C.cream,fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:"'Satoshi',sans-serif",boxShadow:'0 4px 16px rgba(0,0,0,0.2)'}}>✕ Sair do Modo Aula</button>
+      )}
+      {forkModal&&<ForkModal seriesName={forkModal.updated.name} classCount={forkModal.classCount}
+        onApplyAll={()=>{ onUpdateSeries(forkModal.updated); setSeriesList(p=>p.map(s=>s.id===forkModal.updated.id?forkModal.updated:s)); setEditingId(null); setForkModal(null); }}
+        onFork={()=>{ const forked={...forkModal.updated,id:`s-${Date.now()}`,name:forkModal.updated.name+' (versão)'}; onSaveFork?.(forked,cls.id,forkModal.updated.id); setSeriesList(p=>p.map(s=>s.id===forkModal.updated.id?forked:s)); setEditingId(null); setForkModal(null); }}
+        onCancel={()=>setForkModal(null)}/>}
     </div>
   );
 };
@@ -2697,6 +2783,7 @@ const ClassBuilder = ({ allSeries, classes, onSave, onDeleteClass, onViewAula, i
                 <button onClick={()=>remSer(id)} style={{background:"none",border:"none",cursor:"pointer",color:C.coral}}><Icon name="x" size={14}/></button>
               </div>
             );})}
+          {(()=>{ const total = cls.seriesIds.reduce((acc,id)=>{ const s=allSeries.find(x=>x.id===id); if(!s)return acc; const d=parseDuration(s)??s.duration??null; return d!==null?acc+d:acc; },0); if(!total)return null; const m=Math.floor(total/60),s=total%60; return <div style={{fontSize:11,color:C.mist,marginTop:8,fontWeight:600}}>Duração estimada: {s>0?`${m}'${String(s).padStart(2,'0')}''`:`${m}'`}</div>; })()}
         </div>
         <div>
           <div style={{fontSize:12,fontWeight:700,color:C.slate,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Biblioteca disponível</div>
@@ -2933,7 +3020,7 @@ const MovementLibraryPage = ({ series, onUpdateSeries, aiStyle }) => {
 
 
 // ─── STUDIO PAGE ─────────────────────────────────────────────────────────────
-const ProfilePage = ({ profile, user, onProfileUpdate, studioSettings }) => {
+const ProfilePage = ({ profile, user, onProfileUpdate, studioSettings, aiStyle, onAiStyleChange }) => {
   const [editName, setEditName] = useState(profile?.name || '');
   const [editPrefZones, setEditPrefZones] = useState(profile?.settings?.preferred_zones || []);
   const [editPrefClassTypes, setEditPrefClassTypes] = useState(profile?.settings?.class_types || []);
@@ -2942,7 +3029,13 @@ const ProfilePage = ({ profile, user, onProfileUpdate, studioSettings }) => {
   const [newPrefClassType, setNewPrefClassType] = useState('');
   const [newPrefLevel, setNewPrefLevel] = useState('');
   const [saving, setSaving] = useState(false);
+  const [aiLang, setAiLang] = useState('');
+  const [aiTone, setAiTone] = useState('');
+  const [aiCueStyle, setAiCueStyle] = useState('');
+  const [aiNotes, setAiNotes] = useState('');
   const toast_ = useToast();
+
+  useEffect(() => { if (aiStyle) setAiNotes(aiStyle); }, []);
 
   useEffect(() => {
     setEditName(profile?.name || '');
@@ -2953,6 +3046,8 @@ const ProfilePage = ({ profile, user, onProfileUpdate, studioSettings }) => {
 
   const save = async () => {
     setSaving(true);
+    const assembled = [aiLang&&`Ensina em ${aiLang}`, aiTone&&`tom ${aiTone.toLowerCase()}`, aiCueStyle&&`cues ${aiCueStyle.toLowerCase()}`, aiNotes.trim()].filter(Boolean).join('. ');
+    onAiStyleChange?.(assembled);
     const { error } = await supabase.from('profiles').update({
       name: editName,
       settings: { ...(profile?.settings || {}), preferred_zones: editPrefZones, class_types: editPrefClassTypes, preferred_levels: editPrefLevels },
@@ -3040,6 +3135,47 @@ const ProfilePage = ({ profile, user, onProfileUpdate, studioSettings }) => {
             onRemove={l => setEditPrefLevels(p => p.filter(x => x !== l))}
             newVal={newPrefLevel} onNewVal={setNewPrefLevel} placeholder="Adicionar nível personalizado…"
             onAdd={() => { const v = newPrefLevel.trim(); if (v && !editPrefLevels.map(x => x.toLowerCase()).includes(v.toLowerCase())) { setEditPrefLevels(p => [...p, v]); setNewPrefLevel(''); } }} />
+        </div>
+
+        {/* AI Style */}
+        <div>
+          <div style={{fontSize:12,fontWeight:700,color:C.mist,textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:12}}>Estilo de ensino para IA</div>
+          <div style={{display:'flex',flexDirection:'column',gap:14,marginBottom:12}}>
+            <div>
+              <div style={{fontSize:12,color:C.mist,marginBottom:6,fontWeight:600}}>Língua de ensino</div>
+              <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+                {['Português','Inglês','Bilingue'].map(l=>(
+                  <button key={l} onClick={()=>setAiLang(p=>p===l?'':l)} style={{padding:'5px 14px',borderRadius:20,border:`1px solid ${aiLang===l?C.crimson:C.stone}`,background:aiLang===l?`${C.crimson}15`:'transparent',color:aiLang===l?C.crimson:C.mist,fontWeight:aiLang===l?700:500,fontSize:13,cursor:'pointer',fontFamily:"'Satoshi',sans-serif"}}>{l}</button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <div style={{fontSize:12,color:C.mist,marginBottom:6,fontWeight:600}}>Tom</div>
+              <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+                {['Energético','Calmo','Técnico','Motivacional'].map(t=>(
+                  <button key={t} onClick={()=>setAiTone(p=>p===t?'':t)} style={{padding:'5px 14px',borderRadius:20,border:`1px solid ${aiTone===t?C.crimson:C.stone}`,background:aiTone===t?`${C.crimson}15`:'transparent',color:aiTone===t?C.crimson:C.mist,fontWeight:aiTone===t?700:500,fontSize:13,cursor:'pointer',fontFamily:"'Satoshi',sans-serif"}}>{t}</button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <div style={{fontSize:12,color:C.mist,marginBottom:6,fontWeight:600}}>Estilo de cues</div>
+              <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+                {['Curtos e directos','Detalhados','Metáforas visuais'].map(s=>(
+                  <button key={s} onClick={()=>setAiCueStyle(p=>p===s?'':s)} style={{padding:'5px 14px',borderRadius:20,border:`1px solid ${aiCueStyle===s?C.crimson:C.stone}`,background:aiCueStyle===s?`${C.crimson}15`:'transparent',color:aiCueStyle===s?C.crimson:C.mist,fontWeight:aiCueStyle===s?700:500,fontSize:13,cursor:'pointer',fontFamily:"'Satoshi',sans-serif"}}>{s}</button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <div style={{fontSize:12,color:C.mist,marginBottom:6,fontWeight:600}}>Notas livres</div>
+              <textarea value={aiNotes} onChange={e=>setAiNotes(e.target.value)} placeholder="ex. nunca cues de perda de peso, usa sempre nomes em português…" rows={3} style={{width:'100%',fontFamily:"'Satoshi',sans-serif",fontSize:13,color:C.ink,border:`1px solid ${C.stone}`,borderRadius:8,padding:'8px 12px',outline:'none',resize:'vertical',boxSizing:'border-box',lineHeight:1.5}}/>
+            </div>
+            {(aiLang||aiTone||aiCueStyle||aiNotes.trim())&&(
+              <div style={{background:C.cream,border:`1px solid ${C.stone}`,borderRadius:8,padding:'10px 14px',fontSize:12,color:C.mist}}>
+                <span style={{fontWeight:700,color:C.ink}}>Preview: </span>
+                {[aiLang&&`Ensina em ${aiLang}`,aiTone&&`tom ${aiTone.toLowerCase()}`,aiCueStyle&&`cues ${aiCueStyle.toLowerCase()}`,aiNotes.trim()].filter(Boolean).join('. ')}
+              </div>
+            )}
+          </div>
         </div>
 
         <button onClick={save} disabled={saving} style={{ alignSelf: 'flex-start', padding: '9px 24px', borderRadius: 8, border: 'none', background: saving ? C.stone : C.crimson, color: C.cream, fontWeight: 700, fontSize: 13, cursor: saving ? 'not-allowed' : 'pointer', fontFamily: "'Satoshi',sans-serif" }}>
@@ -3785,6 +3921,17 @@ export default function HavenInstructor() {
   };
   const updateClass = async c => { setClasses(p=>p.map(x=>x.id===c.id?c:x)); toast("Aula guardada"); if (user) api.upsertClass(c, user.id); };
 
+  const saveFork = async (forkedSeries, classId, oldSeriesId) => {
+    const newS = { ...forkedSeries, createdBy: user?.id, createdAt: new Date().toISOString().split('T')[0], visibility: 'personal', studioId: null };
+    setSeries(p => [...p, newS]);
+    if (user) await api.upsertSeries(newS, user.id);
+    const cls = classes.find(c => c.id === classId);
+    if (cls) {
+      const updated = { ...cls, seriesIds: cls.seriesIds.map(id => id === oldSeriesId ? forkedSeries.id : id) };
+      await saveClass(updated);
+    }
+  };
+
   const publishToStudio = async s => {
     if (!profile?.studio_id) return;
     const updated = { ...s, visibility: 'pending_studio', studioId: profile.studio_id };
@@ -3880,7 +4027,11 @@ export default function HavenInstructor() {
                 <button key={id} onClick={()=>goTab(id)} style={{fontFamily:"'Satoshi', sans-serif",fontWeight:600,fontSize:12,padding:"6px 16px",borderRadius:6,border:"none",cursor:"pointer",background:screen.mode===id?C.cream:"transparent",color:screen.mode===id?C.crimson:`${C.cream}80`,transition:"all 0.15s"}}>{lbl}</button>
               ))}
             </div>
-            <AiStylePanel value={aiStyle} onChange={v=>setAiStyle(v)}/>
+            <button onClick={()=>goTab('perfil')} title="Editar estilo de ensino IA" style={{fontFamily:"'Satoshi',sans-serif",fontWeight:600,fontSize:12,padding:"6px 13px",borderRadius:6,border:'none',cursor:'pointer',background:aiStyle?.trim()?`rgba(255,255,255,0.12)`:'transparent',color:aiStyle?.trim()?C.cream:`${C.cream}70`,display:'flex',alignItems:'center',gap:6}}>
+              <Icon name="brain" size={13}/>
+              <span>Estilo IA</span>
+              {aiStyle?.trim()&&<span style={{width:6,height:6,borderRadius:'50%',background:C.blue,flexShrink:0}}/>}
+            </button>
             <button onClick={()=>supabase.auth.signOut()} style={{fontFamily:"'Satoshi',sans-serif",fontWeight:600,fontSize:12,padding:"6px 14px",borderRadius:6,border:`1px solid ${C.cream}40`,background:"transparent",color:`${C.cream}80`,cursor:"pointer"}} title="Sair">Sair</button>
           </div>
         </div>
@@ -3962,7 +4113,8 @@ export default function HavenInstructor() {
         {/* ── PERFIL ── */}
         {screen.mode==="perfil"&&(
           <ProfilePage profile={profile} user={user} onProfileUpdate={p=>setProfile(p)}
-            studioSettings={profile?.studios?.settings}/>
+            studioSettings={profile?.studios?.settings}
+            aiStyle={aiStyle} onAiStyleChange={v=>{setAiStyle(v); api.save('aistyle',{value:v});}}/>
         )}
 
         {/* ── MOVEMENTS ── */}
@@ -3996,6 +4148,8 @@ export default function HavenInstructor() {
             onUpdateSeries={saveSeries}
             onUpdateClass={updateClass}
             aiStyle={aiStyle}
+            allClasses={classes}
+            onSaveFork={saveFork}
           />
         )}
 
