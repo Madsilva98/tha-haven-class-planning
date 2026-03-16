@@ -373,12 +373,17 @@ const seriesFromDB = row => ({
 const classToDB = (c, userId) => ({
   id: c.id, name: c.name, type: c.type, date: c.date || null,
   series_order: c.seriesIds || [], notes: c.notes || null,
-  created_by: userId, visibility: 'personal',
+  created_by: userId, visibility: c.visibility || 'personal',
+  studio_id: c.studioId || null,
+  level: c.level || null,
 });
 const classFromDB = row => ({
   id: row.id, name: row.name, type: row.type, date: row.date || '',
   seriesIds: row.series_order || [], notes: row.notes || '',
   shareToken: row.share_token || null,
+  level: row.level || '',
+  visibility: row.visibility || 'personal',
+  studioId: row.studio_id || null,
 });
 
 // ─── PERSIST (Supabase) ──────────────────────────────────────────────────────
@@ -801,6 +806,10 @@ const SeriesCard = ({ series, onEdit, onDelete, onUpdateSeries, aiStyle, modalit
   // sync when parent saves (e.g. after full edit)
   React.useEffect(()=>setLocalSeries(series), [series]);
 
+  const confirm_ = useConfirm();
+  const [openCueRows, setOpenCueRows] = React.useState(new Set());
+  const toggleCueRow = key => setOpenCueRows(prev => { const s=new Set(prev); s.has(key)?s.delete(key):s.add(key); return s; });
+
   // proxy: update local state + persist to parent
   const setSeries_ = updated => { setLocalSeries(updated); if(onUpdateSeries) onUpdateSeries(updated); };
 
@@ -839,7 +848,13 @@ const SeriesCard = ({ series, onEdit, onDelete, onUpdateSeries, aiStyle, modalit
                 const rk=`${localSeries.id}-${i}`;
                 return (
                   <React.Fragment key={i}>
-                    {i>0&&(
+                    {i>0&&(!cue&&!openCueRows.has(rk)?(
+                      <tr style={{background:"transparent"}}>
+                        <td colSpan={99} style={{padding:"2px 10px"}}>
+                          <button onClick={e=>{e.stopPropagation();toggleCueRow(rk);}} style={{background:"none",border:"none",cursor:"pointer",color:C.mist,fontSize:11,fontFamily:"'Satoshi',sans-serif",fontWeight:600,padding:"2px 4px",opacity:0.6}}>+ cue</button>
+                        </td>
+                      </tr>
+                    ):(
                       <tr className="print-cue-row" style={{background:"#F4EDE8"}}>
                         <td colSpan={99} style={{padding:"4px 10px"}}>
                           <div style={{display:"flex",alignItems:"center",gap:6}}>
@@ -861,7 +876,7 @@ const SeriesCard = ({ series, onEdit, onDelete, onUpdateSeries, aiStyle, modalit
                           </div>
                         </td>
                       </tr>
-                    )}
+                    ))}
                     <tr style={{borderBottom:`1px solid ${C.stone}`,background:C.white}}>
                       {choreo&&<td style={{fontSize:13,padding:"8px 12px",color:C.mist,whiteSpace:"nowrap"}}>{row.timing}</td>}
                       {choreo&&<td style={{fontSize:13,padding:"8px 12px",color:C.mist,fontStyle:"italic",maxWidth:180}}>{row.lyric}</td>}
@@ -889,10 +904,13 @@ const SeriesCard = ({ series, onEdit, onDelete, onUpdateSeries, aiStyle, modalit
     return (
       <div>
         {d?.movements?.map((m,i)=>{
-          const cue=m.transitionCue?.trim();
+          const nsCue = m.transitionCue?.trim();
+          const nsKey = `${localSeries.id}-ns-${i}`;
           return (
             <React.Fragment key={i}>
-              {i>0&&(
+              {i>0&&(!nsCue&&!openCueRows.has(nsKey)?(
+                <button onClick={e=>{e.stopPropagation();toggleCueRow(nsKey);}} style={{background:"none",border:"none",cursor:"pointer",color:C.mist,fontSize:11,fontFamily:"'Satoshi',sans-serif",fontWeight:600,padding:"2px 4px",opacity:0.6,display:"block"}}>+ cue</button>
+              ):(
                 <div style={{background:C.cream,padding:"4px 10px",borderRadius:4,margin:"2px 0",display:"flex",alignItems:"center",gap:6}}>
                   <span style={{fontSize:13,color:"#7a4010",fontWeight:700,flexShrink:0}}>✦</span>
                   <input
@@ -910,7 +928,7 @@ const SeriesCard = ({ series, onEdit, onDelete, onUpdateSeries, aiStyle, modalit
                   />
                   <CardCueGen series={localSeries} rowIndex={i} rows={null} aiStyle={aiStyle} onUpdate={setSeries_} nonsig/>
                 </div>
-              )}
+              ))}
               <div style={{display:"flex",gap:10,padding:"7px 0",borderBottom:`1px solid ${C.stone}`,background:C.white}}>
                 {choreo&&<span style={{fontSize:13,color:C.mist,minWidth:90,flexShrink:0}}>{m.timing}</span>}
                 {choreo&&<span style={{fontSize:13,color:C.mist,minWidth:100,fontStyle:"italic",flexShrink:0}}>{m.lyric}</span>}
@@ -922,13 +940,6 @@ const SeriesCard = ({ series, onEdit, onDelete, onUpdateSeries, aiStyle, modalit
             </React.Fragment>
           );
         })}
-        <div style={{paddingTop:6}} onClick={e=>e.stopPropagation()}>
-          <Btn small variant="ghost" onClick={e=>{ e.stopPropagation();
-            const k=localSeries.type==="barre"?"barre":"reformer";
-            const newM=[...(localSeries[k]?.movements||[]),{movement:"",breath:"",timing:"",lyric:"",transitionCue:"",notes:""}];
-            setSeries_({...localSeries,[k]:{...localSeries[k],movements:newM}});
-          }}><Icon name="plus" size={12}/> Adicionar movimento</Btn>
-        </div>
       </div>
     );
   };
@@ -954,6 +965,7 @@ const SeriesCard = ({ series, onEdit, onDelete, onUpdateSeries, aiStyle, modalit
               fontSize:11,color:series.status==="approved"?"#1a4a7a":"#8a7f78",fontWeight:700
             }}>{series.status==="approved"?"✓":"…"}</span>
             {series.visibility==='studio'&&<span style={{fontSize:10,fontWeight:700,letterSpacing:"0.05em",padding:"2px 8px",borderRadius:20,background:"#e8f0fe",color:"#1a56db",border:"1px solid #c3d3f8"}}>STUDIO</span>}
+            {series.visibility==='pending_studio'&&<span style={{fontSize:10,fontWeight:700,letterSpacing:"0.05em",padding:"2px 8px",borderRadius:20,background:"#fef9ec",color:"#b45309",border:"1px solid #fcd34d"}}>⏳ EM REVISÃO</span>}
             {series.visibility==='public'&&<span style={{fontSize:10,fontWeight:700,letterSpacing:"0.05em",padding:"2px 8px",borderRadius:20,background:"#ecfdf5",color:"#059669",border:"1px solid #a7f3d0"}}>PÚBLICO</span>}
             {series.song&&<span style={{fontSize:12,color:C.mist,display:"inline-flex",alignItems:"center",gap:4}}><Icon name="music" size={11}/>{series.song}</span>}
             {(()=>{
@@ -981,9 +993,11 @@ const SeriesCard = ({ series, onEdit, onDelete, onUpdateSeries, aiStyle, modalit
           {expanded&&(<>
             {isOwner&&<Btn small variant="ghost" onClick={e=>{e.stopPropagation();onEdit(series);}}><Icon name="edit" size={13}/> Editar</Btn>}
             {!isOwner&&onCopy&&<Btn small variant="ghost" onClick={e=>{e.stopPropagation();onCopy(series);}}><Icon name="copy" size={13}/> Copiar</Btn>}
-            {isOwner&&hasStudio&&series.visibility==='personal'&&onPublish&&<Btn small variant="ghost" onClick={e=>{e.stopPropagation();onPublish(series);}} style={{color:"#1a56db"}}>↑ Studio</Btn>}
+            {isOwner&&hasStudio&&series.visibility==='personal'&&onPublish&&<Btn small variant="ghost" onClick={e=>{e.stopPropagation();onPublish(series);}} title="Submeter para revisão do studio" style={{color:"#1a56db"}}>↑ Studio</Btn>}
+            {isOwner&&series.visibility==='pending_studio'&&onUnpublish&&<Btn small variant="ghost" onClick={e=>{e.stopPropagation();onUnpublish(series);}} style={{color:C.mist}}>Cancelar submissão</Btn>}
             {isOwner&&series.visibility==='studio'&&onUnpublish&&<Btn small variant="ghost" onClick={e=>{e.stopPropagation();onUnpublish(series);}} style={{color:C.mist}}>Tornar privada</Btn>}
-            {isOwner&&series.visibility!=='public'&&onMakePublic&&<Btn small variant="ghost" onClick={e=>{e.stopPropagation();onMakePublic(series);}} style={{color:"#059669"}}>↑ Público</Btn>}
+            {isOwner&&series.visibility==='public'&&onUnpublish&&<Btn small variant="ghost" onClick={e=>{e.stopPropagation();onUnpublish(series);}} style={{color:C.mist}}>Tornar privada</Btn>}
+            {isOwner&&series.visibility!=='public'&&onMakePublic&&<Btn small variant="ghost" onClick={async e=>{e.stopPropagation();const ok=await confirm_?.("Tornares esta série pública significa que qualquer Instructor do The Haven a poderá ver. Tens a certeza?",{confirmLabel:"Tornar pública",danger:false});if(ok)onMakePublic(series);}} style={{color:"#059669"}}>↑ Público</Btn>}
           </>)}
         </div>
         <span style={{ color:C.mist, display:"inline-flex", transition:"transform 0.2s",
@@ -2089,6 +2103,8 @@ const AulaView = ({ cls, allSeries, onBack, onEditClass, onDeleteClass, onUpdate
   const [showAulaNotes,  setShowAulaNotes]  = useState(false);
   const [modR, setModR] = useState({});
   const [modB, setModB] = useState({});
+  const [openCueRows, setOpenCueRows] = React.useState(new Set());
+  const toggleCueRow = key => setOpenCueRows(prev => { const s=new Set(prev); s.has(key)?s.delete(key):s.add(key); return s; });
 
   const isSig   = cls.type==="signature";
 
@@ -2133,7 +2149,13 @@ const AulaView = ({ cls, allSeries, onBack, onEditClass, onDeleteClass, onUpdate
                 const cue=row.transitionCue?.trim(), rk=`${ser.id}-${i}`;
                 return (
                   <React.Fragment key={i}>
-                    {i>0&&showCues&&(
+                    {i>0&&showCues&&(!cue&&!openCueRows.has(rk)?(
+                      <tr style={{background:"transparent"}}>
+                        <td colSpan={99} style={{padding:"2px 10px"}}>
+                          <button onClick={()=>toggleCueRow(rk)} style={{background:"none",border:"none",cursor:"pointer",color:C.mist,fontSize:11,fontFamily:"'Satoshi',sans-serif",fontWeight:600,padding:"2px 4px",opacity:0.6}}>+ cue</button>
+                        </td>
+                      </tr>
+                    ):(
                       <tr className="print-cue-row" style={{background:"#F4EDE8"}}>
                         <td colSpan={99} style={{padding:"4px 10px"}}>
                           <div style={{display:"flex",alignItems:"center",gap:6}}>
@@ -2158,7 +2180,7 @@ const AulaView = ({ cls, allSeries, onBack, onEditClass, onDeleteClass, onUpdate
                           </div>
                         </td>
                       </tr>
-                    )}
+                    ))}
                     <tr style={{borderBottom:`1px solid ${C.stone}`,background:C.white}}>
                       {showTiming&&<td style={{fontSize:13,padding:"8px 12px",color:C.mist,whiteSpace:"nowrap"}}>{row.timing}</td>}
                       {showLyric &&<td style={{fontSize:13,padding:"8px 12px",color:C.mist,fontStyle:"italic"}}>{row.lyric}</td>}
@@ -2199,9 +2221,16 @@ const AulaView = ({ cls, allSeries, onBack, onEditClass, onDeleteClass, onUpdate
         <tbody>
           {d?.movements?.map((m,i)=>{
             const cue=m.transitionCue?.trim();
+            const nsRk=`${ser.id}-ns-${i}`;
             return (
               <React.Fragment key={i}>
-                {i>0&&showCues&&(
+                {i>0&&showCues&&(!cue&&!openCueRows.has(nsRk)?(
+                  <tr style={{background:"transparent"}}>
+                    <td colSpan={99} style={{padding:"2px 10px"}}>
+                      <button onClick={()=>toggleCueRow(nsRk)} style={{background:"none",border:"none",cursor:"pointer",color:C.mist,fontSize:11,fontFamily:"'Satoshi',sans-serif",fontWeight:600,padding:"2px 4px",opacity:0.6}}>+ cue</button>
+                    </td>
+                  </tr>
+                ):(
                   <tr className="print-cue-row" style={{background:"#F4EDE8"}}>
                     <td colSpan={99} style={{padding:"4px 10px"}}>
                       <div style={{display:"flex",alignItems:"center",gap:6}}>
@@ -2226,7 +2255,7 @@ const AulaView = ({ cls, allSeries, onBack, onEditClass, onDeleteClass, onUpdate
                       </div>
                     </td>
                   </tr>
-                )}
+                ))}
                 <tr style={{borderBottom:`1px solid ${C.stone}`,background:C.white}}>
                   {showTiming&&choreo&&<td style={{fontSize:13,padding:"8px 12px",color:C.mist,whiteSpace:"nowrap"}}>{m.timing}</td>}
                   {showLyric&&choreo&&<td style={{fontSize:13,padding:"8px 12px",color:C.mist,fontStyle:"italic"}}>{m.lyric}</td>}
@@ -2359,6 +2388,7 @@ const AulaView = ({ cls, allSeries, onBack, onEditClass, onDeleteClass, onUpdate
         <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10,flexWrap:"wrap"}}>
           <Btn variant="ghost" onClick={onBack}><Icon name="back" size={14}/> Voltar</Btn>
           <h2 style={{fontFamily:"'Clash Display', sans-serif",fontSize:24,fontWeight:500,color:C.ink,margin:0,flex:1}}>{cls.name}</h2>
+          {cls.level&&<span style={{fontSize:11,fontWeight:600,color:C.neutral,background:C.stone,borderRadius:20,padding:"2px 10px",letterSpacing:"0.04em",flexShrink:0}}>{cls.level}</span>}
           {onEditClass&&<Btn small variant="ghost" onClick={()=>onEditClass(currentCls)}><Icon name="edit" size={13}/> Editar aula</Btn>}
           <Btn small variant="ghost" onClick={handleShare}><Icon name="link" size={13}/> Partilhar</Btn>
           <Btn small variant="ghost" onClick={()=>window.print()}><Icon name="print" size={13}/> PDF</Btn>
@@ -2430,6 +2460,7 @@ const AulaView = ({ cls, allSeries, onBack, onEditClass, onDeleteClass, onUpdate
 
 // ─── AI CLASS BUILDER ─────────────────────────────────────────────────────────
 const DEFAULT_STUDIO_CLASS_TYPES = ['Reformer', 'Matwork', 'Barre', 'Cycling'];
+const DEFAULT_CLASS_LEVELS = ['foundations', 'intermediate', 'advanced', 'flow', 'dynamic'];
 const DEFAULT_STUDIO_ZONES = ['Glutes', 'Hamstrings', 'Quads', 'Inner Thighs', 'Calves', 'Core', 'Back', 'Arms', 'Shoulders', 'Chest', 'Full Body', 'Cardio', 'Warm-Up', 'Mobility', 'Flexibility', 'Balance'];
 
 const AIClassBuilder = ({ available, allSeries, cls, aiStyle, onApply }) => {
@@ -2546,13 +2577,14 @@ Only use IDs from the available list. Return only the JSON array, no explanation
 };
 
 // ─── CLASS BUILDER ────────────────────────────────────────────────────────────
-const ClassBuilder = ({ allSeries, classes, onSave, onDeleteClass, onViewAula, initialEditCls, aiStyle }) => {
+const ClassBuilder = ({ allSeries, classes, onSave, onDeleteClass, onViewAula, initialEditCls, aiStyle, studioSettings, onPublishClass, hasStudio }) => {
   const [cls, setCls]     = useState(initialEditCls||null);
   const [editing, setEditing] = useState(!!initialEditCls);
 
   const dragRef   = React.useRef(null);
   const [zoneFilter, setZoneFilter] = React.useState("all");
-  const newClass  = type => { setCls({id:`c-${Date.now()}`,name:"",type,date:new Date().toISOString().split("T")[0],seriesIds:[],notes:""}); setEditing(true); };
+  const classLevels = studioSettings?.class_levels || DEFAULT_CLASS_LEVELS;
+  const newClass  = type => { setCls({id:`c-${Date.now()}`,name:"",type,date:new Date().toISOString().split("T")[0],seriesIds:[],notes:"",level:""}); setEditing(true); };
   const editClass = c    => { setCls({...c}); setEditing(true); };
   const addSer    = id   => setCls(p=>({...p,seriesIds:[...p.seriesIds,id]}));
   const remSer    = id   => setCls(p=>({...p,seriesIds:p.seriesIds.filter(s=>s!==id)}));
@@ -2588,6 +2620,9 @@ const ClassBuilder = ({ allSeries, classes, onSave, onDeleteClass, onViewAula, i
               <div style={{fontSize:12,color:C.mist,marginTop:2}}>{c.date} · {c.seriesIds.length} série{c.seriesIds.length!==1?"s":""}</div>
             </div>
             <Badge label={c.type==="signature"?"✦ Signature":c.type} color={c.type==="signature"?"gold":c.type==="reformer"?"teal":"coral"}/>
+            {c.level&&<span style={{fontSize:11,fontWeight:600,color:C.neutral,background:C.stone,borderRadius:20,padding:"2px 10px",letterSpacing:"0.04em"}}>{c.level}</span>}
+            {c.visibility==='pending_studio'&&<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:20,background:"#fef9ec",color:"#b45309",border:"1px solid #fcd34d"}}>⏳ Em revisão</span>}
+            {hasStudio&&c.visibility==='personal'&&onPublishClass&&<Btn small variant="ghost" onClick={()=>onPublishClass(c)} title="Submeter para revisão do studio" style={{color:"#1a56db"}}>↑ Studio</Btn>}
             <Btn small variant="ghost" onClick={()=>editClass(c)}><Icon name="edit" size={13}/> Editar</Btn>
             <Btn small onClick={()=>onViewAula(c)}><Icon name="eye" size={13}/> Ver Aula</Btn>
             <button onClick={()=>onDeleteClass(c.id)} title="Apagar aula" style={{background:"none",border:`1px solid ${C.stone}`,borderRadius:8,cursor:"pointer",color:C.coral,padding:"6px 8px",display:"inline-flex",alignItems:"center"}}><Icon name="x" size={13}/></button>
@@ -2615,6 +2650,20 @@ const ClassBuilder = ({ allSeries, classes, onSave, onDeleteClass, onViewAula, i
           <input type="date" value={cls.date} onChange={e=>setCls(p=>({...p,date:e.target.value}))} style={{width:"100%",fontFamily:"'Satoshi', sans-serif",fontSize:13,padding:"8px 12px",borderRadius:8,border:`1px solid ${C.stone}`,outline:"none",boxSizing:"border-box"}}/>
         </div>
         <div style={{paddingBottom:2}}><Badge label={cls.type==="signature"?"✦ Signature":cls.type==="reformer"?"Reformer":"Barre"} color={cls.type==="signature"?"gold":cls.type==="reformer"?"teal":"coral"}/></div>
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:4}}>
+        <label style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em"}}>Nível</label>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+          {classLevels.map(lvl=>(
+            <button key={lvl} onClick={()=>setCls(p=>({...p,level:p.level===lvl?"":lvl}))}
+              style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 14px",borderRadius:20,
+                border:`1px solid ${cls.level===lvl?C.neutral:C.stone}`,
+                background:cls.level===lvl?C.neutral:"transparent",
+                color:cls.level===lvl?C.white:C.mist,cursor:"pointer"}}>
+              {lvl}
+            </button>
+          ))}
+        </div>
       </div>
       <AIClassBuilder
         available={available}
@@ -2735,22 +2784,26 @@ const AiStylePanel = ({ value, onChange }) => {
 // ─── MOVEMENT LIBRARY PAGE ────────────────────────────────────────────────────
 const MovementLibraryPage = ({ series, onUpdateSeries, aiStyle }) => {
   const [search, setSearch] = React.useState("");
+  const [expandedMovs, setExpandedMovs] = React.useState(new Set());
+  const [editingNotes, setEditingNotes] = React.useState({});
+  const toast_ = useToast();
 
-  // Deduplicated movements with notes aggregated
+  // Deduplicated movements with notes aggregated and seriesRefs collected
   const movements = React.useMemo(()=>{
     const map = new Map();
     series.forEach(s=>{
-      const add = (movs, side, type) => (movs||[]).forEach(m=>{
+      const add = (movs, sideKey, type) => (movs||[]).forEach((m,idx)=>{
         if(!m.movement) return;
         const key = m.movement.toLowerCase().trim();
-        if(!map.has(key)) map.set(key, { movement:m.movement, notes:new Set(), series:new Set(), types:new Set() });
+        if(!map.has(key)) map.set(key, { movement:m.movement, notes:new Set(), series:new Set(), types:new Set(), refs:[] });
         const e = map.get(key);
         if(m.notes) m.notes.split(/[.;·]/).map(n=>n.trim()).filter(Boolean).forEach(n=>e.notes.add(n));
         e.series.add(s.name);
         e.types.add(type);
+        e.refs.push({ seriesId: s.id, sideKey, movIndex: idx });
       });
-      add(s.reformer?.movements, "r", s.type==="barre"?"barre":"reformer");
-      if(s.type==="signature"||s.type==="barre") add(s.barre?.movements, "b", "barre");
+      add(s.reformer?.movements, "reformer", s.type==="barre"?"barre":"reformer");
+      if(s.type==="signature"||s.type==="barre") add(s.barre?.movements, "barre", "barre");
     });
     return [...map.values()].sort((a,b)=>a.movement.localeCompare(b.movement,"pt"));
   }, [series]);
@@ -2760,6 +2813,30 @@ const MovementLibraryPage = ({ series, onUpdateSeries, aiStyle }) => {
     : movements;
 
   const typeColor = t => t==="reformer"?C.reformer:t==="barre"?"#c0507a":C.sig;
+
+  const toggleExpand = key => setExpandedMovs(prev => { const s=new Set(prev); s.has(key)?s.delete(key):s.add(key); return s; });
+
+  const saveNotes = async (movKey, refs) => {
+    const notes = editingNotes[movKey] ?? '';
+    // Group refs by seriesId to avoid multiple updates to same series
+    const bySeries = {};
+    refs.forEach(r => { if(!bySeries[r.seriesId]) bySeries[r.seriesId]=[]; bySeries[r.seriesId].push(r); });
+    for (const [seriesId, seriesRefs] of Object.entries(bySeries)) {
+      const s = series.find(x => x.id === seriesId);
+      if (!s) continue;
+      let updated = { ...s };
+      seriesRefs.forEach(r => {
+        const side = updated[r.sideKey];
+        if (!side?.movements) return;
+        const movs = [...side.movements];
+        movs[r.movIndex] = { ...movs[r.movIndex], notes };
+        updated = { ...updated, [r.sideKey]: { ...side, movements: movs } };
+      });
+      await onUpdateSeries(updated);
+    }
+    toast_?.('Notas guardadas');
+    toggleExpand(movKey);
+  };
 
   return (
     <div>
@@ -2776,31 +2853,70 @@ const MovementLibraryPage = ({ series, onUpdateSeries, aiStyle }) => {
               <th style={{textAlign:"left",padding:"10px 16px",fontSize:11,fontWeight:700,color:C.neutral,textTransform:"uppercase",letterSpacing:"0.06em"}}>Movimento</th>
               <th style={{textAlign:"left",padding:"10px 12px",fontSize:11,fontWeight:700,color:C.neutral,textTransform:"uppercase",letterSpacing:"0.06em"}}>Tipo</th>
               <th style={{textAlign:"left",padding:"10px 12px",fontSize:11,fontWeight:700,color:C.neutral,textTransform:"uppercase",letterSpacing:"0.06em"}}>Séries</th>
+              <th style={{width:40}}></th>
             </tr>
           </thead>
           <tbody>
-            {filtered.map((m,i)=>(
-              <tr key={m.movement} style={{borderTop:`1px solid ${C.stone}`,background:i%2===0?C.white:`${C.cream}80`}}>
-                <td style={{padding:"10px 16px",fontWeight:600,color:C.ink,verticalAlign:"top"}}>
-                  {m.movement}
-                  {m.notes.size>0&&(
-                    <div style={{fontSize:11,color:C.mist,fontStyle:"italic",marginTop:3,lineHeight:1.45}}>
-                      {[...m.notes].join(" · ")}
-                    </div>
+            {filtered.map((m,i)=>{
+              const movKey = m.movement.toLowerCase().trim();
+              const isExpanded = expandedMovs.has(movKey);
+              const aggregatedNotes = [...m.notes].join(' · ');
+              const notesText = editingNotes[movKey] !== undefined ? editingNotes[movKey] : aggregatedNotes;
+              return (
+                <React.Fragment key={m.movement}>
+                  <tr style={{borderTop:`1px solid ${C.stone}`,background:i%2===0?C.white:`${C.cream}80`}}>
+                    <td style={{padding:"10px 16px",fontWeight:600,color:C.ink,verticalAlign:"top"}}>
+                      <span title={aggregatedNotes||undefined}>{m.movement}</span>
+                      {!isExpanded&&m.notes.size>0&&(
+                        <div style={{fontSize:11,color:C.mist,fontStyle:"italic",marginTop:3,lineHeight:1.45}}>
+                          {aggregatedNotes}
+                        </div>
+                      )}
+                    </td>
+                    <td style={{padding:"10px 12px",verticalAlign:"top"}}>
+                      <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+                        {[...m.types].map(t=>(
+                          <span key={t} style={{fontSize:10,fontWeight:700,color:typeColor(t),background:`${typeColor(t)}15`,border:`1px solid ${typeColor(t)}40`,borderRadius:20,padding:"2px 8px",textTransform:"uppercase",letterSpacing:"0.04em"}}>{t}</span>
+                        ))}
+                      </div>
+                    </td>
+                    <td style={{padding:"10px 12px",verticalAlign:"top",fontSize:11,color:C.mist}}>
+                      {[...m.series].join(", ")}
+                    </td>
+                    <td style={{padding:"6px 12px",verticalAlign:"top",textAlign:"right"}}>
+                      <button onClick={()=>{ if(!isExpanded) setEditingNotes(p=>({...p,[movKey]:aggregatedNotes})); toggleExpand(movKey); }}
+                        title={isExpanded?"Fechar":"Editar notas"}
+                        style={{background:"none",border:"none",cursor:"pointer",color:C.mist,fontSize:13,padding:"2px 6px",borderRadius:6,fontFamily:"'Satoshi',sans-serif",lineHeight:1}}>
+                        {isExpanded?'✕':'✎'}
+                      </button>
+                    </td>
+                  </tr>
+                  {isExpanded&&(
+                    <tr style={{background:i%2===0?`${C.cream}60`:`${C.stone}30`,borderBottom:`1px solid ${C.stone}`}}>
+                      <td colSpan={4} style={{padding:"8px 16px 14px"}}>
+                        <div style={{fontSize:11,color:C.mist,marginBottom:6}}>Notas (aplicadas a todas as ocorrências deste movimento):</div>
+                        <textarea
+                          value={notesText}
+                          onChange={e=>setEditingNotes(p=>({...p,[movKey]:e.target.value}))}
+                          rows={3}
+                          style={{width:"100%",fontFamily:"'Satoshi',sans-serif",fontSize:12,color:C.ink,border:`1px solid ${C.stone}`,borderRadius:8,padding:"8px 12px",outline:"none",resize:"vertical",boxSizing:"border-box",lineHeight:1.5}}
+                        />
+                        <div style={{display:"flex",gap:8,marginTop:8}}>
+                          <button onClick={()=>saveNotes(movKey,m.refs)}
+                            style={{padding:"6px 16px",borderRadius:8,border:"none",background:C.crimson,color:C.cream,fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"'Satoshi',sans-serif"}}>
+                            Guardar
+                          </button>
+                          <button onClick={()=>toggleExpand(movKey)}
+                            style={{padding:"6px 16px",borderRadius:8,border:`1px solid ${C.stone}`,background:"transparent",color:C.ink,fontWeight:600,fontSize:12,cursor:"pointer",fontFamily:"'Satoshi',sans-serif"}}>
+                            Cancelar
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
                   )}
-                </td>
-                <td style={{padding:"10px 12px",verticalAlign:"top"}}>
-                  <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
-                    {[...m.types].map(t=>(
-                      <span key={t} style={{fontSize:10,fontWeight:700,color:typeColor(t),background:`${typeColor(t)}15`,border:`1px solid ${typeColor(t)}40`,borderRadius:20,padding:"2px 8px",textTransform:"uppercase",letterSpacing:"0.04em"}}>{t}</span>
-                    ))}
-                  </div>
-                </td>
-                <td style={{padding:"10px 12px",verticalAlign:"top",fontSize:11,color:C.mist}}>
-                  {[...m.series].join(", ")}
-                </td>
-              </tr>
-            ))}
+                </React.Fragment>
+              );
+            })}
           </tbody>
         </table>
         {filtered.length===0&&<div style={{padding:40,textAlign:"center",color:C.mist}}>Nenhum movimento encontrado.</div>}
@@ -2811,18 +2927,32 @@ const MovementLibraryPage = ({ series, onUpdateSeries, aiStyle }) => {
 
 
 // ─── STUDIO PAGE ─────────────────────────────────────────────────────────────
-const StudioPage = ({ profile, user, onProfileUpdate }) => {
+const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary }) => {
+  const [activeTab, setActiveTab] = useState('series');
   const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [studioSeries, setStudioSeries] = useState([]);
+  const [studioClasses, setStudioClasses] = useState([]);
+  const [pendingSeries, setPendingSeries] = useState([]);
+  const [pendingClasses, setPendingClasses] = useState([]);
+  const [loadingContent, setLoadingContent] = useState(false);
   const [joinSlug, setJoinSlug] = useState('');
   const [joinError, setJoinError] = useState('');
   const [joining, setJoining] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [editClassTypes, setEditClassTypes] = useState([]);
   const [editZones, setEditZones] = useState([]);
+  const [editClassLevels, setEditClassLevels] = useState([]);
   const [newClassType, setNewClassType] = useState('');
   const [newZone, setNewZone] = useState('');
+  const [newClassLevel, setNewClassLevel] = useState('');
   const [savingSettings, setSavingSettings] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [editPrefZones, setEditPrefZones] = useState([]);
+  const [editPrefClassTypes, setEditPrefClassTypes] = useState([]);
+  const [newPrefZone, setNewPrefZone] = useState('');
+  const [newPrefClassType, setNewPrefClassType] = useState('');
+  const [savingProfile, setSavingProfile] = useState(false);
   const toast_ = useToast();
   const confirm_ = useConfirm();
 
@@ -2833,16 +2963,18 @@ const StudioPage = ({ profile, user, onProfileUpdate }) => {
     if (studio?.settings) {
       setEditClassTypes(studio.settings.class_types || DEFAULT_STUDIO_CLASS_TYPES);
       setEditZones(studio.settings.zones || DEFAULT_STUDIO_ZONES);
+      setEditClassLevels(studio.settings.class_levels || DEFAULT_CLASS_LEVELS);
     } else {
       setEditClassTypes(DEFAULT_STUDIO_CLASS_TYPES);
       setEditZones(DEFAULT_STUDIO_ZONES);
+      setEditClassLevels(DEFAULT_CLASS_LEVELS);
     }
   }, [studio]);
 
   const saveSettings = async () => {
     setSavingSettings(true);
     const { error } = await supabase.from('studios').update({
-      settings: { ...(studio?.settings || {}), class_types: editClassTypes, zones: editZones },
+      settings: { ...(studio?.settings || {}), class_types: editClassTypes, zones: editZones, class_levels: editClassLevels },
     }).eq('id', profile.studio_id);
     setSavingSettings(false);
     if (!error) {
@@ -2855,10 +2987,96 @@ const StudioPage = ({ profile, user, onProfileUpdate }) => {
   };
 
   useEffect(() => {
+    if (profile?.settings) {
+      setEditPrefZones(profile.settings.preferred_zones || []);
+      setEditPrefClassTypes(profile.settings.class_types || []);
+    }
+  }, [profile]);
+
+  const saveProfileSettings = async () => {
+    setSavingProfile(true);
+    const { error } = await supabase.from('profiles').update({
+      settings: { ...(profile?.settings || {}), preferred_zones: editPrefZones, class_types: editPrefClassTypes },
+    }).eq('id', profile.id);
+    setSavingProfile(false);
+    if (!error) {
+      toast_?.('Perfil guardado');
+      const updated = await api.loadProfile(user.id);
+      onProfileUpdate(updated);
+    } else {
+      toast_?.('Erro ao guardar perfil');
+    }
+  };
+
+  useEffect(() => {
     if (!profile?.studio_id) { setLoading(false); return; }
     supabase.from('profiles').select('id, name, role, created_at').eq('studio_id', profile.studio_id)
       .then(({ data }) => { setMembers(data || []); setLoading(false); });
   }, [profile?.studio_id]);
+
+  useEffect(() => {
+    if (!profile?.studio_id) return;
+    setLoadingContent(true);
+    Promise.all([
+      supabase.from('series').select('*, profiles(name)').eq('studio_id', profile.studio_id).eq('visibility', 'studio'),
+      supabase.from('classes').select('*, profiles(name)').eq('studio_id', profile.studio_id).eq('visibility', 'studio'),
+      ...(isAdmin ? [
+        supabase.from('series').select('*, profiles(name)').eq('studio_id', profile.studio_id).eq('visibility', 'pending_studio'),
+        supabase.from('classes').select('*, profiles(name)').eq('studio_id', profile.studio_id).eq('visibility', 'pending_studio'),
+      ] : []),
+    ]).then(([serRes, clsRes, ...rest]) => {
+      setStudioSeries(serRes.data || []);
+      setStudioClasses(clsRes.data || []);
+      if (isAdmin && rest.length >= 2) {
+        setPendingSeries(rest[0].data || []);
+        setPendingClasses(rest[1].data || []);
+      }
+      setLoadingContent(false);
+    });
+  }, [profile?.studio_id, isAdmin]);
+
+  const refreshContent = () => {
+    if (!profile?.studio_id) return;
+    Promise.all([
+      supabase.from('series').select('*, profiles(name)').eq('studio_id', profile.studio_id).eq('visibility', 'studio'),
+      supabase.from('classes').select('*, profiles(name)').eq('studio_id', profile.studio_id).eq('visibility', 'studio'),
+      ...(isAdmin ? [
+        supabase.from('series').select('*, profiles(name)').eq('studio_id', profile.studio_id).eq('visibility', 'pending_studio'),
+        supabase.from('classes').select('*, profiles(name)').eq('studio_id', profile.studio_id).eq('visibility', 'pending_studio'),
+      ] : []),
+    ]).then(([serRes, clsRes, ...rest]) => {
+      setStudioSeries(serRes.data || []);
+      setStudioClasses(clsRes.data || []);
+      if (isAdmin && rest.length >= 2) {
+        setPendingSeries(rest[0].data || []);
+        setPendingClasses(rest[1].data || []);
+      }
+    });
+  };
+
+  const approveSeries = async s => {
+    await supabase.from('series').update({ visibility: 'studio' }).eq('id', s.id);
+    toast_?.('Série aprovada');
+    refreshContent();
+  };
+
+  const rejectSeries = async s => {
+    await supabase.from('series').update({ visibility: 'personal', studio_id: null }).eq('id', s.id);
+    toast_?.('Série rejeitada — devolvida ao Instructor');
+    refreshContent();
+  };
+
+  const approveClass = async c => {
+    await supabase.from('classes').update({ visibility: 'studio' }).eq('id', c.id);
+    toast_?.('Aula aprovada');
+    refreshContent();
+  };
+
+  const rejectClass = async c => {
+    await supabase.from('classes').update({ visibility: 'personal', studio_id: null }).eq('id', c.id);
+    toast_?.('Aula rejeitada — devolvida ao Instructor');
+    refreshContent();
+  };
 
   const changeRole = async (memberId, newRole) => {
     await supabase.from('profiles').update({ role: newRole }).eq('id', memberId);
@@ -2935,107 +3153,277 @@ const StudioPage = ({ profile, user, onProfileUpdate }) => {
     </div>
   );
 
+  const tabs = [
+    { key: 'series', label: 'Séries do Studio' },
+    { key: 'classes', label: 'Aulas do Studio' },
+    { key: 'members', label: 'Membros' },
+    { key: 'profile', label: 'O meu perfil' },
+    ...(isAdmin ? [{ key: 'reviews', label: `Revisões${pendingSeries.length+pendingClasses.length>0?' ('+String(pendingSeries.length+pendingClasses.length)+')':''}` }] : []),
+    ...(isAdmin ? [{ key: 'settings', label: 'Definições' }] : []),
+  ];
+
+  const TabBtn = ({ tabKey, label }) => (
+    <button onClick={() => setActiveTab(tabKey)} style={{
+      fontFamily:"'Satoshi',sans-serif", fontSize: 13, fontWeight: activeTab===tabKey ? 700 : 500,
+      color: activeTab===tabKey ? C.crimson : C.mist, background: 'none', border: 'none',
+      borderBottom: `2px solid ${activeTab===tabKey ? C.crimson : 'transparent'}`,
+      padding: '8px 2px', cursor: 'pointer', whiteSpace: 'nowrap',
+    }}>{label}</button>
+  );
+
+  const typeColor = t => t==='reformer'?C.reformer:t==='barre'?'#c0507a':C.sig;
+
   return (
-    <div style={{ maxWidth: 700 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
-        <div>
+    <div style={{ maxWidth: 780 }}>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
+        <div style={{ flex: 1 }}>
           <h2 style={{ fontFamily:"'Clash Display',sans-serif", fontSize: 22, fontWeight: 500, color: C.crimson, margin: 0 }}>{studio?.name || 'Studio'}</h2>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
-            <span style={{ fontSize: 12, color: C.mist }}>Código de convite:</span>
+            <span style={{ fontSize: 12, color: C.mist }}>Código:</span>
             <code style={{ fontSize: 12, background: C.stone, padding: '2px 8px', borderRadius: 6, color: C.ink }}>{studio?.slug}</code>
             <button onClick={copySlug} style={{ background: 'none', border: 'none', color: C.crimson, fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>Copiar</button>
           </div>
         </div>
+        {(isAdmin || profile?.role === 'studio_owner') && (
+          <button onClick={generateInvite} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: C.crimson, color: C.cream, fontWeight: 700, fontSize: 12, cursor: 'pointer', fontFamily: "'Satoshi',sans-serif", whiteSpace: 'nowrap' }}>
+            + Convidar
+          </button>
+        )}
       </div>
 
-      <div style={{ background: C.white, borderRadius: 12, border: `1px solid ${C.stone}`, overflow: 'hidden' }}>
-        <div style={{ padding: '14px 20px', borderBottom: `1px solid ${C.stone}`, fontWeight: 700, fontSize: 13, color: C.mist, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
-          Membros ({members.length})
+      {/* Sub-tabs */}
+      <div style={{ display: 'flex', gap: 20, borderBottom: `1px solid ${C.stone}`, marginBottom: 24 }}>
+        {tabs.map(t => <TabBtn key={t.key} tabKey={t.key} label={t.label}/>)}
+      </div>
+
+      {/* ── Séries do Studio ── */}
+      {activeTab==='series'&&(
+        <div>
+          {loadingContent ? <div style={{color:C.mist,fontSize:13}}>A carregar…</div>
+          : studioSeries.length===0 ? <div style={{color:C.mist,fontSize:13,padding:'24px 0'}}>Ainda não há séries aprovadas no studio.</div>
+          : <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(260px,1fr))',gap:14}}>
+            {studioSeries.map(s=>(
+              <div key={s.id} style={{background:C.white,borderRadius:12,border:`1px solid ${C.stone}`,padding:16}}>
+                <div style={{fontWeight:700,fontSize:14,color:C.ink,marginBottom:4}}>{s.name}</div>
+                <div style={{fontSize:11,color:C.mist,marginBottom:8}}>{s.profiles?.name||'Instructor'}</div>
+                <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:10}}>
+                  {s.type&&<span style={{fontSize:10,fontWeight:700,color:typeColor(s.type),background:`${typeColor(s.type)}15`,border:`1px solid ${typeColor(s.type)}40`,borderRadius:20,padding:'2px 8px',textTransform:'uppercase'}}>{s.type}</span>}
+                  {s.primary_zone&&<span style={{fontSize:10,color:C.mist,background:C.stone,borderRadius:20,padding:'2px 8px'}}>{s.primary_zone}</span>}
+                </div>
+                {onCopyToLibrary&&<button onClick={()=>onCopyToLibrary(s)} style={{fontSize:11,padding:'5px 12px',borderRadius:8,border:`1px solid ${C.stone}`,background:'transparent',color:C.ink,cursor:'pointer',fontFamily:"'Satoshi',sans-serif",fontWeight:600}}>Copiar para a minha biblioteca</button>}
+              </div>
+            ))}
+          </div>}
         </div>
-        {loading ? (
-          <div style={{ padding: 24, color: C.mist, fontSize: 13 }}>A carregar…</div>
-        ) : members.map(m => (
-          <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 20px', borderBottom: `1px solid ${C.stone}` }}>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 600, fontSize: 14, color: C.ink }}>{m.name || '(sem nome)'}</div>
-              <div style={{ fontSize: 12, color: C.mist }}>{m.id === user.id ? 'Tu' : ''}</div>
-            </div>
-            <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 10px', borderRadius: 20, background: m.role === 'admin' ? `${C.crimson}18` : C.stone, color: m.role === 'admin' ? C.crimson : C.mist }}>{m.role === 'admin' ? 'Admin' : 'Instructor'}</span>
-            {isAdmin && m.id !== user.id && (<>
-              <button onClick={() => changeRole(m.id, m.role === 'admin' ? 'instructor' : 'admin')} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, border: `1px solid ${C.stone}`, background: 'transparent', color: C.ink, cursor: 'pointer', fontFamily: "'Satoshi',sans-serif" }}>
-                {m.role === 'admin' ? '→ Instructor' : '→ Admin'}
-              </button>
-              <button onClick={() => removeMember(m.id)} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, border: `1px solid ${C.stone}`, background: 'transparent', color: '#b91c1c', cursor: 'pointer', fontFamily: "'Satoshi',sans-serif" }}>Remover</button>
-            </>)}
-          </div>
-        ))}
-      </div>
+      )}
 
-      {(isAdmin || profile?.role === 'studio_owner') && (
-        <div style={{ marginTop: 16, display: 'flex', alignItems: 'center', gap: 12, padding: 16, background: `${C.blue}30`, borderRadius: 10 }}>
-          <div style={{ flex: 1, fontSize: 13, color: '#1a4a7a' }}>
-            Gera um link de convite e partilha-o com Instructors. O link expira em 30 dias.
+      {/* ── Aulas do Studio ── */}
+      {activeTab==='classes'&&(
+        <div>
+          {loadingContent ? <div style={{color:C.mist,fontSize:13}}>A carregar…</div>
+          : studioClasses.length===0 ? <div style={{color:C.mist,fontSize:13,padding:'24px 0'}}>Ainda não há aulas aprovadas no studio.</div>
+          : <div style={{display:'flex',flexDirection:'column',gap:8}}>
+            {studioClasses.map(c=>(
+              <div key={c.id} style={{background:C.white,borderRadius:12,border:`1px solid ${C.stone}`,padding:'12px 16px',display:'flex',alignItems:'center',gap:12}}>
+                <div style={{flex:1}}>
+                  <div style={{fontWeight:700,fontSize:14,color:C.ink}}>{c.name||'(sem título)'}</div>
+                  <div style={{fontSize:11,color:C.mist,marginTop:2}}>{c.profiles?.name||'Instructor'}{c.date&&' · '+c.date}</div>
+                </div>
+                {c.type&&<span style={{fontSize:10,fontWeight:700,color:typeColor(c.type),background:`${typeColor(c.type)}15`,border:`1px solid ${typeColor(c.type)}40`,borderRadius:20,padding:'2px 8px',textTransform:'uppercase'}}>{c.type}</span>}
+                {c.level&&<span style={{fontSize:10,color:C.mist,background:C.stone,borderRadius:20,padding:'2px 8px'}}>{c.level}</span>}
+              </div>
+            ))}
+          </div>}
+        </div>
+      )}
+
+      {/* ── Membros ── */}
+      {activeTab==='members'&&(
+        <div>
+          <div style={{ background: C.white, borderRadius: 12, border: `1px solid ${C.stone}`, overflow: 'hidden' }}>
+            <div style={{ padding: '14px 20px', borderBottom: `1px solid ${C.stone}`, fontWeight: 700, fontSize: 13, color: C.mist, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+              Membros ({members.length})
+            </div>
+            {loading ? (
+              <div style={{ padding: 24, color: C.mist, fontSize: 13 }}>A carregar…</div>
+            ) : members.map(m => (
+              <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 20px', borderBottom: `1px solid ${C.stone}` }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 600, fontSize: 14, color: C.ink }}>{m.name || '(sem nome)'}</div>
+                  <div style={{ fontSize: 12, color: C.mist }}>{m.id === user.id ? 'Tu' : ''}</div>
+                </div>
+                <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 10px', borderRadius: 20, background: m.role === 'admin' ? `${C.crimson}18` : C.stone, color: m.role === 'admin' ? C.crimson : C.mist }}>{m.role === 'admin' ? 'Admin' : 'Instructor'}</span>
+                {isAdmin && m.id !== user.id && (<>
+                  <button onClick={() => changeRole(m.id, m.role === 'admin' ? 'instructor' : 'admin')} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, border: `1px solid ${C.stone}`, background: 'transparent', color: C.ink, cursor: 'pointer', fontFamily: "'Satoshi',sans-serif" }}>
+                    {m.role === 'admin' ? '→ Instructor' : '→ Admin'}
+                  </button>
+                  <button onClick={() => removeMember(m.id)} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, border: `1px solid ${C.stone}`, background: 'transparent', color: '#b91c1c', cursor: 'pointer', fontFamily: "'Satoshi',sans-serif" }}>Remover</button>
+                </>)}
+              </div>
+            ))}
           </div>
-          <button onClick={generateInvite} style={{ padding: '8px 18px', borderRadius: 8, border: 'none', background: C.crimson, color: C.cream, fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: "'Satoshi',sans-serif", whiteSpace: 'nowrap' }}>
-            Gerar convite
+        </div>
+      )}
+
+      {/* ── O meu perfil ── */}
+      {activeTab==='profile'&&(
+        <div style={{ background: C.white, borderRadius: 12, border: `1px solid ${C.stone}`, padding: '20px 20px 24px' }}>
+          {/* Preferred Zones */}
+          <div style={{ marginBottom: 20 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.mist, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Zonas preferidas</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+              {editPrefZones.map(z => (
+                <span key={z} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 12px', borderRadius: 20, background: C.cream, border: `1px solid ${C.stone}`, fontSize: 13, fontWeight: 500, color: C.ink, fontFamily: "'Satoshi',sans-serif" }}>
+                  {z}
+                  <button onClick={() => setEditPrefZones(p => p.filter(x => x !== z))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.mist, fontSize: 13, lineHeight: 1, padding: 0, display: 'flex', alignItems: 'center' }}>×</button>
+                </span>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input value={newPrefZone} onChange={e => setNewPrefZone(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') { const v = newPrefZone.trim(); if (v && !editPrefZones.map(x => x.toLowerCase()).includes(v.toLowerCase())) { setEditPrefZones(p => [...p, v]); setNewPrefZone(''); } } }}
+                placeholder="Adicionar zona…" style={{ flex: 1, padding: '7px 12px', borderRadius: 8, border: `1px solid ${C.stone}`, fontFamily: "'Satoshi',sans-serif", fontSize: 13, outline: 'none' }} />
+              <button onClick={() => { const v = newPrefZone.trim(); if (v && !editPrefZones.map(x => x.toLowerCase()).includes(v.toLowerCase())) { setEditPrefZones(p => [...p, v]); setNewPrefZone(''); } }}
+                style={{ padding: '7px 14px', borderRadius: 8, border: `1px solid ${C.stone}`, background: 'transparent', color: C.ink, fontWeight: 600, fontSize: 13, cursor: 'pointer', fontFamily: "'Satoshi',sans-serif" }}>+ Adicionar</button>
+            </div>
+          </div>
+          {/* Preferred Class Types */}
+          <div style={{ marginBottom: 20 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.mist, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Tipos de aula preferidos</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+              {editPrefClassTypes.map(t => (
+                <span key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 12px', borderRadius: 20, background: C.cream, border: `1px solid ${C.stone}`, fontSize: 13, fontWeight: 500, color: C.ink, fontFamily: "'Satoshi',sans-serif" }}>
+                  {t}
+                  <button onClick={() => setEditPrefClassTypes(p => p.filter(x => x !== t))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.mist, fontSize: 13, lineHeight: 1, padding: 0, display: 'flex', alignItems: 'center' }}>×</button>
+                </span>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input value={newPrefClassType} onChange={e => setNewPrefClassType(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') { const v = newPrefClassType.trim(); if (v && !editPrefClassTypes.map(x => x.toLowerCase()).includes(v.toLowerCase())) { setEditPrefClassTypes(p => [...p, v]); setNewPrefClassType(''); } } }}
+                placeholder="Adicionar tipo…" style={{ flex: 1, padding: '7px 12px', borderRadius: 8, border: `1px solid ${C.stone}`, fontFamily: "'Satoshi',sans-serif", fontSize: 13, outline: 'none' }} />
+              <button onClick={() => { const v = newPrefClassType.trim(); if (v && !editPrefClassTypes.map(x => x.toLowerCase()).includes(v.toLowerCase())) { setEditPrefClassTypes(p => [...p, v]); setNewPrefClassType(''); } }}
+                style={{ padding: '7px 14px', borderRadius: 8, border: `1px solid ${C.stone}`, background: 'transparent', color: C.ink, fontWeight: 600, fontSize: 13, cursor: 'pointer', fontFamily: "'Satoshi',sans-serif" }}>+ Adicionar</button>
+            </div>
+          </div>
+          <button onClick={saveProfileSettings} disabled={savingProfile} style={{ padding: '9px 24px', borderRadius: 8, border: 'none', background: savingProfile ? C.stone : C.crimson, color: C.cream, fontWeight: 700, fontSize: 13, cursor: savingProfile ? 'not-allowed' : 'pointer', fontFamily: "'Satoshi',sans-serif" }}>
+            {savingProfile ? 'A guardar…' : 'Guardar perfil'}
           </button>
         </div>
       )}
 
-      {isAdmin && (
-        <div style={{ marginTop: 24, background: C.white, borderRadius: 12, border: `1px solid ${C.stone}`, overflow: 'hidden' }}>
-          <button onClick={() => setSettingsOpen(p => !p)} style={{ width: '100%', display: 'flex', alignItems: 'center', padding: '14px 20px', background: 'none', border: 'none', cursor: 'pointer', borderBottom: settingsOpen ? `1px solid ${C.stone}` : 'none' }}>
-            <span style={{ fontWeight: 700, fontSize: 13, color: C.mist, letterSpacing: '0.05em', textTransform: 'uppercase', flex: 1, textAlign: 'left', fontFamily: "'Satoshi',sans-serif" }}>Definições do Studio</span>
-            <span style={{ fontSize: 12, color: C.mist }}>{settingsOpen ? '↑' : '↓'}</span>
-          </button>
-          {settingsOpen && (
-            <div style={{ padding: '20px 20px 24px' }}>
-
-              {/* Class Types */}
-              <div style={{ marginBottom: 20 }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: C.mist, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Tipos de Aula</div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
-                  {editClassTypes.map(t => (
-                    <span key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 12px', borderRadius: 20, background: C.cream, border: `1px solid ${C.stone}`, fontSize: 13, fontWeight: 500, color: C.ink, fontFamily: "'Satoshi',sans-serif" }}>
-                      {t}
-                      <button onClick={() => setEditClassTypes(p => p.filter(x => x !== t))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.mist, fontSize: 13, lineHeight: 1, padding: 0, display: 'flex', alignItems: 'center' }}>×</button>
-                    </span>
+      {/* ── Revisões (admin only) ── */}
+      {activeTab==='reviews'&&isAdmin&&(
+        <div>
+          {loadingContent ? <div style={{color:C.mist,fontSize:13}}>A carregar…</div> : (<>
+            {pendingSeries.length===0&&pendingClasses.length===0&&(
+              <div style={{color:C.mist,fontSize:13,padding:'24px 0'}}>Nenhuma submissão pendente.</div>
+            )}
+            {pendingSeries.length>0&&(
+              <div style={{marginBottom:24}}>
+                <div style={{fontSize:12,fontWeight:700,color:C.mist,textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:12}}>Séries pendentes</div>
+                <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                  {pendingSeries.map(s=>(
+                    <div key={s.id} style={{background:C.white,borderRadius:12,border:`1px solid ${C.stone}`,padding:'12px 16px',display:'flex',alignItems:'center',gap:12}}>
+                      <div style={{flex:1}}>
+                        <div style={{fontWeight:700,fontSize:14,color:C.ink}}>{s.name}</div>
+                        <div style={{fontSize:11,color:C.mist,marginTop:2}}>{s.profiles?.name||'Instructor'}</div>
+                      </div>
+                      {s.type&&<span style={{fontSize:10,fontWeight:700,color:typeColor(s.type),background:`${typeColor(s.type)}15`,border:`1px solid ${typeColor(s.type)}40`,borderRadius:20,padding:'2px 8px',textTransform:'uppercase'}}>{s.type}</span>}
+                      <button onClick={()=>approveSeries(s)} style={{fontSize:12,padding:'5px 12px',borderRadius:8,border:'none',background:'#ecfdf5',color:'#059669',fontWeight:700,cursor:'pointer',fontFamily:"'Satoshi',sans-serif"}}>✓ Aprovar</button>
+                      <button onClick={()=>rejectSeries(s)} style={{fontSize:12,padding:'5px 12px',borderRadius:8,border:`1px solid ${C.stone}`,background:'transparent',color:'#b91c1c',fontWeight:700,cursor:'pointer',fontFamily:"'Satoshi',sans-serif"}}>✗ Rejeitar</button>
+                    </div>
                   ))}
                 </div>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <input value={newClassType} onChange={e => setNewClassType(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter') { const v = newClassType.trim(); if (v && !editClassTypes.map(x => x.toLowerCase()).includes(v.toLowerCase())) { setEditClassTypes(p => [...p, v]); setNewClassType(''); } } }}
-                    placeholder="Adicionar tipo…" style={{ flex: 1, padding: '7px 12px', borderRadius: 8, border: `1px solid ${C.stone}`, fontFamily: "'Satoshi',sans-serif", fontSize: 13, outline: 'none' }} />
-                  <button onClick={() => { const v = newClassType.trim(); if (v && !editClassTypes.map(x => x.toLowerCase()).includes(v.toLowerCase())) { setEditClassTypes(p => [...p, v]); setNewClassType(''); } }}
-                    style={{ padding: '7px 14px', borderRadius: 8, border: `1px solid ${C.stone}`, background: 'transparent', color: C.ink, fontWeight: 600, fontSize: 13, cursor: 'pointer', fontFamily: "'Satoshi',sans-serif" }}>+ Adicionar</button>
-                </div>
               </div>
-
-              {/* Zones */}
-              <div style={{ marginBottom: 20 }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: C.mist, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Zonas</div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
-                  {editZones.map(z => (
-                    <span key={z} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 12px', borderRadius: 20, background: C.cream, border: `1px solid ${C.stone}`, fontSize: 13, fontWeight: 500, color: C.ink, fontFamily: "'Satoshi',sans-serif" }}>
-                      {z}
-                      <button onClick={() => setEditZones(p => p.filter(x => x !== z))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.mist, fontSize: 13, lineHeight: 1, padding: 0, display: 'flex', alignItems: 'center' }}>×</button>
-                    </span>
+            )}
+            {pendingClasses.length>0&&(
+              <div>
+                <div style={{fontSize:12,fontWeight:700,color:C.mist,textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:12}}>Aulas pendentes</div>
+                <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                  {pendingClasses.map(c=>(
+                    <div key={c.id} style={{background:C.white,borderRadius:12,border:`1px solid ${C.stone}`,padding:'12px 16px',display:'flex',alignItems:'center',gap:12}}>
+                      <div style={{flex:1}}>
+                        <div style={{fontWeight:700,fontSize:14,color:C.ink}}>{c.name||'(sem título)'}</div>
+                        <div style={{fontSize:11,color:C.mist,marginTop:2}}>{c.profiles?.name||'Instructor'}{c.date&&' · '+c.date}</div>
+                      </div>
+                      {c.type&&<span style={{fontSize:10,fontWeight:700,color:typeColor(c.type),background:`${typeColor(c.type)}15`,border:`1px solid ${typeColor(c.type)}40`,borderRadius:20,padding:'2px 8px',textTransform:'uppercase'}}>{c.type}</span>}
+                      {c.level&&<span style={{fontSize:10,color:C.mist,background:C.stone,borderRadius:20,padding:'2px 8px'}}>{c.level}</span>}
+                      <button onClick={()=>approveClass(c)} style={{fontSize:12,padding:'5px 12px',borderRadius:8,border:'none',background:'#ecfdf5',color:'#059669',fontWeight:700,cursor:'pointer',fontFamily:"'Satoshi',sans-serif"}}>✓ Aprovar</button>
+                      <button onClick={()=>rejectClass(c)} style={{fontSize:12,padding:'5px 12px',borderRadius:8,border:`1px solid ${C.stone}`,background:'transparent',color:'#b91c1c',fontWeight:700,cursor:'pointer',fontFamily:"'Satoshi',sans-serif"}}>✗ Rejeitar</button>
+                    </div>
                   ))}
                 </div>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <input value={newZone} onChange={e => setNewZone(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter') { const v = newZone.trim(); if (v && !editZones.map(x => x.toLowerCase()).includes(v.toLowerCase())) { setEditZones(p => [...p, v]); setNewZone(''); } } }}
-                    placeholder="Adicionar zona…" style={{ flex: 1, padding: '7px 12px', borderRadius: 8, border: `1px solid ${C.stone}`, fontFamily: "'Satoshi',sans-serif", fontSize: 13, outline: 'none' }} />
-                  <button onClick={() => { const v = newZone.trim(); if (v && !editZones.map(x => x.toLowerCase()).includes(v.toLowerCase())) { setEditZones(p => [...p, v]); setNewZone(''); } }}
-                    style={{ padding: '7px 14px', borderRadius: 8, border: `1px solid ${C.stone}`, background: 'transparent', color: C.ink, fontWeight: 600, fontSize: 13, cursor: 'pointer', fontFamily: "'Satoshi',sans-serif" }}>+ Adicionar</button>
-                </div>
               </div>
+            )}
+          </>)}
+        </div>
+      )}
 
-              <button onClick={saveSettings} disabled={savingSettings} style={{ padding: '9px 24px', borderRadius: 8, border: 'none', background: savingSettings ? C.stone : C.crimson, color: C.cream, fontWeight: 700, fontSize: 13, cursor: savingSettings ? 'not-allowed' : 'pointer', fontFamily: "'Satoshi',sans-serif" }}>
-                {savingSettings ? 'A guardar…' : 'Guardar definições'}
-              </button>
+      {/* ── Definições (admin only) ── */}
+      {activeTab==='settings'&&isAdmin&&(
+        <div style={{ background: C.white, borderRadius: 12, border: `1px solid ${C.stone}`, padding: '20px 20px 24px' }}>
+          {/* Class Types */}
+          <div style={{ marginBottom: 20 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.mist, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Tipos de Aula</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+              {editClassTypes.map(t => (
+                <span key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 12px', borderRadius: 20, background: C.cream, border: `1px solid ${C.stone}`, fontSize: 13, fontWeight: 500, color: C.ink, fontFamily: "'Satoshi',sans-serif" }}>
+                  {t}
+                  <button onClick={() => setEditClassTypes(p => p.filter(x => x !== t))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.mist, fontSize: 13, lineHeight: 1, padding: 0, display: 'flex', alignItems: 'center' }}>×</button>
+                </span>
+              ))}
             </div>
-          )}
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input value={newClassType} onChange={e => setNewClassType(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') { const v = newClassType.trim(); if (v && !editClassTypes.map(x => x.toLowerCase()).includes(v.toLowerCase())) { setEditClassTypes(p => [...p, v]); setNewClassType(''); } } }}
+                placeholder="Adicionar tipo…" style={{ flex: 1, padding: '7px 12px', borderRadius: 8, border: `1px solid ${C.stone}`, fontFamily: "'Satoshi',sans-serif", fontSize: 13, outline: 'none' }} />
+              <button onClick={() => { const v = newClassType.trim(); if (v && !editClassTypes.map(x => x.toLowerCase()).includes(v.toLowerCase())) { setEditClassTypes(p => [...p, v]); setNewClassType(''); } }}
+                style={{ padding: '7px 14px', borderRadius: 8, border: `1px solid ${C.stone}`, background: 'transparent', color: C.ink, fontWeight: 600, fontSize: 13, cursor: 'pointer', fontFamily: "'Satoshi',sans-serif" }}>+ Adicionar</button>
+            </div>
+          </div>
+          {/* Zones */}
+          <div style={{ marginBottom: 20 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.mist, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Zonas</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+              {editZones.map(z => (
+                <span key={z} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 12px', borderRadius: 20, background: C.cream, border: `1px solid ${C.stone}`, fontSize: 13, fontWeight: 500, color: C.ink, fontFamily: "'Satoshi',sans-serif" }}>
+                  {z}
+                  <button onClick={() => setEditZones(p => p.filter(x => x !== z))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.mist, fontSize: 13, lineHeight: 1, padding: 0, display: 'flex', alignItems: 'center' }}>×</button>
+                </span>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input value={newZone} onChange={e => setNewZone(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') { const v = newZone.trim(); if (v && !editZones.map(x => x.toLowerCase()).includes(v.toLowerCase())) { setEditZones(p => [...p, v]); setNewZone(''); } } }}
+                placeholder="Adicionar zona…" style={{ flex: 1, padding: '7px 12px', borderRadius: 8, border: `1px solid ${C.stone}`, fontFamily: "'Satoshi',sans-serif", fontSize: 13, outline: 'none' }} />
+              <button onClick={() => { const v = newZone.trim(); if (v && !editZones.map(x => x.toLowerCase()).includes(v.toLowerCase())) { setEditZones(p => [...p, v]); setNewZone(''); } }}
+                style={{ padding: '7px 14px', borderRadius: 8, border: `1px solid ${C.stone}`, background: 'transparent', color: C.ink, fontWeight: 600, fontSize: 13, cursor: 'pointer', fontFamily: "'Satoshi',sans-serif" }}>+ Adicionar</button>
+            </div>
+          </div>
+          {/* Class Levels */}
+          <div style={{ marginBottom: 20 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.mist, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Níveis de Aula</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+              {editClassLevels.map(lvl => (
+                <span key={lvl} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 12px', borderRadius: 20, background: C.cream, border: `1px solid ${C.stone}`, fontSize: 13, fontWeight: 500, color: C.ink, fontFamily: "'Satoshi',sans-serif" }}>
+                  {lvl}
+                  <button onClick={() => setEditClassLevels(p => p.filter(x => x !== lvl))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.mist, fontSize: 13, lineHeight: 1, padding: 0, display: 'flex', alignItems: 'center' }}>×</button>
+                </span>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input value={newClassLevel} onChange={e => setNewClassLevel(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') { const v = newClassLevel.trim(); if (v && !editClassLevels.map(x => x.toLowerCase()).includes(v.toLowerCase())) { setEditClassLevels(p => [...p, v]); setNewClassLevel(''); } } }}
+                placeholder="Adicionar nível…" style={{ flex: 1, padding: '7px 12px', borderRadius: 8, border: `1px solid ${C.stone}`, fontFamily: "'Satoshi',sans-serif", fontSize: 13, outline: 'none' }} />
+              <button onClick={() => { const v = newClassLevel.trim(); if (v && !editClassLevels.map(x => x.toLowerCase()).includes(v.toLowerCase())) { setEditClassLevels(p => [...p, v]); setNewClassLevel(''); } }}
+                style={{ padding: '7px 14px', borderRadius: 8, border: `1px solid ${C.stone}`, background: 'transparent', color: C.ink, fontWeight: 600, fontSize: 13, cursor: 'pointer', fontFamily: "'Satoshi',sans-serif" }}>+ Adicionar</button>
+            </div>
+          </div>
+          <button onClick={saveSettings} disabled={savingSettings} style={{ padding: '9px 24px', borderRadius: 8, border: 'none', background: savingSettings ? C.stone : C.crimson, color: C.cream, fontWeight: 700, fontSize: 13, cursor: savingSettings ? 'not-allowed' : 'pointer', fontFamily: "'Satoshi',sans-serif" }}>
+            {savingSettings ? 'A guardar…' : 'Guardar definições'}
+          </button>
         </div>
       )}
     </div>
@@ -3275,6 +3663,10 @@ export default function HavenInstructor() {
   const [editingSeries, setEditingSeries] = useState(null);
   const [addingSeries,  setAddingSeries]  = useState(false);
   const [screen, setScreen] = useState({ mode:"library", cls:null, fromLibrary:false });
+  const [screenStack, setScreenStack] = useState([]);
+
+  const navigate = (newScreen) => { setScreenStack(prev => [...prev, screen]); setScreen(newScreen); };
+  const goBack = () => { const prev = screenStack[screenStack.length-1]; if(prev){ setScreen(prev); setScreenStack(p=>p.slice(0,-1)); } else setScreen({mode:'builder',cls:null}); };
 
   // Auth listener
   useEffect(()=>{
@@ -3348,16 +3740,23 @@ export default function HavenInstructor() {
 
   const publishToStudio = async s => {
     if (!profile?.studio_id) return;
-    const updated = { ...s, visibility: 'studio', studioId: profile.studio_id };
+    const updated = { ...s, visibility: 'pending_studio', studioId: profile.studio_id };
     setSeries(p=>p.map(x=>x.id===s.id?updated:x));
-    await supabase.from('series').update({ visibility:'studio', studio_id: profile.studio_id }).eq('id', s.id);
-    toast("Série publicada no studio");
+    await supabase.from('series').update({ visibility:'pending_studio', studio_id: profile.studio_id }).eq('id', s.id);
+    toast("Série submetida para revisão do studio");
   };
   const unpublishFromStudio = async s => {
     const updated = { ...s, visibility: 'personal', studioId: null };
     setSeries(p=>p.map(x=>x.id===s.id?updated:x));
     await supabase.from('series').update({ visibility:'personal', studio_id: null }).eq('id', s.id);
     toast("Série tornada privada");
+  };
+  const publishClassToStudio = async c => {
+    if (!profile?.studio_id) return;
+    const updated = { ...c, visibility: 'pending_studio', studioId: profile.studio_id };
+    setClasses(p=>p.map(x=>x.id===c.id?updated:x));
+    await supabase.from('classes').update({ visibility:'pending_studio', studio_id: profile.studio_id }).eq('id', c.id);
+    toast("Aula submetida para revisão do studio");
   };
   const makeSeriesPublic = async s => {
     const updated = { ...s, visibility: 'public' };
@@ -3388,7 +3787,7 @@ export default function HavenInstructor() {
     return sortOrder==="asc" ? cmp : -cmp;
   });
 
-  const goTab = id => { setScreen({mode:id,cls:null,fromLibrary:false}); setEditingSeries(null); setAddingSeries(false); };
+  const goTab = id => { setScreen({mode:id,cls:null,fromLibrary:false}); setEditingSeries(null); setAddingSeries(false); setScreenStack([]); };
   const isAulaMode = screen.mode==="aula";
 
   useEffect(()=>{
@@ -3510,7 +3909,7 @@ export default function HavenInstructor() {
 
         {/* ── STUDIO ── */}
         {screen.mode==="studio"&&(
-          <StudioPage profile={profile} user={user} onProfileUpdate={p=>setProfile(p)}/>
+          <StudioPage profile={profile} user={user} onProfileUpdate={p=>setProfile(p)} onCopyToLibrary={copyToLibrary}/>
         )}
 
         {/* ── MOVEMENTS ── */}
@@ -3525,9 +3924,12 @@ export default function HavenInstructor() {
             allSeries={series} classes={classes}
             onSave={c=>{ saveClass(c); setScreen({mode:"builder",cls:null}); }}
             onDeleteClass={deleteClass}
-            onViewAula={c=>setScreen({mode:"aula",cls:c,fromLibrary:false})}
+            onViewAula={c=>navigate({mode:"aula",cls:c,fromLibrary:false})}
             initialEditCls={screen.cls||null}
             aiStyle={aiStyle}
+            studioSettings={profile?.studios?.settings}
+            onPublishClass={publishClassToStudio}
+            hasStudio={!!profile?.studio_id}
           />
         )}
 
@@ -3535,9 +3937,9 @@ export default function HavenInstructor() {
         {screen.mode==="aula"&&screen.cls&&(
           <AulaView
             cls={screen.cls} allSeries={series}
-            onBack={()=>setScreen({mode:"builder",cls:null})}
-            onEditClass={cls=>setScreen({mode:"builder",cls,fromLibrary:false})}
-            onDeleteClass={async id=>{ await deleteClass(id); setScreen({mode:"builder",cls:null}); }}
+            onBack={goBack}
+            onEditClass={cls=>navigate({mode:"builder",cls,fromLibrary:false})}
+            onDeleteClass={async id=>{ await deleteClass(id); goBack(); }}
             onUpdateSeries={saveSeries}
             onUpdateClass={updateClass}
             aiStyle={aiStyle}
