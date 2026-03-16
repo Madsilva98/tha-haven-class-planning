@@ -874,9 +874,7 @@ const SeriesCard = ({ series, onEdit, onDelete, onUpdateSeries, aiStyle, modalit
                 {choreo&&<th style={{fontSize:12,fontWeight:600,color:C.ink,textAlign:"left",padding:"8px 12px",whiteSpace:"nowrap",letterSpacing:"0.04em",textTransform:"uppercase",width:"1%"}}>Timing</th>}
                 {choreo&&<th style={{fontSize:12,fontWeight:600,color:C.ink,textAlign:"left",padding:"8px 12px",letterSpacing:"0.04em",textTransform:"uppercase",maxWidth:180}}>Lyric</th>}
                 {showR&&<th style={{fontSize:12,fontWeight:600,color:C.reformer,textAlign:"left",padding:"8px 12px",letterSpacing:"0.04em",textTransform:"uppercase"}}>Reformer</th>}
-                {showR&&<th style={{fontSize:11,fontWeight:600,color:`${C.reformer}90`,textAlign:"left",padding:"8px 8px"}}>Respiração R</th>}
                 {showB&&<th style={{fontSize:12,fontWeight:600,color:"#c0507a",textAlign:"left",padding:"8px 12px",letterSpacing:"0.04em",textTransform:"uppercase"}}>Barre</th>}
-                {showB&&<th style={{fontSize:11,fontWeight:600,color:"#c0507a90",textAlign:"left",padding:"8px 8px"}}>Respiração B</th>}
               </tr>
             </thead>
             <tbody>
@@ -922,12 +920,10 @@ const SeriesCard = ({ series, onEdit, onDelete, onUpdateSeries, aiStyle, modalit
                         {row.r?.movement||<span style={{color:C.stone}}>—</span>}
                         {row.r?.notes&&<div title={row.r.notes} style={{fontSize:10,color:C.mist,fontStyle:"italic",marginTop:2,borderTop:`1px solid ${C.stone}40`,paddingTop:2}}>{row.r.notes}</div>}
                       </td>}
-                      {showR&&<td style={{fontSize:11,padding:"8px 8px",color:C.mist,fontStyle:"italic"}}>{row.r?.breath||""}</td>}
                       {showB&&<td style={{fontSize:12,padding:"7px 10px",color:C.ink,fontWeight:500}}>
                         {row.b?.movement||<span style={{color:C.stone}}>—</span>}
                         {row.b?.notes&&<div title={row.b.notes} style={{fontSize:10,color:C.mist,fontStyle:"italic",marginTop:2,borderTop:`1px solid ${C.stone}40`,paddingTop:2}}>{row.b.notes}</div>}
                       </td>}
-                      {showB&&<td style={{fontSize:11,padding:"8px 8px",color:C.mist,fontStyle:"italic"}}>{row.b?.breath||""}</td>}
                     </tr>
                   </React.Fragment>
                 );
@@ -949,8 +945,6 @@ const SeriesCard = ({ series, onEdit, onDelete, onUpdateSeries, aiStyle, modalit
             {choreo&&<th style={{fontSize:12,fontWeight:600,color:C.mist,textAlign:"left",padding:"8px 12px"}}>Timing</th>}
             {choreo&&<th style={{fontSize:12,fontWeight:600,color:C.mist,textAlign:"left",padding:"8px 12px"}}>Lyric</th>}
             <th style={{fontSize:12,fontWeight:600,color:C.mist,textAlign:"left",padding:"8px 10px"}}>Movimento</th>
-            <th style={{fontSize:11,fontWeight:600,color:C.mist,textAlign:"left",padding:"8px 8px"}}>Respiração</th>
-            <th style={{fontSize:11,fontWeight:600,color:C.mist,textAlign:"left",padding:"8px 8px"}}>Notas</th>
           </tr></thead>
           <tbody>
             {localSeries.openCue&&<tr className="print-cue-row" style={{background:"#F4EDE8"}}><td colSpan={99} style={{padding:"4px 10px"}}><div style={{display:"flex",alignItems:"center",gap:6}}><span style={{fontSize:12,color:C.reformer,fontWeight:700,flexShrink:0}}>✦</span><span style={{fontSize:12,fontStyle:"italic",color:"#7a4010",fontFamily:"'Satoshi',sans-serif"}}>{localSeries.openCue}</span></div></td></tr>}
@@ -992,8 +986,6 @@ const SeriesCard = ({ series, onEdit, onDelete, onUpdateSeries, aiStyle, modalit
                     {choreo&&<td style={{fontSize:13,padding:"8px 12px",color:C.mist,whiteSpace:"nowrap"}}>{m.timing}</td>}
                     {choreo&&<td style={{fontSize:13,padding:"8px 12px",color:C.mist,fontStyle:"italic"}}>{m.lyric}</td>}
                     <td style={{fontSize:13,padding:"8px 10px",color:C.ink,fontWeight:500}}>{m.movement||<span style={{color:C.stone}}>—</span>}</td>
-                    <td style={{fontSize:11,padding:"8px 8px",color:C.mist,fontStyle:"italic"}}>{m.breath||""}</td>
-                    <td style={{fontSize:11,padding:"8px 8px",color:C.mist}}>{m.notes||""}</td>
                   </tr>
                 </React.Fragment>
               );
@@ -1207,6 +1199,7 @@ const MovDatalist = ({ series }) => {
 const MovementLibraryScreen = ({ series, aiStyle }) => {
   const [search, setSearch] = React.useState("");
   const [translating, setTranslating] = React.useState(null); // movement name being translated
+  const [hoveredMov, setHoveredMov] = React.useState(null);
 
   // Build movement list: { movement, notes, type, seriesName, side }
   const allMovs = React.useMemo(()=>{
@@ -1217,7 +1210,7 @@ const MovementLibraryScreen = ({ series, aiStyle }) => {
           if(!m.movement) return;
           if(!map.has(m.movement)) map.set(m.movement, { movement:m.movement, namePT:"", nameEN:"", entries:[], types:new Set() });
           const entry = map.get(m.movement);
-          entry.entries.push({ seriesName:s.name, side, notes:m.notes||"" });
+          entry.entries.push({ seriesName:s.name, side, notes:m.notes||"", breath:m.breath||"" });
           entry.types.add(s.type==="signature"?(side==="r"?"reformer":"barre"):s.type);
         });
       };
@@ -1263,17 +1256,32 @@ const MovementLibraryScreen = ({ series, aiStyle }) => {
             <tr style={{background:"#e8e0dc"}}>
               <th style={{textAlign:"left",padding:"10px 16px",fontSize:11,fontWeight:700,color:C.neutral,textTransform:"uppercase",letterSpacing:"0.06em"}}>Movimento</th>
               <th style={{textAlign:"left",padding:"10px 12px",fontSize:11,fontWeight:700,color:C.neutral,textTransform:"uppercase",letterSpacing:"0.06em"}}>Tipo</th>
+              <th style={{textAlign:"left",padding:"10px 12px",fontSize:11,fontWeight:700,color:C.neutral,textTransform:"uppercase",letterSpacing:"0.06em"}}>Respiração</th>
+              <th style={{textAlign:"left",padding:"10px 12px",fontSize:11,fontWeight:700,color:C.neutral,textTransform:"uppercase",letterSpacing:"0.06em"}}>Notas</th>
               <th style={{textAlign:"left",padding:"10px 12px",fontSize:11,fontWeight:700,color:C.neutral,textTransform:"uppercase",letterSpacing:"0.06em"}}>Séries</th>
             </tr>
           </thead>
           <tbody>
             {filtered.map((mov,i)=>(
               <tr key={mov.movement} style={{borderTop:`1px solid ${C.stone}`,background:i%2===0?C.white:C.cream}}>
-                <td style={{padding:"10px 16px",fontSize:13,fontWeight:600,color:C.ink,verticalAlign:"top"}}>
+                <td style={{padding:"10px 16px",fontSize:13,fontWeight:600,color:C.ink,verticalAlign:"top",position:"relative",cursor:"default"}}
+                  onMouseEnter={()=>setHoveredMov(mov.movement)}
+                  onMouseLeave={()=>setHoveredMov(null)}>
                   {mov.movement}
-                  {mov.entries.some(e=>e.notes)&&(
-                    <div style={{fontSize:11,color:C.mist,fontStyle:"italic",marginTop:3,lineHeight:1.4}}>
-                      {[...new Set(mov.entries.filter(e=>e.notes).map(e=>e.notes))].join(" · ")}
+                  {hoveredMov===mov.movement&&(mov.entries.some(e=>e.breath||e.notes))&&(
+                    <div style={{position:"absolute",left:0,top:"100%",zIndex:200,background:C.white,border:`1px solid ${C.stone}`,borderRadius:8,padding:"10px 14px",boxShadow:"0 4px 20px rgba(0,0,0,0.12)",minWidth:220,maxWidth:340,pointerEvents:"none"}}>
+                      {[...new Set(mov.entries.filter(e=>e.breath).map(e=>e.breath))].map((b,bi)=>(
+                        <div key={bi} style={{display:"flex",gap:8,alignItems:"flex-start",marginBottom:6}}>
+                          <span style={{fontSize:10,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.05em",flexShrink:0,paddingTop:2}}>Resp.</span>
+                          <span style={{fontSize:12,color:C.ink,fontStyle:"italic",lineHeight:1.4}}>{b}</span>
+                        </div>
+                      ))}
+                      {[...new Set(mov.entries.filter(e=>e.notes).map(e=>e.notes))].map((n,ni)=>(
+                        <div key={ni} style={{display:"flex",gap:8,alignItems:"flex-start",marginBottom:4}}>
+                          <span style={{fontSize:10,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.05em",flexShrink:0,paddingTop:2}}>Notas</span>
+                          <span style={{fontSize:12,color:C.ink,lineHeight:1.4}}>{n}</span>
+                        </div>
+                      ))}
                     </div>
                   )}
                 </td>
@@ -1283,6 +1291,12 @@ const MovementLibraryScreen = ({ series, aiStyle }) => {
                       <span key={t} style={{fontSize:10,fontWeight:700,color:typeColor(t),background:`${typeColor(t)}15`,border:`1px solid ${typeColor(t)}40`,borderRadius:20,padding:"2px 8px",textTransform:"uppercase",letterSpacing:"0.04em"}}>{t}</span>
                     ))}
                   </div>
+                </td>
+                <td style={{padding:"10px 12px",verticalAlign:"top",fontSize:12,color:C.mist,fontStyle:"italic"}}>
+                  {[...new Set(mov.entries.filter(e=>e.breath).map(e=>e.breath))].join(" · ")}
+                </td>
+                <td style={{padding:"10px 12px",verticalAlign:"top",fontSize:12,color:C.mist,maxWidth:200}}>
+                  {[...new Set(mov.entries.filter(e=>e.notes).map(e=>e.notes))].join(" · ")}
                 </td>
                 <td style={{padding:"10px 12px",verticalAlign:"top",fontSize:11,color:C.mist,maxWidth:240}}>
                   {[...new Set(mov.entries.map(e=>e.seriesName))].join(", ")}
