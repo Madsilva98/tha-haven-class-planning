@@ -842,6 +842,7 @@ const SeriesCard = ({ series, onEdit, onDelete, onUpdateSeries, aiStyle, modalit
   React.useEffect(()=>setLocalSeries(series), [series]);
 
   const confirm_ = useConfirm();
+  const [hovCell, setHovCell] = React.useState(null);
   const [openCueRows, setOpenCueRows] = React.useState(new Set());
   const toggleCueRow = key => setOpenCueRows(prev => { const s=new Set(prev); s.has(key)?s.delete(key):s.add(key); return s; });
 
@@ -916,13 +917,23 @@ const SeriesCard = ({ series, onEdit, onDelete, onUpdateSeries, aiStyle, modalit
                     <tr style={{borderBottom:`1px solid ${C.stone}`,background:C.white}}>
                       {choreo&&<td style={{fontSize:13,padding:"8px 12px",color:C.mist,whiteSpace:"nowrap"}}>{row.timing}</td>}
                       {choreo&&<td style={{fontSize:13,padding:"8px 12px",color:C.mist,fontStyle:"italic",maxWidth:180}}>{row.lyric}</td>}
-                      {showR&&<td style={{fontSize:12,padding:"7px 10px",color:C.ink,fontWeight:500}}>
+                      {showR&&<td style={{fontSize:12,padding:"7px 10px",color:C.ink,fontWeight:500,position:"relative",cursor:"default"}}
+                        onMouseEnter={()=>setHovCell(`r-${i}`)} onMouseLeave={()=>setHovCell(null)}>
                         {row.r?.movement||<span style={{color:C.stone}}>—</span>}
-                        {row.r?.notes&&<div title={row.r.notes} style={{fontSize:10,color:C.mist,fontStyle:"italic",marginTop:2,borderTop:`1px solid ${C.stone}40`,paddingTop:2}}>{row.r.notes}</div>}
+                        {row.r?.notes&&<div style={{fontSize:10,color:C.mist,fontStyle:"italic",marginTop:2,borderTop:`1px solid ${C.stone}40`,paddingTop:2}}>{row.r.notes}</div>}
+                        {hovCell===`r-${i}`&&(row.r?.breath||row.r?.notes)&&<div style={{position:"absolute",left:0,top:"100%",zIndex:200,background:"#FFFAF7",border:"1px solid #e0d8d2",borderRadius:8,padding:"10px 14px",boxShadow:"0 4px 20px rgba(0,0,0,0.12)",minWidth:200,maxWidth:300,pointerEvents:"none"}}>
+                          {row.r?.breath&&<div style={{display:"flex",gap:8,alignItems:"flex-start",marginBottom:4}}><span style={{fontSize:10,fontWeight:700,color:"#8a7e78",textTransform:"uppercase",flexShrink:0,paddingTop:2}}>Resp.</span><span style={{fontSize:12,fontStyle:"italic",lineHeight:1.4}}>{row.r.breath}</span></div>}
+                          {row.r?.notes&&<div style={{display:"flex",gap:8,alignItems:"flex-start"}}><span style={{fontSize:10,fontWeight:700,color:"#8a7e78",textTransform:"uppercase",flexShrink:0,paddingTop:2}}>Notas</span><span style={{fontSize:12,lineHeight:1.4}}>{row.r.notes}</span></div>}
+                        </div>}
                       </td>}
-                      {showB&&<td style={{fontSize:12,padding:"7px 10px",color:C.ink,fontWeight:500}}>
+                      {showB&&<td style={{fontSize:12,padding:"7px 10px",color:C.ink,fontWeight:500,position:"relative",cursor:"default"}}
+                        onMouseEnter={()=>setHovCell(`b-${i}`)} onMouseLeave={()=>setHovCell(null)}>
                         {row.b?.movement||<span style={{color:C.stone}}>—</span>}
-                        {row.b?.notes&&<div title={row.b.notes} style={{fontSize:10,color:C.mist,fontStyle:"italic",marginTop:2,borderTop:`1px solid ${C.stone}40`,paddingTop:2}}>{row.b.notes}</div>}
+                        {row.b?.notes&&<div style={{fontSize:10,color:C.mist,fontStyle:"italic",marginTop:2,borderTop:`1px solid ${C.stone}40`,paddingTop:2}}>{row.b.notes}</div>}
+                        {hovCell===`b-${i}`&&(row.b?.breath||row.b?.notes)&&<div style={{position:"absolute",left:0,top:"100%",zIndex:200,background:"#FFFAF7",border:"1px solid #e0d8d2",borderRadius:8,padding:"10px 14px",boxShadow:"0 4px 20px rgba(0,0,0,0.12)",minWidth:200,maxWidth:300,pointerEvents:"none"}}>
+                          {row.b?.breath&&<div style={{display:"flex",gap:8,alignItems:"flex-start",marginBottom:4}}><span style={{fontSize:10,fontWeight:700,color:"#8a7e78",textTransform:"uppercase",flexShrink:0,paddingTop:2}}>Resp.</span><span style={{fontSize:12,fontStyle:"italic",lineHeight:1.4}}>{row.b.breath}</span></div>}
+                          {row.b?.notes&&<div style={{display:"flex",gap:8,alignItems:"flex-start"}}><span style={{fontSize:10,fontWeight:700,color:"#8a7e78",textTransform:"uppercase",flexShrink:0,paddingTop:2}}>Notas</span><span style={{fontSize:12,lineHeight:1.4}}>{row.b.notes}</span></div>}
+                        </div>}
                       </td>}
                     </tr>
                   </React.Fragment>
@@ -985,7 +996,14 @@ const SeriesCard = ({ series, onEdit, onDelete, onUpdateSeries, aiStyle, modalit
                   <tr style={{borderBottom:`1px solid ${C.stone}`,background:C.white}}>
                     {choreo&&<td style={{fontSize:13,padding:"8px 12px",color:C.mist,whiteSpace:"nowrap"}}>{m.timing}</td>}
                     {choreo&&<td style={{fontSize:13,padding:"8px 12px",color:C.mist,fontStyle:"italic"}}>{m.lyric}</td>}
-                    <td style={{fontSize:13,padding:"8px 10px",color:C.ink,fontWeight:500}}>{m.movement||<span style={{color:C.stone}}>—</span>}</td>
+                    <td style={{fontSize:13,padding:"8px 10px",color:C.ink,fontWeight:500,position:"relative",cursor:"default"}}
+                      onMouseEnter={()=>setHovCell(`ns-${i}`)} onMouseLeave={()=>setHovCell(null)}>
+                      {m.movement||<span style={{color:C.stone}}>—</span>}
+                      {hovCell===`ns-${i}`&&(m.breath||m.notes)&&<div style={{position:"absolute",left:0,top:"100%",zIndex:200,background:"#FFFAF7",border:"1px solid #e0d8d2",borderRadius:8,padding:"10px 14px",boxShadow:"0 4px 20px rgba(0,0,0,0.12)",minWidth:200,maxWidth:300,pointerEvents:"none"}}>
+                        {m.breath&&<div style={{display:"flex",gap:8,alignItems:"flex-start",marginBottom:4}}><span style={{fontSize:10,fontWeight:700,color:"#8a7e78",textTransform:"uppercase",flexShrink:0,paddingTop:2}}>Resp.</span><span style={{fontSize:12,fontStyle:"italic",lineHeight:1.4}}>{m.breath}</span></div>}
+                        {m.notes&&<div style={{display:"flex",gap:8,alignItems:"flex-start"}}><span style={{fontSize:10,fontWeight:700,color:"#8a7e78",textTransform:"uppercase",flexShrink:0,paddingTop:2}}>Notas</span><span style={{fontSize:12,lineHeight:1.4}}>{m.notes}</span></div>}
+                      </div>}
+                    </td>
                   </tr>
                 </React.Fragment>
               );
@@ -2191,6 +2209,7 @@ const AulaView = ({ cls, allSeries, onBack, onEditClass, onDeleteClass, onUpdate
   const [modB, setModB] = useState({});
   const [openCueRows, setOpenCueRows] = React.useState(new Set());
   const toggleCueRow = key => setOpenCueRows(prev => { const s=new Set(prev); s.has(key)?s.delete(key):s.add(key); return s; });
+  const [movHovCell, setMovHovCell] = React.useState(null);
 
   const isSig   = cls.type==="signature";
 
@@ -2278,8 +2297,22 @@ const AulaView = ({ cls, allSeries, onBack, onEditClass, onDeleteClass, onUpdate
                     <tr style={{borderBottom:`1px solid ${C.stone}`,background:C.white}}>
                       {showTiming&&<td style={{fontSize:13,padding:"8px 12px",color:C.mist,whiteSpace:"nowrap"}}>{row.timing}</td>}
                       {showLyric &&<td style={{fontSize:13,padding:"8px 12px",color:C.mist,fontStyle:"italic"}}>{row.lyric}</td>}
-                      {showR&&<td style={{fontSize:13,padding:"8px 10px",color:C.ink,fontWeight:600}}>{row.r?.movement||<span style={{color:C.stone}}>—</span>}</td>}
-                      {showB&&<td style={{fontSize:13,padding:"8px 10px",color:C.ink,fontWeight:600}}>{row.b?.movement||<span style={{color:C.stone}}>—</span>}</td>}
+                      {showR&&<td style={{fontSize:13,padding:"8px 10px",color:C.ink,fontWeight:600,position:"relative",cursor:"default"}}
+                        onMouseEnter={()=>setMovHovCell(`r-${ser.id}-${i}`)} onMouseLeave={()=>setMovHovCell(null)}>
+                        {row.r?.movement||<span style={{color:C.stone}}>—</span>}
+                        {movHovCell===`r-${ser.id}-${i}`&&(row.r?.breath||row.r?.notes)&&<div style={{position:"absolute",left:0,top:"100%",zIndex:200,background:"#FFFAF7",border:"1px solid #e0d8d2",borderRadius:8,padding:"10px 14px",boxShadow:"0 4px 20px rgba(0,0,0,0.12)",minWidth:200,maxWidth:300,pointerEvents:"none"}}>
+                          {row.r?.breath&&<div style={{display:"flex",gap:8,alignItems:"flex-start",marginBottom:4}}><span style={{fontSize:10,fontWeight:700,color:"#8a7e78",textTransform:"uppercase",flexShrink:0,paddingTop:2}}>Resp.</span><span style={{fontSize:12,fontStyle:"italic",lineHeight:1.4}}>{row.r.breath}</span></div>}
+                          {row.r?.notes&&<div style={{display:"flex",gap:8,alignItems:"flex-start"}}><span style={{fontSize:10,fontWeight:700,color:"#8a7e78",textTransform:"uppercase",flexShrink:0,paddingTop:2}}>Notas</span><span style={{fontSize:12,lineHeight:1.4}}>{row.r.notes}</span></div>}
+                        </div>}
+                      </td>}
+                      {showB&&<td style={{fontSize:13,padding:"8px 10px",color:C.ink,fontWeight:600,position:"relative",cursor:"default"}}
+                        onMouseEnter={()=>setMovHovCell(`b-${ser.id}-${i}`)} onMouseLeave={()=>setMovHovCell(null)}>
+                        {row.b?.movement||<span style={{color:C.stone}}>—</span>}
+                        {movHovCell===`b-${ser.id}-${i}`&&(row.b?.breath||row.b?.notes)&&<div style={{position:"absolute",left:0,top:"100%",zIndex:200,background:"#FFFAF7",border:"1px solid #e0d8d2",borderRadius:8,padding:"10px 14px",boxShadow:"0 4px 20px rgba(0,0,0,0.12)",minWidth:200,maxWidth:300,pointerEvents:"none"}}>
+                          {row.b?.breath&&<div style={{display:"flex",gap:8,alignItems:"flex-start",marginBottom:4}}><span style={{fontSize:10,fontWeight:700,color:"#8a7e78",textTransform:"uppercase",flexShrink:0,paddingTop:2}}>Resp.</span><span style={{fontSize:12,fontStyle:"italic",lineHeight:1.4}}>{row.b.breath}</span></div>}
+                          {row.b?.notes&&<div style={{display:"flex",gap:8,alignItems:"flex-start"}}><span style={{fontSize:10,fontWeight:700,color:"#8a7e78",textTransform:"uppercase",flexShrink:0,paddingTop:2}}>Notas</span><span style={{fontSize:12,lineHeight:1.4}}>{row.b.notes}</span></div>}
+                        </div>}
+                      </td>}
                     </tr>
                   </React.Fragment>
                 );
@@ -2352,7 +2385,14 @@ const AulaView = ({ cls, allSeries, onBack, onEditClass, onDeleteClass, onUpdate
                 <tr style={{borderBottom:`1px solid ${C.stone}`,background:C.white}}>
                   {showTiming&&choreo&&<td style={{fontSize:13,padding:"8px 12px",color:C.mist,whiteSpace:"nowrap"}}>{m.timing}</td>}
                   {showLyric&&choreo&&<td style={{fontSize:13,padding:"8px 12px",color:C.mist,fontStyle:"italic"}}>{m.lyric}</td>}
-                  <td style={{fontSize:13,padding:"8px 10px",color:C.ink,fontWeight:600}}>{m.movement||<span style={{color:C.stone}}>—</span>}</td>
+                  <td style={{fontSize:13,padding:"8px 10px",color:C.ink,fontWeight:600,position:"relative",cursor:"default"}}
+                    onMouseEnter={()=>setMovHovCell(`ns-${ser.id}-${i}`)} onMouseLeave={()=>setMovHovCell(null)}>
+                    {m.movement||<span style={{color:C.stone}}>—</span>}
+                    {movHovCell===`ns-${ser.id}-${i}`&&(m.breath||m.notes)&&<div style={{position:"absolute",left:0,top:"100%",zIndex:200,background:"#FFFAF7",border:"1px solid #e0d8d2",borderRadius:8,padding:"10px 14px",boxShadow:"0 4px 20px rgba(0,0,0,0.12)",minWidth:200,maxWidth:300,pointerEvents:"none"}}>
+                      {m.breath&&<div style={{display:"flex",gap:8,alignItems:"flex-start",marginBottom:4}}><span style={{fontSize:10,fontWeight:700,color:"#8a7e78",textTransform:"uppercase",flexShrink:0,paddingTop:2}}>Resp.</span><span style={{fontSize:12,fontStyle:"italic",lineHeight:1.4}}>{m.breath}</span></div>}
+                      {m.notes&&<div style={{display:"flex",gap:8,alignItems:"flex-start"}}><span style={{fontSize:10,fontWeight:700,color:"#8a7e78",textTransform:"uppercase",flexShrink:0,paddingTop:2}}>Notas</span><span style={{fontSize:12,lineHeight:1.4}}>{m.notes}</span></div>}
+                    </div>}
+                  </td>
                 </tr>
               </React.Fragment>
             );
@@ -2886,8 +2926,7 @@ const AiStylePanel = ({ value, onChange }) => {
 const MovementLibraryPage = ({ series, onUpdateSeries, aiStyle }) => {
   const [search, setSearch] = React.useState("");
   const [expandedMovs, setExpandedMovs] = React.useState(new Set());
-  const [editingNotes, setEditingNotes] = React.useState({});
-  const [hoveredMov, setHoveredMov] = React.useState(null);
+  const [editingFields, setEditingFields] = React.useState({});
   const toast_ = useToast();
 
   // Deduplicated movements with notes aggregated and seriesRefs collected
@@ -2919,9 +2958,11 @@ const MovementLibraryPage = ({ series, onUpdateSeries, aiStyle }) => {
 
   const toggleExpand = key => setExpandedMovs(prev => { const s=new Set(prev); s.has(key)?s.delete(key):s.add(key); return s; });
 
-  const saveNotes = async (movKey, refs) => {
-    const notes = editingNotes[movKey] ?? '';
-    // Group refs by seriesId to avoid multiple updates to same series
+  const saveEdit = async (movKey, refs) => {
+    const fields = editingFields[movKey] ?? {};
+    const newName = (fields.name ?? '').trim();
+    const newBreath = (fields.breath ?? '').trim();
+    const newNotes = (fields.notes ?? '').trim();
     const bySeries = {};
     refs.forEach(r => { if(!bySeries[r.seriesId]) bySeries[r.seriesId]=[]; bySeries[r.seriesId].push(r); });
     for (const [seriesId, seriesRefs] of Object.entries(bySeries)) {
@@ -2932,12 +2973,12 @@ const MovementLibraryPage = ({ series, onUpdateSeries, aiStyle }) => {
         const side = updated[r.sideKey];
         if (!side?.movements) return;
         const movs = [...side.movements];
-        movs[r.movIndex] = { ...movs[r.movIndex], notes };
+        movs[r.movIndex] = { ...movs[r.movIndex], movement: newName||movs[r.movIndex].movement, breath: newBreath, notes: newNotes };
         updated = { ...updated, [r.sideKey]: { ...side, movements: movs } };
       });
       await onUpdateSeries(updated);
     }
-    toast_?.('Notas guardadas');
+    toast_?.('Guardado');
     toggleExpand(movKey);
   };
 
@@ -2966,30 +3007,11 @@ const MovementLibraryPage = ({ series, onUpdateSeries, aiStyle }) => {
               const movKey = m.movement.toLowerCase().trim();
               const isExpanded = expandedMovs.has(movKey);
               const aggregatedNotes = [...m.notes].join(' · ');
-              const notesText = editingNotes[movKey] !== undefined ? editingNotes[movKey] : aggregatedNotes;
               return (
                 <React.Fragment key={m.movement}>
                   <tr style={{borderTop:`1px solid ${C.stone}`,background:i%2===0?C.white:`${C.cream}80`}}>
-                    <td style={{padding:"10px 16px",fontWeight:600,color:C.ink,verticalAlign:"top",position:"relative",cursor:"default"}}
-                      onMouseEnter={()=>setHoveredMov(movKey)}
-                      onMouseLeave={()=>setHoveredMov(null)}>
+                    <td style={{padding:"10px 16px",fontWeight:600,color:C.ink,verticalAlign:"top"}}>
                       {m.movement}
-                      {hoveredMov===movKey&&(m.breath.size>0||m.notes.size>0)&&(
-                        <div style={{position:"absolute",left:0,top:"100%",zIndex:200,background:C.white,border:`1px solid ${C.stone}`,borderRadius:8,padding:"10px 14px",boxShadow:"0 4px 20px rgba(0,0,0,0.12)",minWidth:220,maxWidth:340,pointerEvents:"none"}}>
-                          {[...m.breath].map((b,bi)=>(
-                            <div key={bi} style={{display:"flex",gap:8,alignItems:"flex-start",marginBottom:6}}>
-                              <span style={{fontSize:10,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.05em",flexShrink:0,paddingTop:2}}>Resp.</span>
-                              <span style={{fontSize:12,color:C.ink,fontStyle:"italic",lineHeight:1.4}}>{b}</span>
-                            </div>
-                          ))}
-                          {[...m.notes].map((n,ni)=>(
-                            <div key={ni} style={{display:"flex",gap:8,alignItems:"flex-start",marginBottom:4}}>
-                              <span style={{fontSize:10,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.05em",flexShrink:0,paddingTop:2}}>Notas</span>
-                              <span style={{fontSize:12,color:C.ink,lineHeight:1.4}}>{n}</span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
                     </td>
                     <td style={{padding:"10px 12px",verticalAlign:"top"}}>
                       <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
@@ -3008,7 +3030,7 @@ const MovementLibraryPage = ({ series, onUpdateSeries, aiStyle }) => {
                       {[...m.series].join(", ")}
                     </td>
                     <td style={{padding:"6px 12px",verticalAlign:"top",textAlign:"right"}}>
-                      <button onClick={()=>{ if(!isExpanded) setEditingNotes(p=>({...p,[movKey]:aggregatedNotes})); toggleExpand(movKey); }}
+                      <button onClick={()=>{ if(!isExpanded) setEditingFields(p=>({...p,[movKey]:{ name:m.movement, breath:[...m.breath].join(' · '), notes:aggregatedNotes }})); toggleExpand(movKey); }}
                         title={isExpanded?"Fechar":"Editar notas"}
                         style={{background:"none",border:"none",cursor:"pointer",color:C.mist,fontSize:13,padding:"2px 6px",borderRadius:6,fontFamily:"'Satoshi',sans-serif",lineHeight:1}}>
                         {isExpanded?'✕':'✎'}
@@ -3017,23 +3039,24 @@ const MovementLibraryPage = ({ series, onUpdateSeries, aiStyle }) => {
                   </tr>
                   {isExpanded&&(
                     <tr style={{background:i%2===0?`${C.cream}60`:`${C.stone}30`,borderBottom:`1px solid ${C.stone}`}}>
-                      <td colSpan={6} style={{padding:"8px 16px 14px"}}>
-                        <div style={{fontSize:11,color:C.mist,marginBottom:6}}>Notas (aplicadas a todas as ocorrências deste movimento):</div>
-                        <textarea
-                          value={notesText}
-                          onChange={e=>setEditingNotes(p=>({...p,[movKey]:e.target.value}))}
-                          rows={3}
-                          style={{width:"100%",fontFamily:"'Satoshi',sans-serif",fontSize:12,color:C.ink,border:`1px solid ${C.stone}`,borderRadius:8,padding:"8px 12px",outline:"none",resize:"vertical",boxSizing:"border-box",lineHeight:1.5}}
-                        />
-                        <div style={{display:"flex",gap:8,marginTop:8}}>
-                          <button onClick={()=>saveNotes(movKey,m.refs)}
-                            style={{padding:"6px 16px",borderRadius:8,border:"none",background:C.crimson,color:C.cream,fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"'Satoshi',sans-serif"}}>
-                            Guardar
-                          </button>
-                          <button onClick={()=>toggleExpand(movKey)}
-                            style={{padding:"6px 16px",borderRadius:8,border:`1px solid ${C.stone}`,background:"transparent",color:C.ink,fontWeight:600,fontSize:12,cursor:"pointer",fontFamily:"'Satoshi',sans-serif"}}>
-                            Cancelar
-                          </button>
+                      <td colSpan={6} style={{padding:"10px 16px 16px"}}>
+                        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 2fr",gap:10,marginBottom:10}}>
+                          <div>
+                            <label style={{fontSize:10,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.06em",display:"block",marginBottom:4}}>Nome</label>
+                            <input value={editingFields[movKey]?.name??""} onChange={e=>setEditingFields(p=>({...p,[movKey]:{...p[movKey],name:e.target.value}}))} style={{width:"100%",fontFamily:"'Satoshi',sans-serif",fontSize:13,color:C.ink,border:`1px solid ${C.stone}`,borderRadius:6,padding:"6px 10px",outline:"none",boxSizing:"border-box"}}/>
+                          </div>
+                          <div>
+                            <label style={{fontSize:10,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.06em",display:"block",marginBottom:4}}>Respiração</label>
+                            <input value={editingFields[movKey]?.breath??""} onChange={e=>setEditingFields(p=>({...p,[movKey]:{...p[movKey],breath:e.target.value}}))} style={{width:"100%",fontFamily:"'Satoshi',sans-serif",fontSize:13,color:C.ink,border:`1px solid ${C.stone}`,borderRadius:6,padding:"6px 10px",outline:"none",boxSizing:"border-box"}}/>
+                          </div>
+                          <div>
+                            <label style={{fontSize:10,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.06em",display:"block",marginBottom:4}}>Notas</label>
+                            <textarea value={editingFields[movKey]?.notes??""} onChange={e=>setEditingFields(p=>({...p,[movKey]:{...p[movKey],notes:e.target.value}}))} rows={2} style={{width:"100%",fontFamily:"'Satoshi',sans-serif",fontSize:12,color:C.ink,border:`1px solid ${C.stone}`,borderRadius:8,padding:"8px 12px",outline:"none",resize:"vertical",boxSizing:"border-box",lineHeight:1.5}}/>
+                          </div>
+                        </div>
+                        <div style={{display:"flex",gap:8}}>
+                          <button onClick={()=>saveEdit(movKey,m.refs)} style={{padding:"6px 16px",borderRadius:8,border:"none",background:"#721919",color:"#FFFAF7",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"'Satoshi',sans-serif"}}>Guardar</button>
+                          <button onClick={()=>toggleExpand(movKey)} style={{padding:"6px 16px",borderRadius:8,border:`1px solid ${C.stone}`,background:"transparent",color:C.ink,fontWeight:600,fontSize:12,cursor:"pointer",fontFamily:"'Satoshi',sans-serif"}}>Cancelar</button>
                         </div>
                       </td>
                     </tr>
