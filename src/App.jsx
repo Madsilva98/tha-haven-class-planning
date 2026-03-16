@@ -7,6 +7,7 @@ import Onboarding from './Onboarding.jsx';
 const urlParams = new URLSearchParams(window.location.search);
 const pendingInvite = urlParams.get('invite');
 if (pendingInvite) localStorage.setItem('pending_invite', pendingInvite);
+const shareTokenParam = urlParams.get('share') || null;
 
 const C = {
   // The Haven brand palette
@@ -377,6 +378,7 @@ const classToDB = (c, userId) => ({
 const classFromDB = row => ({
   id: row.id, name: row.name, type: row.type, date: row.date || '',
   seriesIds: row.series_order || [], notes: row.notes || '',
+  shareToken: row.share_token || null,
 });
 
 // ─── PERSIST (Supabase) ──────────────────────────────────────────────────────
@@ -507,6 +509,9 @@ const SVGS = {
   play:    `<polygon points="5 3 19 12 5 21 5 3"/>`,
   send:    `<line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>`,
   copy:    `<rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>`,
+  link:    `<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>`,
+  print:   `<polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/>`,
+  users:   `<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>`,
 };
 const Icon = ({ name, size=16 }) => (
   <span style={{display:"inline-flex",alignItems:"center"}}>
@@ -2058,7 +2063,22 @@ const AulaView = ({ cls, allSeries, onBack, onEditClass, onDeleteClass, onUpdate
   const [seriesList, setSeriesList] = useState(()=>cls.seriesIds.map(id=>allSeries.find(s=>s.id===id)).filter(Boolean));
   const [editingId, setEditingId] = useState(null);
   const [notes, setNotes] = useState(cls.notes||"");
+  const [shareToken, setShareToken] = useState(cls.shareToken||null);
   const currentCls = React.useMemo(()=>({...cls, notes}), [cls, notes]);
+  const toast_ = useToast();
+
+  const handleShare = async () => {
+    let token = shareToken;
+    if (!token) {
+      token = (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2,10) + Math.random().toString(36).slice(2,10));
+      const { error } = await supabase.from('classes').update({ share_token: token }).eq('id', cls.id);
+      if (error) { toast_?.('Erro ao gerar link'); return; }
+      setShareToken(token);
+      onUpdateClass({ ...currentCls, shareToken: token });
+    }
+    navigator.clipboard.writeText(`${window.location.origin}?share=${token}`);
+    toast_?.('Link de partilha copiado!');
+  };
   const [showBreath,     setShowBreath]     = useState(false);
   const [showLyric,      setShowLyric]      = useState(false);
   const [showTiming,     setShowTiming]     = useState(false);
@@ -2340,8 +2360,9 @@ const AulaView = ({ cls, allSeries, onBack, onEditClass, onDeleteClass, onUpdate
           <Btn variant="ghost" onClick={onBack}><Icon name="back" size={14}/> Voltar</Btn>
           <h2 style={{fontFamily:"'Clash Display', sans-serif",fontSize:24,fontWeight:500,color:C.ink,margin:0,flex:1}}>{cls.name}</h2>
           {onEditClass&&<Btn small variant="ghost" onClick={()=>onEditClass(currentCls)}><Icon name="edit" size={13}/> Editar aula</Btn>}
+          <Btn small variant="ghost" onClick={handleShare}><Icon name="link" size={13}/> Partilhar</Btn>
+          <Btn small variant="ghost" onClick={()=>window.print()}><Icon name="print" size={13}/> PDF</Btn>
           {onDeleteClass&&<Btn small variant="danger" onClick={()=>onDeleteClass(cls.id)}><Icon name="x" size={13}/> Apagar aula</Btn>}
-
         </div>
       </div>
       <div style={{padding:"0 24px 32px", background:C.cream, minHeight:"100vh"}}>
@@ -3021,6 +3042,224 @@ const StudioPage = ({ profile, user, onProfileUpdate }) => {
   );
 };
 
+// ─── SHARE VIEW (public read-only, no auth required) ─────────────────────────
+const ShareView = ({ token }) => {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    supabase.rpc('get_shared_class', { p_token: token }).then(({ data: result, error: err }) => {
+      if (err || !result) { setError('Aula não encontrada ou link inválido.'); setLoading(false); return; }
+      setData(result);
+      setLoading(false);
+    });
+  }, [token]);
+
+  useEffect(() => {
+    const id = 'haven-fonts';
+    if (!document.getElementById(id)) {
+      const l = document.createElement('link');
+      l.id = id; l.rel = 'stylesheet';
+      l.href = 'https://api.fontshare.com/v2/css?f[]=clash-display@400,500,600,700&f[]=satoshi@400,500,700&display=swap';
+      document.head.appendChild(l);
+    }
+  }, []);
+
+  const wrap = children => (
+    <div style={{ minHeight: '100vh', background: C.cream, fontFamily: "'Satoshi',sans-serif" }}>
+      <div style={{ background: C.crimson, padding: '12px 28px', display: 'flex', alignItems: 'center', gap: 10 }}>
+        <HavenLogo size={26} color={C.cream}/>
+        <div>
+          <div style={{ fontFamily: "'Clash Display',sans-serif", fontSize: 9, fontWeight: 500, letterSpacing: '0.3em', textTransform: 'uppercase', color: `${C.cream}70` }}>The Haven</div>
+          <div style={{ fontFamily: "'Clash Display',sans-serif", fontSize: 14, fontWeight: 600, color: C.cream }}>Instructor Studio</div>
+        </div>
+        <div style={{ marginLeft: 'auto', fontSize: 11, color: `${C.cream}60` }}>Vista partilhada · só leitura</div>
+      </div>
+      <div style={{ maxWidth: 1100, margin: '0 auto', padding: '32px 24px' }}>{children}</div>
+    </div>
+  );
+
+  if (loading) return wrap(<div style={{ color: C.mist, fontSize: 14, textAlign: 'center', paddingTop: 60 }}>A carregar…</div>);
+  if (error)   return wrap(<div style={{ color: C.mist, fontSize: 14, textAlign: 'center', paddingTop: 60 }}>{error}</div>);
+
+  const cls = data;
+  const series = (data.series || []).map(seriesFromDB);
+  const typeColor = { reformer: C.reformer, barre: '#8a3060', signature: '#7a4010' };
+
+  return wrap(
+    <div>
+      <div style={{ marginBottom: 24 }}>
+        <div style={{ fontFamily: "'Clash Display',sans-serif", fontSize: 28, fontWeight: 500, color: C.ink }}>{cls.name}</div>
+        <div style={{ fontSize: 13, color: C.mist, marginTop: 4 }}>
+          {cls.date && <span>{cls.date} · </span>}
+          <span style={{ textTransform: 'capitalize' }}>{cls.type}</span>
+          <span style={{ marginLeft: 8, fontSize: 11, background: C.stone, padding: '2px 10px', borderRadius: 20, color: C.neutral }}>só leitura</span>
+        </div>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: 16 }}>
+        {series.map((ser, idx) => {
+          const d = ser.type === 'barre' ? ser.barre : ser.reformer;
+          const isSig = ser.type === 'signature';
+          return (
+            <div key={ser.id} style={{ background: C.white, borderRadius: 12, border: `1px solid ${C.stone}`, padding: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8 }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: C.mist }}>0{idx + 1}</span>
+                <span style={{ fontFamily: "'Clash Display',sans-serif", fontSize: 16, fontWeight: 500, color: C.ink, flex: 1 }}>{ser.name}</span>
+                <Badge label={ser.type} color={ser.type === 'reformer' ? 'teal' : ser.type === 'barre' ? 'coral' : 'gold'}/>
+              </div>
+              {/* Setup */}
+              {(ser.reformer?.springs || ser.reformer?.startPosition || ser.barre?.startPosition) && (
+                <div style={{ fontSize: 11, color: C.mist, marginBottom: 8, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                  {ser.reformer?.springs && <span>Springs: <b>{ser.reformer.springs}</b></span>}
+                  {isSig
+                    ? <><span>R: {ser.reformer?.startPosition||'–'}</span><span>B: {ser.barre?.startPosition||'–'}</span></>
+                    : <span>{d?.startPosition}</span>}
+                </div>
+              )}
+              {/* Intro cue */}
+              {ser.introCue && (
+                <div style={{ fontSize: 12, color: '#1a4a7a', background: `${C.blue}30`, borderRadius: 6, padding: '6px 10px', marginBottom: 8, fontStyle: 'italic' }}>{ser.introCue}</div>
+              )}
+              {/* Movements */}
+              {isSig ? (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  {[['Reformer', ser.reformer?.movements, C.reformer], ['Barre', ser.barre?.movements, '#c0507a']].map(([label, movs, col]) => (
+                    <div key={label}>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: col, textTransform: 'uppercase', marginBottom: 4 }}>{label}</div>
+                      {(movs || []).map((m, i) => <div key={i} style={{ fontSize: 12, padding: '3px 0', borderBottom: `1px solid ${C.stone}`, color: C.ink }}>{m.movement}</div>)}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div>
+                  {(d?.movements || []).map((m, i) => (
+                    <div key={i} style={{ fontSize: 12, padding: '3px 0', borderBottom: `1px solid ${C.stone}`, color: C.ink, display: 'flex', gap: 8 }}>
+                      {m.timing && <span style={{ color: C.mist, minWidth: 30 }}>{m.timing}</span>}
+                      <span>{m.movement}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+// ─── CLIENT PORTAL ────────────────────────────────────────────────────────────
+const ClientPortal = ({ user, profile }) => {
+  const [classes, setClasses] = useState([]);
+  const [allSeries, setAllSeries] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedCls, setSelectedCls] = useState(null);
+
+  useEffect(() => {
+    if (!profile?.studio_id) { setLoading(false); return; }
+    (async () => {
+      // Load studio-mates' profiles to find classes created by them
+      const { data: studioMembers } = await supabase.from('profiles').select('id').eq('studio_id', profile.studio_id);
+      const memberIds = (studioMembers || []).map(m => m.id);
+      if (!memberIds.length) { setLoading(false); return; }
+      const [clsRes, serRes] = await Promise.all([
+        supabase.from('classes').select('*').in('created_by', memberIds).order('date', { ascending: false }),
+        supabase.from('series').select('*').in('created_by', memberIds),
+      ]);
+      setClasses((clsRes.data || []).map(classFromDB));
+      setAllSeries((serRes.data || []).map(seriesFromDB));
+      setLoading(false);
+    })();
+  }, [profile?.studio_id]);
+
+  const studio = profile?.studios;
+
+  if (selectedCls) {
+    const seriesList = selectedCls.seriesIds.map(id => allSeries.find(s => s.id === id)).filter(Boolean);
+    return (
+      <div style={{ maxWidth: 1100, margin: '0 auto', padding: '28px 24px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
+          <Btn variant="ghost" small onClick={() => setSelectedCls(null)}><Icon name="back" size={13}/> Voltar</Btn>
+          <h2 style={{ fontFamily: "'Clash Display',sans-serif", fontSize: 22, fontWeight: 500, color: C.ink, margin: 0, flex: 1 }}>{selectedCls.name}</h2>
+          {selectedCls.date && <span style={{ fontSize: 12, color: C.mist }}>{selectedCls.date}</span>}
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 14 }}>
+          {seriesList.map((ser, idx) => {
+            const d = ser.type === 'barre' ? ser.barre : ser.reformer;
+            const isSig = ser.type === 'signature';
+            return (
+              <div key={ser.id} style={{ background: C.white, borderRadius: 12, border: `1px solid ${C.stone}`, padding: 16 }}>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8 }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: C.mist }}>0{idx + 1}</span>
+                  <span style={{ fontFamily: "'Clash Display',sans-serif", fontSize: 15, fontWeight: 500, color: C.ink, flex: 1 }}>{ser.name}</span>
+                  <Badge label={ser.type} color={ser.type === 'reformer' ? 'teal' : ser.type === 'barre' ? 'coral' : 'gold'}/>
+                </div>
+                {ser.reformer?.springs && <div style={{ fontSize: 11, color: C.mist, marginBottom: 6 }}>Springs: <b>{ser.reformer.springs}</b>{ser.reformer?.startPosition ? ` · ${ser.reformer.startPosition}` : ''}</div>}
+                {ser.introCue && <div style={{ fontSize: 12, color: '#1a4a7a', background: `${C.blue}30`, borderRadius: 6, padding: '5px 8px', marginBottom: 8, fontStyle: 'italic' }}>{ser.introCue}</div>}
+                {isSig ? (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                    {[['Reformer', ser.reformer?.movements, C.reformer], ['Barre', ser.barre?.movements, '#c0507a']].map(([lbl, movs, col]) => (
+                      <div key={lbl}>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: col, textTransform: 'uppercase', marginBottom: 3 }}>{lbl}</div>
+                        {(movs || []).map((m, i) => <div key={i} style={{ fontSize: 12, padding: '2px 0', borderBottom: `1px solid ${C.stone}` }}>{m.movement}</div>)}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  (d?.movements || []).map((m, i) => (
+                    <div key={i} style={{ fontSize: 12, padding: '3px 0', borderBottom: `1px solid ${C.stone}`, color: C.ink, display: 'flex', gap: 8 }}>
+                      {m.timing && <span style={{ color: C.mist, minWidth: 30 }}>{m.timing}</span>}
+                      <span>{m.movement}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ minHeight: '100vh', background: C.cream, fontFamily: "'Satoshi',sans-serif" }}>
+      <div style={{ background: C.crimson, padding: '12px 28px', display: 'flex', alignItems: 'center', gap: 12 }}>
+        <HavenLogo size={26} color={C.cream}/>
+        <div>
+          <div style={{ fontFamily: "'Clash Display',sans-serif", fontSize: 9, fontWeight: 500, letterSpacing: '0.3em', textTransform: 'uppercase', color: `${C.cream}70` }}>The Haven</div>
+          <div style={{ fontFamily: "'Clash Display',sans-serif", fontSize: 14, fontWeight: 600, color: C.cream }}>{studio?.name || 'Studio'}</div>
+        </div>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
+          <span style={{ fontSize: 12, color: `${C.cream}70` }}>{profile?.name || ''}</span>
+          <button onClick={() => supabase.auth.signOut()} style={{ fontFamily: "'Satoshi',sans-serif", fontWeight: 600, fontSize: 12, padding: '6px 14px', borderRadius: 6, border: `1px solid ${C.cream}40`, background: 'transparent', color: `${C.cream}80`, cursor: 'pointer' }}>Sair</button>
+        </div>
+      </div>
+      <div style={{ maxWidth: 800, margin: '0 auto', padding: '32px 24px' }}>
+        <h2 style={{ fontFamily: "'Clash Display',sans-serif", fontSize: 24, fontWeight: 500, color: C.crimson, marginBottom: 6 }}>Aulas</h2>
+        {loading ? (
+          <div style={{ color: C.mist, fontSize: 14, paddingTop: 40, textAlign: 'center' }}>A carregar…</div>
+        ) : classes.length === 0 ? (
+          <div style={{ color: C.mist, fontSize: 14, paddingTop: 40, textAlign: 'center' }}>Ainda não há aulas partilhadas no studio.</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {classes.map(c => (
+              <div key={c.id} onClick={() => setSelectedCls(c)} style={{ background: C.white, borderRadius: 12, border: `1px solid ${C.stone}`, padding: '14px 20px', display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontFamily: "'Clash Display',sans-serif", fontSize: 16, fontWeight: 500, color: C.ink }}>{c.name || 'Sem nome'}</div>
+                  <div style={{ fontSize: 12, color: C.mist, marginTop: 2 }}>{c.date} · {c.seriesIds.length} série{c.seriesIds.length !== 1 ? 's' : ''}</div>
+                </div>
+                <Badge label={c.type === 'signature' ? '✦ Signature' : c.type} color={c.type === 'signature' ? 'gold' : c.type === 'reformer' ? 'teal' : 'coral'}/>
+                <span style={{ fontSize: 12, color: C.mist }}>→</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
 export default function HavenInstructor() {
   const [user,    setUser]    = useState(null);
@@ -3163,7 +3402,9 @@ export default function HavenInstructor() {
   }, []);
 
   if (authLoading) return <div style={{minHeight:"100vh",background:C.cream,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Satoshi',sans-serif",color:C.mist}}>A carregar…</div>;
+  if (!user && shareTokenParam) return <ShareView token={shareTokenParam} />;
   if (!user) return <Auth />;
+  if (dataLoaded && profile?.role === 'client') return <ClientPortal user={user} profile={profile} />;
   if (dataLoaded && profile && !profile.onboarded) return (
     <Onboarding user={user} profile={profile} onComplete={async (newAiStyle) => {
       const p = await api.loadProfile(user.id);
