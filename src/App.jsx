@@ -993,11 +993,11 @@ const SeriesCard = ({ series, onEdit, onDelete, onUpdateSeries, aiStyle, modalit
           {expanded&&(<>
             {isOwner&&<Btn small variant="ghost" onClick={e=>{e.stopPropagation();onEdit(series);}}><Icon name="edit" size={13}/> Editar</Btn>}
             {!isOwner&&onCopy&&<Btn small variant="ghost" onClick={e=>{e.stopPropagation();onCopy(series);}}><Icon name="copy" size={13}/> Copiar</Btn>}
-            {isOwner&&hasStudio&&series.visibility==='personal'&&onPublish&&<Btn small variant="ghost" onClick={e=>{e.stopPropagation();onPublish(series);}} title="Submeter para revisão do studio" style={{color:"#1a56db"}}>↑ Studio</Btn>}
+            {isOwner&&hasStudio&&series.visibility==='personal'&&onPublish&&<Btn small variant="ghost" onClick={e=>{e.stopPropagation();onPublish(series);}} title="Submeter para revisão do studio (visível apenas aos membros)" style={{color:"#1a56db"}}>↑ Studio</Btn>}
             {isOwner&&series.visibility==='pending_studio'&&onUnpublish&&<Btn small variant="ghost" onClick={e=>{e.stopPropagation();onUnpublish(series);}} style={{color:C.mist}}>Cancelar submissão</Btn>}
             {isOwner&&series.visibility==='studio'&&onUnpublish&&<Btn small variant="ghost" onClick={e=>{e.stopPropagation();onUnpublish(series);}} style={{color:C.mist}}>Tornar privada</Btn>}
             {isOwner&&series.visibility==='public'&&onUnpublish&&<Btn small variant="ghost" onClick={e=>{e.stopPropagation();onUnpublish(series);}} style={{color:C.mist}}>Tornar privada</Btn>}
-            {isOwner&&series.visibility!=='public'&&onMakePublic&&<Btn small variant="ghost" onClick={async e=>{e.stopPropagation();const ok=await confirm_?.("Tornares esta série pública significa que qualquer Instructor do The Haven a poderá ver. Tens a certeza?",{confirmLabel:"Tornar pública",danger:false});if(ok)onMakePublic(series);}} style={{color:"#059669"}}>↑ Público</Btn>}
+            {isOwner&&series.visibility!=='public'&&onMakePublic&&<Btn small variant="ghost" onClick={async e=>{e.stopPropagation();const ok=await confirm_?.("Tornares esta série pública significa que qualquer Instructor do The Haven a poderá ver. Tens a certeza?",{confirmLabel:"Tornar pública",danger:false});if(ok)onMakePublic(series);}} title="Tornar visível a todos os Instructors do The Haven (todas as academias)" style={{color:"#059669"}}>↑ Público</Btn>}
           </>)}
         </div>
         <span style={{ color:C.mist, display:"inline-flex", transition:"transform 0.2s",
@@ -1009,6 +1009,12 @@ const SeriesCard = ({ series, onEdit, onDelete, onUpdateSeries, aiStyle, modalit
       {/* Expanded body */}
       {expanded&&(
         <div style={{ borderTop:`1px solid ${C.stone}`, padding:"16px 20px", display:"flex", flexDirection:"column", gap:14 }}>
+
+          {isOwner&&hasStudio&&(series.visibility==='personal'||series.visibility==='studio')&&(
+            <div style={{fontSize:10,color:C.mist,marginTop:-6}}>
+              Studio — partilha com os teus colegas · Público — visível a todos os Instructors do The Haven
+            </div>
+          )}
 
           {/* Reformer/Barre toggles — only for Signature */}
           {isSig&&(
@@ -2927,6 +2933,123 @@ const MovementLibraryPage = ({ series, onUpdateSeries, aiStyle }) => {
 
 
 // ─── STUDIO PAGE ─────────────────────────────────────────────────────────────
+const ProfilePage = ({ profile, user, onProfileUpdate, studioSettings }) => {
+  const [editName, setEditName] = useState(profile?.name || '');
+  const [editPrefZones, setEditPrefZones] = useState(profile?.settings?.preferred_zones || []);
+  const [editPrefClassTypes, setEditPrefClassTypes] = useState(profile?.settings?.class_types || []);
+  const [editPrefLevels, setEditPrefLevels] = useState(profile?.settings?.preferred_levels || []);
+  const [newPrefZone, setNewPrefZone] = useState('');
+  const [newPrefClassType, setNewPrefClassType] = useState('');
+  const [newPrefLevel, setNewPrefLevel] = useState('');
+  const [saving, setSaving] = useState(false);
+  const toast_ = useToast();
+
+  useEffect(() => {
+    setEditName(profile?.name || '');
+    setEditPrefZones(profile?.settings?.preferred_zones || []);
+    setEditPrefClassTypes(profile?.settings?.class_types || []);
+    setEditPrefLevels(profile?.settings?.preferred_levels || []);
+  }, [profile]);
+
+  const save = async () => {
+    setSaving(true);
+    const { error } = await supabase.from('profiles').update({
+      name: editName,
+      settings: { ...(profile?.settings || {}), preferred_zones: editPrefZones, class_types: editPrefClassTypes, preferred_levels: editPrefLevels },
+    }).eq('id', profile.id);
+    setSaving(false);
+    if (!error) {
+      toast_?.('Perfil guardado');
+      const updated = await api.loadProfile(user.id);
+      onProfileUpdate(updated);
+    } else {
+      toast_?.('Erro ao guardar perfil');
+    }
+  };
+
+  const classLevelOptions = studioSettings?.class_levels || DEFAULT_CLASS_LEVELS;
+
+  const PillRow = ({ items, onRemove, newVal, onNewVal, onAdd, placeholder }) => (
+    <div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+        {items.map(z => (
+          <span key={z} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 12px', borderRadius: 20, background: C.cream, border: `1px solid ${C.stone}`, fontSize: 13, fontWeight: 500, color: C.ink, fontFamily: "'Satoshi',sans-serif" }}>
+            {z}
+            <button onClick={() => onRemove(z)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.mist, fontSize: 13, lineHeight: 1, padding: 0, display: 'flex', alignItems: 'center' }}>×</button>
+          </span>
+        ))}
+      </div>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <input value={newVal} onChange={e => onNewVal(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') onAdd(); }}
+          placeholder={placeholder} style={{ flex: 1, padding: '7px 12px', borderRadius: 8, border: `1px solid ${C.stone}`, fontFamily: "'Satoshi',sans-serif", fontSize: 13, outline: 'none' }} />
+        <button onClick={onAdd} style={{ padding: '7px 14px', borderRadius: 8, border: `1px solid ${C.stone}`, background: 'transparent', color: C.ink, fontWeight: 600, fontSize: 13, cursor: 'pointer', fontFamily: "'Satoshi',sans-serif" }}>+ Adicionar</button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={{ maxWidth: 600 }}>
+      <h2 style={{ fontFamily:"'Clash Display',sans-serif", fontSize: 22, fontWeight: 500, color: C.crimson, marginBottom: 20 }}>O meu perfil</h2>
+      <div style={{ background: C.white, borderRadius: 12, border: `1px solid ${C.stone}`, padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 22 }}>
+
+        {/* Nome */}
+        <div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: C.mist, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Nome</div>
+          <input value={editName} onChange={e => setEditName(e.target.value)}
+            style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: `1px solid ${C.stone}`, fontFamily: "'Satoshi',sans-serif", fontSize: 14, outline: 'none', boxSizing: 'border-box' }} />
+        </div>
+
+        {/* Email */}
+        <div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: C.mist, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Email</div>
+          <div style={{ fontSize: 14, color: C.mist, padding: '8px 0' }}>{user?.email}</div>
+        </div>
+
+        {/* Preferred Zones */}
+        <div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: C.mist, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Zonas preferidas</div>
+          <PillRow items={editPrefZones} onRemove={z => setEditPrefZones(p => p.filter(x => x !== z))}
+            newVal={newPrefZone} onNewVal={setNewPrefZone} placeholder="Adicionar zona…"
+            onAdd={() => { const v = newPrefZone.trim(); if (v && !editPrefZones.map(x => x.toLowerCase()).includes(v.toLowerCase())) { setEditPrefZones(p => [...p, v]); setNewPrefZone(''); } }} />
+        </div>
+
+        {/* Preferred Class Types */}
+        <div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: C.mist, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Tipos de aula preferidos</div>
+          <PillRow items={editPrefClassTypes} onRemove={t => setEditPrefClassTypes(p => p.filter(x => x !== t))}
+            newVal={newPrefClassType} onNewVal={setNewPrefClassType} placeholder="Adicionar tipo…"
+            onAdd={() => { const v = newPrefClassType.trim(); if (v && !editPrefClassTypes.map(x => x.toLowerCase()).includes(v.toLowerCase())) { setEditPrefClassTypes(p => [...p, v]); setNewPrefClassType(''); } }} />
+        </div>
+
+        {/* Preferred Levels */}
+        <div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: C.mist, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Níveis preferidos</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+            {classLevelOptions.map(lvl => {
+              const active = editPrefLevels.includes(lvl);
+              return (
+                <button key={lvl} onClick={() => setEditPrefLevels(p => active ? p.filter(x => x !== lvl) : [...p, lvl])}
+                  style={{ padding: '5px 14px', borderRadius: 20, border: `1px solid ${active ? C.crimson : C.stone}`, background: active ? `${C.crimson}15` : 'transparent', color: active ? C.crimson : C.mist, fontWeight: active ? 700 : 500, fontSize: 13, cursor: 'pointer', fontFamily: "'Satoshi',sans-serif" }}>
+                  {lvl}
+                </button>
+              );
+            })}
+          </div>
+          <PillRow items={editPrefLevels.filter(l => !classLevelOptions.includes(l))}
+            onRemove={l => setEditPrefLevels(p => p.filter(x => x !== l))}
+            newVal={newPrefLevel} onNewVal={setNewPrefLevel} placeholder="Adicionar nível personalizado…"
+            onAdd={() => { const v = newPrefLevel.trim(); if (v && !editPrefLevels.map(x => x.toLowerCase()).includes(v.toLowerCase())) { setEditPrefLevels(p => [...p, v]); setNewPrefLevel(''); } }} />
+        </div>
+
+        <button onClick={save} disabled={saving} style={{ alignSelf: 'flex-start', padding: '9px 24px', borderRadius: 8, border: 'none', background: saving ? C.stone : C.crimson, color: C.cream, fontWeight: 700, fontSize: 13, cursor: saving ? 'not-allowed' : 'pointer', fontFamily: "'Satoshi',sans-serif" }}>
+          {saving ? 'A guardar…' : 'Guardar perfil'}
+        </button>
+      </div>
+    </div>
+  );
+};
+
 const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary }) => {
   const [activeTab, setActiveTab] = useState('series');
   const [members, setMembers] = useState([]);
@@ -2947,12 +3070,6 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary }) => {
   const [newZone, setNewZone] = useState('');
   const [newClassLevel, setNewClassLevel] = useState('');
   const [savingSettings, setSavingSettings] = useState(false);
-  const [profileOpen, setProfileOpen] = useState(false);
-  const [editPrefZones, setEditPrefZones] = useState([]);
-  const [editPrefClassTypes, setEditPrefClassTypes] = useState([]);
-  const [newPrefZone, setNewPrefZone] = useState('');
-  const [newPrefClassType, setNewPrefClassType] = useState('');
-  const [savingProfile, setSavingProfile] = useState(false);
   const toast_ = useToast();
   const confirm_ = useConfirm();
 
@@ -2983,28 +3100,6 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary }) => {
       onProfileUpdate(updated);
     } else {
       toast_?.('Erro ao guardar definições');
-    }
-  };
-
-  useEffect(() => {
-    if (profile?.settings) {
-      setEditPrefZones(profile.settings.preferred_zones || []);
-      setEditPrefClassTypes(profile.settings.class_types || []);
-    }
-  }, [profile]);
-
-  const saveProfileSettings = async () => {
-    setSavingProfile(true);
-    const { error } = await supabase.from('profiles').update({
-      settings: { ...(profile?.settings || {}), preferred_zones: editPrefZones, class_types: editPrefClassTypes },
-    }).eq('id', profile.id);
-    setSavingProfile(false);
-    if (!error) {
-      toast_?.('Perfil guardado');
-      const updated = await api.loadProfile(user.id);
-      onProfileUpdate(updated);
-    } else {
-      toast_?.('Erro ao guardar perfil');
     }
   };
 
@@ -3157,7 +3252,6 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary }) => {
     { key: 'series', label: 'Séries do Studio' },
     { key: 'classes', label: 'Aulas do Studio' },
     { key: 'members', label: 'Membros' },
-    { key: 'profile', label: 'O meu perfil' },
     ...(isAdmin ? [{ key: 'reviews', label: `Revisões${pendingSeries.length+pendingClasses.length>0?' ('+String(pendingSeries.length+pendingClasses.length)+')':''}` }] : []),
     ...(isAdmin ? [{ key: 'settings', label: 'Definições' }] : []),
   ];
@@ -3263,53 +3357,6 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary }) => {
               </div>
             ))}
           </div>
-        </div>
-      )}
-
-      {/* ── O meu perfil ── */}
-      {activeTab==='profile'&&(
-        <div style={{ background: C.white, borderRadius: 12, border: `1px solid ${C.stone}`, padding: '20px 20px 24px' }}>
-          {/* Preferred Zones */}
-          <div style={{ marginBottom: 20 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: C.mist, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Zonas preferidas</div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
-              {editPrefZones.map(z => (
-                <span key={z} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 12px', borderRadius: 20, background: C.cream, border: `1px solid ${C.stone}`, fontSize: 13, fontWeight: 500, color: C.ink, fontFamily: "'Satoshi',sans-serif" }}>
-                  {z}
-                  <button onClick={() => setEditPrefZones(p => p.filter(x => x !== z))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.mist, fontSize: 13, lineHeight: 1, padding: 0, display: 'flex', alignItems: 'center' }}>×</button>
-                </span>
-              ))}
-            </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input value={newPrefZone} onChange={e => setNewPrefZone(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') { const v = newPrefZone.trim(); if (v && !editPrefZones.map(x => x.toLowerCase()).includes(v.toLowerCase())) { setEditPrefZones(p => [...p, v]); setNewPrefZone(''); } } }}
-                placeholder="Adicionar zona…" style={{ flex: 1, padding: '7px 12px', borderRadius: 8, border: `1px solid ${C.stone}`, fontFamily: "'Satoshi',sans-serif", fontSize: 13, outline: 'none' }} />
-              <button onClick={() => { const v = newPrefZone.trim(); if (v && !editPrefZones.map(x => x.toLowerCase()).includes(v.toLowerCase())) { setEditPrefZones(p => [...p, v]); setNewPrefZone(''); } }}
-                style={{ padding: '7px 14px', borderRadius: 8, border: `1px solid ${C.stone}`, background: 'transparent', color: C.ink, fontWeight: 600, fontSize: 13, cursor: 'pointer', fontFamily: "'Satoshi',sans-serif" }}>+ Adicionar</button>
-            </div>
-          </div>
-          {/* Preferred Class Types */}
-          <div style={{ marginBottom: 20 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: C.mist, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Tipos de aula preferidos</div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
-              {editPrefClassTypes.map(t => (
-                <span key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 12px', borderRadius: 20, background: C.cream, border: `1px solid ${C.stone}`, fontSize: 13, fontWeight: 500, color: C.ink, fontFamily: "'Satoshi',sans-serif" }}>
-                  {t}
-                  <button onClick={() => setEditPrefClassTypes(p => p.filter(x => x !== t))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.mist, fontSize: 13, lineHeight: 1, padding: 0, display: 'flex', alignItems: 'center' }}>×</button>
-                </span>
-              ))}
-            </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input value={newPrefClassType} onChange={e => setNewPrefClassType(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') { const v = newPrefClassType.trim(); if (v && !editPrefClassTypes.map(x => x.toLowerCase()).includes(v.toLowerCase())) { setEditPrefClassTypes(p => [...p, v]); setNewPrefClassType(''); } } }}
-                placeholder="Adicionar tipo…" style={{ flex: 1, padding: '7px 12px', borderRadius: 8, border: `1px solid ${C.stone}`, fontFamily: "'Satoshi',sans-serif", fontSize: 13, outline: 'none' }} />
-              <button onClick={() => { const v = newPrefClassType.trim(); if (v && !editPrefClassTypes.map(x => x.toLowerCase()).includes(v.toLowerCase())) { setEditPrefClassTypes(p => [...p, v]); setNewPrefClassType(''); } }}
-                style={{ padding: '7px 14px', borderRadius: 8, border: `1px solid ${C.stone}`, background: 'transparent', color: C.ink, fontWeight: 600, fontSize: 13, cursor: 'pointer', fontFamily: "'Satoshi',sans-serif" }}>+ Adicionar</button>
-            </div>
-          </div>
-          <button onClick={saveProfileSettings} disabled={savingProfile} style={{ padding: '9px 24px', borderRadius: 8, border: 'none', background: savingProfile ? C.stone : C.crimson, color: C.cream, fontWeight: 700, fontSize: 13, cursor: savingProfile ? 'not-allowed' : 'pointer', fontFamily: "'Satoshi',sans-serif" }}>
-            {savingProfile ? 'A guardar…' : 'Guardar perfil'}
-          </button>
         </div>
       )}
 
@@ -3829,7 +3876,7 @@ export default function HavenInstructor() {
           <div style={{flex:1}}/>
           <div style={{display:"flex",alignItems:"center",gap:8}}>
             <div style={{display:"flex",gap:2,background:`rgba(0,0,0,0.15)`,padding:3,borderRadius:8}}>
-              {[["movements","Movimentos"],["library","Séries"],["builder","Aulas"],["studio","Studio"]].map(([id,lbl])=>(
+              {[["movements","Movimentos"],["library","Séries"],["builder","Aulas"],["studio","Studio"],["perfil","Perfil"]].map(([id,lbl])=>(
                 <button key={id} onClick={()=>goTab(id)} style={{fontFamily:"'Satoshi', sans-serif",fontWeight:600,fontSize:12,padding:"6px 16px",borderRadius:6,border:"none",cursor:"pointer",background:screen.mode===id?C.cream:"transparent",color:screen.mode===id?C.crimson:`${C.cream}80`,transition:"all 0.15s"}}>{lbl}</button>
               ))}
             </div>
@@ -3910,6 +3957,12 @@ export default function HavenInstructor() {
         {/* ── STUDIO ── */}
         {screen.mode==="studio"&&(
           <StudioPage profile={profile} user={user} onProfileUpdate={p=>setProfile(p)} onCopyToLibrary={copyToLibrary}/>
+        )}
+
+        {/* ── PERFIL ── */}
+        {screen.mode==="perfil"&&(
+          <ProfilePage profile={profile} user={user} onProfileUpdate={p=>setProfile(p)}
+            studioSettings={profile?.studios?.settings}/>
         )}
 
         {/* ── MOVEMENTS ── */}
