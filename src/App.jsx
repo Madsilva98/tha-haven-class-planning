@@ -874,10 +874,13 @@ const SeriesCard = ({ series, onEdit, onDelete, onUpdateSeries, aiStyle, modalit
                 {choreo&&<th style={{fontSize:12,fontWeight:600,color:C.ink,textAlign:"left",padding:"8px 12px",whiteSpace:"nowrap",letterSpacing:"0.04em",textTransform:"uppercase",width:"1%"}}>Timing</th>}
                 {choreo&&<th style={{fontSize:12,fontWeight:600,color:C.ink,textAlign:"left",padding:"8px 12px",letterSpacing:"0.04em",textTransform:"uppercase",maxWidth:180}}>Lyric</th>}
                 {showR&&<th style={{fontSize:12,fontWeight:600,color:C.reformer,textAlign:"left",padding:"8px 12px",letterSpacing:"0.04em",textTransform:"uppercase"}}>Reformer</th>}
+                {showR&&<th style={{fontSize:11,fontWeight:600,color:`${C.reformer}90`,textAlign:"left",padding:"8px 8px"}}>Respiração R</th>}
                 {showB&&<th style={{fontSize:12,fontWeight:600,color:"#c0507a",textAlign:"left",padding:"8px 12px",letterSpacing:"0.04em",textTransform:"uppercase"}}>Barre</th>}
+                {showB&&<th style={{fontSize:11,fontWeight:600,color:"#c0507a90",textAlign:"left",padding:"8px 8px"}}>Respiração B</th>}
               </tr>
             </thead>
             <tbody>
+              {localSeries.openCue&&<tr className="print-cue-row" style={{background:"#F4EDE8"}}><td colSpan={99} style={{padding:"4px 10px"}}><div style={{display:"flex",alignItems:"center",gap:6}}><span style={{fontSize:12,color:C.reformer,fontWeight:700,flexShrink:0}}>✦</span><span style={{fontSize:12,fontStyle:"italic",color:"#7a4010",fontFamily:"'Satoshi',sans-serif"}}>{localSeries.openCue}</span></div></td></tr>}
               {rows.map((row,i)=>{
                 const cue=row.transitionCue?.trim();
                 const rk=`${localSeries.id}-${i}`;
@@ -919,62 +922,85 @@ const SeriesCard = ({ series, onEdit, onDelete, onUpdateSeries, aiStyle, modalit
                         {row.r?.movement||<span style={{color:C.stone}}>—</span>}
                         {row.r?.notes&&<div title={row.r.notes} style={{fontSize:10,color:C.mist,fontStyle:"italic",marginTop:2,borderTop:`1px solid ${C.stone}40`,paddingTop:2}}>{row.r.notes}</div>}
                       </td>}
+                      {showR&&<td style={{fontSize:11,padding:"8px 8px",color:C.mist,fontStyle:"italic"}}>{row.r?.breath||""}</td>}
                       {showB&&<td style={{fontSize:12,padding:"7px 10px",color:C.ink,fontWeight:500}}>
                         {row.b?.movement||<span style={{color:C.stone}}>—</span>}
                         {row.b?.notes&&<div title={row.b.notes} style={{fontSize:10,color:C.mist,fontStyle:"italic",marginTop:2,borderTop:`1px solid ${C.stone}40`,paddingTop:2}}>{row.b.notes}</div>}
                       </td>}
+                      {showB&&<td style={{fontSize:11,padding:"8px 8px",color:C.mist,fontStyle:"italic"}}>{row.b?.breath||""}</td>}
                     </tr>
                   </React.Fragment>
                 );
               })}
+              {localSeries.closeCue&&<tr className="print-cue-row" style={{background:"#F4EDE8"}}><td colSpan={99} style={{padding:"4px 10px"}}><div style={{display:"flex",alignItems:"center",gap:6}}><span style={{fontSize:12,color:C.reformer,fontWeight:700,flexShrink:0}}>✦</span><span style={{fontSize:12,fontStyle:"italic",color:"#7a4010",fontFamily:"'Satoshi',sans-serif"}}>{localSeries.closeCue}</span></div></td></tr>}
             </tbody>
           </table>
         </div>
       );
     }
 
-    // Non-signature: single modality list
+    // Non-signature: single modality table
     const d=localSeries.type==="barre"?localSeries.barre:localSeries.reformer;
     const choreo=d?.movements?.some(m=>m.timing);
     return (
-      <div>
-        {d?.movements?.map((m,i)=>{
-          const nsCue = m.transitionCue?.trim();
-          const nsKey = `${localSeries.id}-ns-${i}`;
-          return (
-            <React.Fragment key={i}>
-              {i>0&&(!nsCue&&!openCueRows.has(nsKey)?(
-                <button onClick={e=>{e.stopPropagation();toggleCueRow(nsKey);}} style={{background:"none",border:"none",cursor:"pointer",color:C.mist,fontSize:11,fontFamily:"'Satoshi',sans-serif",fontWeight:600,padding:"2px 4px",opacity:0.6,display:"block"}}>+ cue</button>
-              ):(
-                <div style={{background:C.cream,padding:"4px 10px",borderRadius:4,margin:"2px 0",display:"flex",alignItems:"center",gap:6}}>
-                  <span style={{fontSize:13,color:"#7a4010",fontWeight:700,flexShrink:0}}>✦</span>
-                  <input
-                    value={m.transitionCue||""}
-                    placeholder="Transition cue…"
-                    onClick={e=>e.stopPropagation()}
-                    onChange={e=>{
-                      e.stopPropagation();
-                      const k=localSeries.type==="barre"?"barre":"reformer";
-                      const newM=[...(localSeries[k]?.movements||[])];
-                      newM[i]={...newM[i],transitionCue:e.target.value};
-                      setSeries_({...localSeries,[k]:{...localSeries[k],movements:newM}});
-                    }}
-                    style={{flex:1,fontSize:13,fontStyle:"italic",color:"#7a4010",background:"transparent",border:"none",borderBottom:`1px solid ${C.sig}60`,outline:"none",fontFamily:"'Satoshi', sans-serif",padding:"2px 4px"}}
-                  />
-                  <CardCueGen series={localSeries} rowIndex={i} rows={null} aiStyle={aiStyle} onUpdate={setSeries_} nonsig/>
-                </div>
-              ))}
-              <div style={{display:"flex",gap:10,padding:"7px 0",borderBottom:`1px solid ${C.stone}`,background:C.white}}>
-                {choreo&&<span style={{fontSize:13,color:C.mist,minWidth:90,flexShrink:0}}>{m.timing}</span>}
-                {choreo&&<span style={{fontSize:13,color:C.mist,minWidth:100,fontStyle:"italic",flexShrink:0}}>{m.lyric}</span>}
-                <span style={{fontSize:13,fontWeight:500,color:C.ink,flex:1}} title={m.notes||undefined}>
-                  {m.movement}{m.notes&&<span style={{marginLeft:4,fontSize:9,color:C.mist}}>●</span>}
-                </span>
-                <span style={{fontSize:11,color:C.mist}}>{m.breath}</span>
-              </div>
-            </React.Fragment>
-          );
-        })}
+      <div style={{overflowX:"auto"}}>
+        <table style={{width:"100%",borderCollapse:"collapse",tableLayout:"auto"}}>
+          <thead><tr className="print-thead" style={{background:"#ddd0ca"}}>
+            {choreo&&<th style={{fontSize:12,fontWeight:600,color:C.mist,textAlign:"left",padding:"8px 12px"}}>Timing</th>}
+            {choreo&&<th style={{fontSize:12,fontWeight:600,color:C.mist,textAlign:"left",padding:"8px 12px"}}>Lyric</th>}
+            <th style={{fontSize:12,fontWeight:600,color:C.mist,textAlign:"left",padding:"8px 10px"}}>Movimento</th>
+            <th style={{fontSize:11,fontWeight:600,color:C.mist,textAlign:"left",padding:"8px 8px"}}>Respiração</th>
+            <th style={{fontSize:11,fontWeight:600,color:C.mist,textAlign:"left",padding:"8px 8px"}}>Notas</th>
+          </tr></thead>
+          <tbody>
+            {localSeries.openCue&&<tr className="print-cue-row" style={{background:"#F4EDE8"}}><td colSpan={99} style={{padding:"4px 10px"}}><div style={{display:"flex",alignItems:"center",gap:6}}><span style={{fontSize:12,color:C.reformer,fontWeight:700,flexShrink:0}}>✦</span><span style={{fontSize:12,fontStyle:"italic",color:"#7a4010",fontFamily:"'Satoshi',sans-serif"}}>{localSeries.openCue}</span></div></td></tr>}
+            {d?.movements?.map((m,i)=>{
+              const nsCue = m.transitionCue?.trim();
+              const nsKey = `${localSeries.id}-ns-${i}`;
+              return (
+                <React.Fragment key={i}>
+                  {i>0&&(!nsCue&&!openCueRows.has(nsKey)?(
+                    <tr style={{background:"transparent"}}>
+                      <td colSpan={99} style={{padding:"2px 10px"}}>
+                        <button onClick={e=>{e.stopPropagation();toggleCueRow(nsKey);}} style={{background:"none",border:"none",cursor:"pointer",color:C.mist,fontSize:11,fontFamily:"'Satoshi',sans-serif",fontWeight:600,padding:"2px 4px",opacity:0.6}}>+ cue</button>
+                      </td>
+                    </tr>
+                  ):(
+                    <tr className="print-cue-row" style={{background:"#F4EDE8"}}>
+                      <td colSpan={99} style={{padding:"4px 10px"}}>
+                        <div style={{display:"flex",alignItems:"center",gap:6}}>
+                          <span style={{fontSize:12,color:C.reformer,fontWeight:700,flexShrink:0}}>✦</span>
+                          <input
+                            value={m.transitionCue||""}
+                            placeholder="Transition cue…"
+                            onClick={e=>e.stopPropagation()}
+                            onChange={e=>{
+                              e.stopPropagation();
+                              const k=localSeries.type==="barre"?"barre":"reformer";
+                              const newM=[...(localSeries[k]?.movements||[])];
+                              newM[i]={...newM[i],transitionCue:e.target.value};
+                              setSeries_({...localSeries,[k]:{...localSeries[k],movements:newM}});
+                            }}
+                            style={{flex:1,fontSize:12,fontStyle:"italic",color:"#7a4010",background:"transparent",border:"none",borderBottom:`1px solid ${C.sig}60`,outline:"none",fontFamily:"'Satoshi', sans-serif",padding:"2px 4px"}}
+                          />
+                          <CardCueGen series={localSeries} rowIndex={i} rows={null} aiStyle={aiStyle} onUpdate={setSeries_} nonsig/>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  <tr style={{borderBottom:`1px solid ${C.stone}`,background:C.white}}>
+                    {choreo&&<td style={{fontSize:13,padding:"8px 12px",color:C.mist,whiteSpace:"nowrap"}}>{m.timing}</td>}
+                    {choreo&&<td style={{fontSize:13,padding:"8px 12px",color:C.mist,fontStyle:"italic"}}>{m.lyric}</td>}
+                    <td style={{fontSize:13,padding:"8px 10px",color:C.ink,fontWeight:500}}>{m.movement||<span style={{color:C.stone}}>—</span>}</td>
+                    <td style={{fontSize:11,padding:"8px 8px",color:C.mist,fontStyle:"italic"}}>{m.breath||""}</td>
+                    <td style={{fontSize:11,padding:"8px 8px",color:C.mist}}>{m.notes||""}</td>
+                  </tr>
+                </React.Fragment>
+              );
+            })}
+            {localSeries.closeCue&&<tr className="print-cue-row" style={{background:"#F4EDE8"}}><td colSpan={99} style={{padding:"4px 10px"}}><div style={{display:"flex",alignItems:"center",gap:6}}><span style={{fontSize:12,color:C.reformer,fontWeight:700,flexShrink:0}}>✦</span><span style={{fontSize:12,fontStyle:"italic",color:"#7a4010",fontFamily:"'Satoshi',sans-serif"}}>{localSeries.closeCue}</span></div></td></tr>}
+          </tbody>
+        </table>
       </div>
     );
   };
@@ -1093,19 +1119,6 @@ const SeriesCard = ({ series, onEdit, onDelete, onUpdateSeries, aiStyle, modalit
             </div>;
           })()}
 
-          {/* Open / close cues */}
-          {(localSeries.openCue||localSeries.closeCue)&&(
-            <div style={{display:"flex",flexDirection:"column",gap:4}}>
-              {localSeries.openCue&&<div style={{display:"flex",gap:8,alignItems:"flex-start",fontSize:12,color:"#2a5a4a",background:"#e8f4ee",borderRadius:6,padding:"6px 10px"}}>
-                <span style={{fontWeight:700,flexShrink:0,fontSize:10,paddingTop:1,letterSpacing:"0.06em"}}>▶ INÍCIO</span>
-                <span style={{fontStyle:"italic",lineHeight:1.5}}>{localSeries.openCue}</span>
-              </div>}
-              {localSeries.closeCue&&<div style={{display:"flex",gap:8,alignItems:"flex-start",fontSize:12,color:"#5a3a2a",background:"#f4ede8",borderRadius:6,padding:"6px 10px"}}>
-                <span style={{fontWeight:700,flexShrink:0,fontSize:10,paddingTop:1,letterSpacing:"0.06em"}}>■ FIM</span>
-                <span style={{fontStyle:"italic",lineHeight:1.5}}>{localSeries.closeCue}</span>
-              </div>}
-            </div>
-          )}
 
           {/* Intro cue */}
           <IntroCue
@@ -2208,11 +2221,7 @@ const AulaView = ({ cls, allSeries, onBack, onEditClass, onDeleteClass, onUpdate
               {showTiming&&<th style={{fontSize:12,fontWeight:600,color:C.mist,textAlign:"left",padding:"8px 12px"}}>Timing</th>}
               {showLyric &&<th style={{fontSize:12,fontWeight:600,color:C.mist,textAlign:"left",padding:"8px 12px"}}>Lyric</th>}
               {showR&&<th style={{fontSize:12,fontWeight:600,color:C.reformer,textAlign:"left",padding:"8px 12px"}}>Reformer</th>}
-              {showR&&<th style={{fontSize:11,fontWeight:600,color:`${C.reformer}90`,textAlign:"left",padding:"8px 8px"}}>Respiração R</th>}
-              {showR&&<th style={{fontSize:11,fontWeight:600,color:C.mist,textAlign:"left",padding:"8px 8px"}}>Notas R</th>}
               {showB&&<th style={{fontSize:12,fontWeight:600,color:"#c0507a",textAlign:"left",padding:"8px 12px"}}>Barre</th>}
-              {showB&&<th style={{fontSize:11,fontWeight:600,color:"#c0507a90",textAlign:"left",padding:"8px 8px"}}>Respiração B</th>}
-              {showB&&<th style={{fontSize:11,fontWeight:600,color:C.mist,textAlign:"left",padding:"8px 8px"}}>Notas B</th>}
             </tr></thead>
             <tbody>
               {ser.openCue&&<tr className="print-cue-row" style={{background:"#F4EDE8"}}><td colSpan={99} style={{padding:"4px 10px"}}><div style={{display:"flex",alignItems:"center",gap:6}}><span style={{fontSize:12,color:C.reformer,fontWeight:700,flexShrink:0}}>✦</span><span style={{fontSize:12,fontStyle:"italic",color:"#7a4010",fontFamily:"'Satoshi',sans-serif"}}>{ser.openCue}</span></div></td></tr>}
@@ -2256,11 +2265,7 @@ const AulaView = ({ cls, allSeries, onBack, onEditClass, onDeleteClass, onUpdate
                       {showTiming&&<td style={{fontSize:13,padding:"8px 12px",color:C.mist,whiteSpace:"nowrap"}}>{row.timing}</td>}
                       {showLyric &&<td style={{fontSize:13,padding:"8px 12px",color:C.mist,fontStyle:"italic"}}>{row.lyric}</td>}
                       {showR&&<td style={{fontSize:13,padding:"8px 10px",color:C.ink,fontWeight:600}}>{row.r?.movement||<span style={{color:C.stone}}>—</span>}</td>}
-                      {showR&&<td style={{fontSize:11,padding:"8px 8px",color:C.mist,fontStyle:"italic"}}>{row.r?.breath||""}</td>}
-                      {showR&&<td style={{fontSize:11,padding:"8px 8px",color:C.mist,maxWidth:160}}><input value={row.r?.notes||""} onChange={e=>{const newR=[...(ser.reformer?.movements||[])];const idx=newR.findIndex(m=>m.timing===row.timing);if(idx>=0){newR[idx]={...newR[idx],notes:e.target.value};}const updated={...ser,reformer:{...ser.reformer,movements:newR}};setSeriesList(p=>p.map(s=>s.id===ser.id?updated:s));onUpdateSeries(updated);}} placeholder="—" style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,color:C.mist,background:"transparent",border:"none",borderBottom:`1px solid ${C.stone}`,outline:"none",width:"100%",padding:"1px 2px"}}/></td>}
                       {showB&&<td style={{fontSize:13,padding:"8px 10px",color:C.ink,fontWeight:600}}>{row.b?.movement||<span style={{color:C.stone}}>—</span>}</td>}
-                      {showB&&<td style={{fontSize:11,padding:"8px 8px",color:C.mist,fontStyle:"italic"}}>{row.b?.breath||""}</td>}
-                      {showB&&<td style={{fontSize:11,padding:"8px 8px",color:C.mist,maxWidth:160}}><input value={row.b?.notes||""} onChange={e=>{const newB=[...(ser.barre?.movements||[])];const bIdx=newB.findIndex(m=>m.timing===row.timing);if(bIdx>=0){newB[bIdx]={...newB[bIdx],notes:e.target.value};}const updated={...ser,barre:{...ser.barre,movements:newB}};setSeriesList(p=>p.map(s=>s.id===ser.id?updated:s));onUpdateSeries(updated);}} placeholder="—" style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,color:C.mist,background:"transparent",border:"none",borderBottom:`1px solid ${C.stone}`,outline:"none",width:"100%",padding:"1px 2px"}}/></td>}
                     </tr>
                   </React.Fragment>
                 );
@@ -2290,8 +2295,6 @@ const AulaView = ({ cls, allSeries, onBack, onEditClass, onDeleteClass, onUpdate
           {showTiming&&choreo&&<th style={{fontSize:12,fontWeight:600,color:C.mist,textAlign:"left",padding:"8px 12px"}}>Timing</th>}
           {showLyric&&choreo&&<th style={{fontSize:12,fontWeight:600,color:C.mist,textAlign:"left",padding:"8px 12px"}}>Lyric</th>}
           <th style={{fontSize:10,fontWeight:700,color:C.white,textAlign:"left",padding:"6px 10px"}}>Movement</th>
-          <th style={{fontSize:11,fontWeight:600,color:C.mist,textAlign:"left",padding:"8px 8px"}}>Respiração</th>
-          <th style={{fontSize:11,fontWeight:600,color:C.mist,textAlign:"left",padding:"8px 8px"}}>Notas</th>
         </tr></thead>
         <tbody>
           {ser.openCue&&<tr className="print-cue-row" style={{background:"#F4EDE8"}}><td colSpan={99} style={{padding:"4px 10px"}}><div style={{display:"flex",alignItems:"center",gap:6}}><span style={{fontSize:12,color:C.reformer,fontWeight:700,flexShrink:0}}>✦</span><span style={{fontSize:12,fontStyle:"italic",color:"#7a4010",fontFamily:"'Satoshi',sans-serif"}}>{ser.openCue}</span></div></td></tr>}
@@ -2336,8 +2339,6 @@ const AulaView = ({ cls, allSeries, onBack, onEditClass, onDeleteClass, onUpdate
                   {showTiming&&choreo&&<td style={{fontSize:13,padding:"8px 12px",color:C.mist,whiteSpace:"nowrap"}}>{m.timing}</td>}
                   {showLyric&&choreo&&<td style={{fontSize:13,padding:"8px 12px",color:C.mist,fontStyle:"italic"}}>{m.lyric}</td>}
                   <td style={{fontSize:13,padding:"8px 10px",color:C.ink,fontWeight:600}}>{m.movement||<span style={{color:C.stone}}>—</span>}</td>
-                  <td style={{fontSize:11,padding:"8px 8px",color:C.mist,fontStyle:"italic"}}>{m.breath||""}</td>
-                  <td style={{fontSize:11,padding:"8px 8px",color:C.mist,maxWidth:160}}><input value={m.notes||""} onChange={e=>{const k=ser.type==="barre"?"barre":"reformer";const newM=[...(ser[k]?.movements||[])];newM[i]={...newM[i],notes:e.target.value};const updated={...ser,[k]:{...ser[k],movements:newM}};setSeriesList(p=>p.map(s=>s.id===ser.id?updated:s));onUpdateSeries(updated);}} placeholder="—" style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,color:C.mist,background:"transparent",border:"none",borderBottom:`1px solid ${C.stone}`,outline:"none",width:"100%",padding:"1px 2px"}}/></td>
                 </tr>
               </React.Fragment>
             );
