@@ -2887,6 +2887,7 @@ const MovementLibraryPage = ({ series, onUpdateSeries, aiStyle }) => {
   const [search, setSearch] = React.useState("");
   const [expandedMovs, setExpandedMovs] = React.useState(new Set());
   const [editingNotes, setEditingNotes] = React.useState({});
+  const [hoveredMov, setHoveredMov] = React.useState(null);
   const toast_ = useToast();
 
   // Deduplicated movements with notes aggregated and seriesRefs collected
@@ -2896,9 +2897,10 @@ const MovementLibraryPage = ({ series, onUpdateSeries, aiStyle }) => {
       const add = (movs, sideKey, type) => (movs||[]).forEach((m,idx)=>{
         if(!m.movement) return;
         const key = m.movement.toLowerCase().trim();
-        if(!map.has(key)) map.set(key, { movement:m.movement, notes:new Set(), series:new Set(), types:new Set(), refs:[] });
+        if(!map.has(key)) map.set(key, { movement:m.movement, notes:new Set(), breath:new Set(), series:new Set(), types:new Set(), refs:[] });
         const e = map.get(key);
         if(m.notes) m.notes.split(/[.;·]/).map(n=>n.trim()).filter(Boolean).forEach(n=>e.notes.add(n));
+        if(m.breath?.trim()) e.breath.add(m.breath.trim());
         e.series.add(s.name);
         e.types.add(type);
         e.refs.push({ seriesId: s.id, sideKey, movIndex: idx });
@@ -2953,6 +2955,8 @@ const MovementLibraryPage = ({ series, onUpdateSeries, aiStyle }) => {
             <tr style={{background:"#f0e8e4"}}>
               <th style={{textAlign:"left",padding:"10px 16px",fontSize:11,fontWeight:700,color:C.neutral,textTransform:"uppercase",letterSpacing:"0.06em"}}>Movimento</th>
               <th style={{textAlign:"left",padding:"10px 12px",fontSize:11,fontWeight:700,color:C.neutral,textTransform:"uppercase",letterSpacing:"0.06em"}}>Tipo</th>
+              <th style={{textAlign:"left",padding:"10px 12px",fontSize:11,fontWeight:700,color:C.neutral,textTransform:"uppercase",letterSpacing:"0.06em"}}>Respiração</th>
+              <th style={{textAlign:"left",padding:"10px 12px",fontSize:11,fontWeight:700,color:C.neutral,textTransform:"uppercase",letterSpacing:"0.06em"}}>Notas</th>
               <th style={{textAlign:"left",padding:"10px 12px",fontSize:11,fontWeight:700,color:C.neutral,textTransform:"uppercase",letterSpacing:"0.06em"}}>Séries</th>
               <th style={{width:40}}></th>
             </tr>
@@ -2966,11 +2970,24 @@ const MovementLibraryPage = ({ series, onUpdateSeries, aiStyle }) => {
               return (
                 <React.Fragment key={m.movement}>
                   <tr style={{borderTop:`1px solid ${C.stone}`,background:i%2===0?C.white:`${C.cream}80`}}>
-                    <td style={{padding:"10px 16px",fontWeight:600,color:C.ink,verticalAlign:"top"}}>
-                      <span title={aggregatedNotes||undefined}>{m.movement}</span>
-                      {!isExpanded&&m.notes.size>0&&(
-                        <div style={{fontSize:11,color:C.mist,fontStyle:"italic",marginTop:3,lineHeight:1.45}}>
-                          {aggregatedNotes}
+                    <td style={{padding:"10px 16px",fontWeight:600,color:C.ink,verticalAlign:"top",position:"relative",cursor:"default"}}
+                      onMouseEnter={()=>setHoveredMov(movKey)}
+                      onMouseLeave={()=>setHoveredMov(null)}>
+                      {m.movement}
+                      {hoveredMov===movKey&&(m.breath.size>0||m.notes.size>0)&&(
+                        <div style={{position:"absolute",left:0,top:"100%",zIndex:200,background:C.white,border:`1px solid ${C.stone}`,borderRadius:8,padding:"10px 14px",boxShadow:"0 4px 20px rgba(0,0,0,0.12)",minWidth:220,maxWidth:340,pointerEvents:"none"}}>
+                          {[...m.breath].map((b,bi)=>(
+                            <div key={bi} style={{display:"flex",gap:8,alignItems:"flex-start",marginBottom:6}}>
+                              <span style={{fontSize:10,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.05em",flexShrink:0,paddingTop:2}}>Resp.</span>
+                              <span style={{fontSize:12,color:C.ink,fontStyle:"italic",lineHeight:1.4}}>{b}</span>
+                            </div>
+                          ))}
+                          {[...m.notes].map((n,ni)=>(
+                            <div key={ni} style={{display:"flex",gap:8,alignItems:"flex-start",marginBottom:4}}>
+                              <span style={{fontSize:10,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.05em",flexShrink:0,paddingTop:2}}>Notas</span>
+                              <span style={{fontSize:12,color:C.ink,lineHeight:1.4}}>{n}</span>
+                            </div>
+                          ))}
                         </div>
                       )}
                     </td>
@@ -2980,6 +2997,12 @@ const MovementLibraryPage = ({ series, onUpdateSeries, aiStyle }) => {
                           <span key={t} style={{fontSize:10,fontWeight:700,color:typeColor(t),background:`${typeColor(t)}15`,border:`1px solid ${typeColor(t)}40`,borderRadius:20,padding:"2px 8px",textTransform:"uppercase",letterSpacing:"0.04em"}}>{t}</span>
                         ))}
                       </div>
+                    </td>
+                    <td style={{padding:"10px 12px",verticalAlign:"top",fontSize:12,color:C.mist,fontStyle:"italic"}}>
+                      {[...m.breath].join(" · ")}
+                    </td>
+                    <td style={{padding:"10px 12px",verticalAlign:"top",fontSize:12,color:C.mist,maxWidth:200}}>
+                      {aggregatedNotes}
                     </td>
                     <td style={{padding:"10px 12px",verticalAlign:"top",fontSize:11,color:C.mist}}>
                       {[...m.series].join(", ")}
@@ -2994,7 +3017,7 @@ const MovementLibraryPage = ({ series, onUpdateSeries, aiStyle }) => {
                   </tr>
                   {isExpanded&&(
                     <tr style={{background:i%2===0?`${C.cream}60`:`${C.stone}30`,borderBottom:`1px solid ${C.stone}`}}>
-                      <td colSpan={4} style={{padding:"8px 16px 14px"}}>
+                      <td colSpan={6} style={{padding:"8px 16px 14px"}}>
                         <div style={{fontSize:11,color:C.mist,marginBottom:6}}>Notas (aplicadas a todas as ocorrências deste movimento):</div>
                         <textarea
                           value={notesText}
