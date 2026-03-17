@@ -360,6 +360,7 @@ const seriesToDB = (s, userId) => ({
   updated_at: new Date().toISOString(),
   duration: s.duration ?? null,
   attribution: s.attribution || null,
+  studio_comment: s.studioComment || null,
 });
 const seriesFromDB = row => ({
   id: row.id, name: row.name, type: row.type, status: row.status || 'testing',
@@ -373,6 +374,7 @@ const seriesFromDB = row => ({
   createdBy: row.created_by || null, visibility: row.visibility || 'personal', studioId: row.studio_id || null,
   duration: row.duration ?? null,
   attribution: row.attribution || null,
+  studioComment: row.studio_comment || null,
 });
 const classToDB = (c, userId) => ({
   id: c.id, name: c.name, type: c.type, date: c.date || null,
@@ -382,6 +384,7 @@ const classToDB = (c, userId) => ({
   level: c.level || null,
   warmup_notes: c.warmupNotes || null, cooldown_notes: c.cooldownNotes || null,
   attribution: c.attribution || null,
+  studio_comment: c.studioComment || null,
 });
 const classFromDB = row => ({
   id: row.id, name: row.name, type: row.type, date: row.date || '',
@@ -392,6 +395,7 @@ const classFromDB = row => ({
   studioId: row.studio_id || null,
   warmupNotes: row.warmup_notes || '', cooldownNotes: row.cooldown_notes || '',
   attribution: row.attribution || null,
+  studioComment: row.studio_comment || null,
 });
 
 // ─── PERSIST (Supabase) ──────────────────────────────────────────────────────
@@ -1033,7 +1037,11 @@ const SeriesCard = ({ series, onEdit, onDelete, onUpdateSeries, aiStyle, modalit
               fontSize:11,color:series.status==="approved"?"#1a4a7a":"#8a7f78",fontWeight:700
             }}>{series.status==="approved"?"✓":"…"}</span>
             {series.visibility==='studio'&&<span style={{fontSize:10,fontWeight:700,letterSpacing:"0.05em",padding:"2px 8px",borderRadius:20,background:"#e8f0fe",color:"#1a56db",border:"1px solid #c3d3f8"}}>STUDIO</span>}
-            {series.visibility==='pending_studio'&&<span style={{fontSize:10,fontWeight:700,letterSpacing:"0.05em",padding:"2px 8px",borderRadius:20,background:"#fef9ec",color:"#b45309",border:"1px solid #fcd34d"}}>⏳ EM REVISÃO</span>}
+            {series.visibility==='pending_studio'&&(onUnpublish ? (
+              <span onClick={e=>{e.stopPropagation();onUnpublish(series);}} title="Clica para retirar submissão" style={{fontSize:10,fontWeight:700,letterSpacing:"0.05em",padding:"2px 8px",borderRadius:20,background:"#fef9ec",color:"#b45309",border:"1px solid #fcd34d",cursor:"pointer"}}>⏳ EM REVISÃO ×</span>
+            ) : (
+              <span style={{fontSize:10,fontWeight:700,letterSpacing:"0.05em",padding:"2px 8px",borderRadius:20,background:"#fef9ec",color:"#b45309",border:"1px solid #fcd34d"}}>⏳ EM REVISÃO</span>
+            ))}
             {series.visibility==='public'&&<span style={{fontSize:10,fontWeight:700,letterSpacing:"0.05em",padding:"2px 8px",borderRadius:20,background:"#ecfdf5",color:"#059669",border:"1px solid #a7f3d0"}}>PÚBLICO</span>}
             {series.song&&<span style={{fontSize:12,color:C.mist,display:"inline-flex",alignItems:"center",gap:4}}><Icon name="music" size={11}/>{series.song}</span>}
             {(()=>{
@@ -1062,11 +1070,6 @@ const SeriesCard = ({ series, onEdit, onDelete, onUpdateSeries, aiStyle, modalit
           {expanded&&(<>
             {isOwner&&<Btn small variant="ghost" onClick={e=>{e.stopPropagation();onEdit(series);}}><Icon name="edit" size={13}/> Editar</Btn>}
             {!isOwner&&onCopy&&<Btn small variant="ghost" onClick={e=>{e.stopPropagation();onCopy(series);}}><Icon name="copy" size={13}/> Copiar</Btn>}
-            {isOwner&&hasStudio&&series.visibility==='personal'&&onPublish&&<Btn small variant="ghost" onClick={e=>{e.stopPropagation();onPublish(series);}} title="Submeter para revisão do studio (visível apenas aos membros)" style={{color:"#1a56db"}}>↑ Studio</Btn>}
-            {isOwner&&series.visibility==='pending_studio'&&onUnpublish&&<Btn small variant="ghost" onClick={e=>{e.stopPropagation();onUnpublish(series);}} style={{color:C.mist}}>Cancelar submissão</Btn>}
-            {isOwner&&series.visibility==='studio'&&onUnpublish&&<Btn small variant="ghost" onClick={e=>{e.stopPropagation();onUnpublish(series);}} style={{color:C.mist}}>Tornar privada</Btn>}
-            {isOwner&&onTogglePublic&&<button onClick={e=>{e.stopPropagation();onTogglePublic(series);}} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"4px 10px",borderRadius:20,border:`1px solid ${series.visibility==='public'?C.crimson:C.stone}`,background:"transparent",color:series.visibility==='public'?C.crimson:C.mist,cursor:"pointer"}}>{series.visibility==='public'?'🌐 Pública':'🔒 Privada'}</button>}
-            {onSend&&<Btn small variant="ghost" onClick={e=>{e.stopPropagation();onSend({...series,_discoverType:'series'});}} style={{color:C.mist}}>Enviar →</Btn>}
           </>)}
         </div>
         <span style={{ color:C.mist, display:"inline-flex", transition:"transform 0.2s",
@@ -1154,7 +1157,37 @@ const SeriesCard = ({ series, onEdit, onDelete, onUpdateSeries, aiStyle, modalit
             <SeriesVideo seriesId={localSeries.id} videoUrl={localSeries.videoUrl} onUpdate={()=>{}} readOnly/>
           )}
 
-{/* Actions moved to header */}
+          {/* Studio comment (shown when rejected) */}
+          {series.studioComment&&(
+            <div style={{padding:"8px 12px",background:"#fef2f2",border:"1px solid #fca5a5",borderRadius:8}}>
+              <div style={{fontSize:10,fontWeight:700,color:"#b91c1c",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:3}}>Comentário do Studio</div>
+              <div style={{fontSize:12,color:"#7f1d1d"}}>{series.studioComment}</div>
+            </div>
+          )}
+
+          {/* Footer actions: studio workflow + visibility + send */}
+          {isOwner&&(hasStudio||onTogglePublic||onSend)&&(
+            <div style={{display:"flex",gap:8,flexWrap:"wrap",justifyContent:"flex-end",paddingTop:6,borderTop:`1px solid ${C.stone}`,marginTop:2}}>
+              {hasStudio&&series.visibility==='personal'&&onPublish&&(
+                <button onClick={e=>{e.stopPropagation();onPublish(series);}} title="Submeter para revisão do studio" style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"4px 12px",borderRadius:20,border:`1px solid #3b82f6`,background:"transparent",color:"#1a56db",cursor:"pointer"}}>↑ Studio</button>
+              )}
+              {series.visibility==='pending_studio'&&onUnpublish&&(
+                <button onClick={e=>{e.stopPropagation();onUnpublish(series);}} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"4px 12px",borderRadius:20,border:`1px solid ${C.stone}`,background:"transparent",color:C.mist,cursor:"pointer"}}>Retirar submissão</button>
+              )}
+              {series.visibility==='studio'&&onUnpublish&&(
+                <button onClick={e=>{e.stopPropagation();onUnpublish(series);}} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"4px 12px",borderRadius:20,border:`1px solid ${C.stone}`,background:"transparent",color:C.mist,cursor:"pointer"}}>Tornar privada</button>
+              )}
+              {onTogglePublic&&(series.visibility==='personal'||series.visibility==='studio'||series.visibility==='public')&&(
+                <button onClick={e=>{e.stopPropagation();onTogglePublic(series);}} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"4px 12px",borderRadius:20,border:`1px solid ${series.visibility==='public'?C.crimson:C.stone}`,background:"transparent",color:series.visibility==='public'?C.crimson:C.mist,cursor:"pointer"}}>{series.visibility==='public'?'🌐 Pública':'🔒 Privada'}</button>
+              )}
+              {onSend&&<button onClick={e=>{e.stopPropagation();onSend({...series,_discoverType:'series'});}} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"4px 12px",borderRadius:20,border:`1px solid ${C.stone}`,background:"transparent",color:C.mist,cursor:"pointer"}}>Enviar →</button>}
+            </div>
+          )}
+          {!isOwner&&onSend&&(
+            <div style={{display:"flex",justifyContent:"flex-end",paddingTop:6,borderTop:`1px solid ${C.stone}`}}>
+              <button onClick={e=>{e.stopPropagation();onSend({...series,_discoverType:'series'});}} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"4px 12px",borderRadius:20,border:`1px solid ${C.stone}`,background:"transparent",color:C.mist,cursor:"pointer"}}>Enviar →</button>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -2645,73 +2678,25 @@ const AulaView = ({ cls, allSeries, onBack, onDeleteClass, onUpdateSeries, onUpd
           </div>
         ) : (<>
         {/* Row 1: navigation + actions */}
-        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8,flexWrap:"wrap"}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12,flexWrap:"wrap"}}>
           <Btn variant="ghost" onClick={onBack}><Icon name="back" size={14}/> Voltar</Btn>
+          <Badge label={cls.type==="signature"?"✦ Signature":cls.type==="reformer"?"Reformer":"Barre"} color={cls.type==="signature"?"gold":cls.type==="reformer"?"teal":"coral"}/>
           <input value={editName} onChange={e=>{ setEditName(e.target.value); onUpdateClass({...currentCls, name:e.target.value}); }}
             style={{fontFamily:"'Clash Display',sans-serif",fontSize:22,fontWeight:500,color:C.ink,border:"none",borderBottom:`1px solid transparent`,background:"transparent",outline:"none",flex:1,minWidth:120,padding:"2px 4px",borderRadius:4,transition:"border-color 0.15s"}}
             onFocus={e=>e.target.style.borderBottomColor=C.stone}
             onBlur={e=>e.target.style.borderBottomColor="transparent"}
             placeholder="Nome da aula"/>
-          <input type="date" value={editDate} onChange={e=>{ setEditDate(e.target.value); onUpdateClass({...currentCls, date:e.target.value}); }}
-            style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,padding:"4px 8px",borderRadius:6,border:`1px solid ${C.stone}`,color:C.ink,flexShrink:0,background:C.white}}/>
           <Btn small variant="ghost" onClick={()=>setShowFlowEditor(p=>!p)} style={{color:showFlowEditor?C.crimson:C.mist,borderColor:showFlowEditor?C.crimson:C.stone}}>
             <Icon name="edit" size={13}/> {showFlowEditor?"Fechar fluxo":"Editar fluxo"}
           </Btn>
           <Btn small variant="ghost" onClick={handleShare}><Icon name="link" size={13}/> Partilhar</Btn>
           <Btn small variant="ghost" onClick={()=>window.print()}><Icon name="print" size={13}/> PDF</Btn>
           <Btn small onClick={()=>onTeachingModeChange(true)} style={{background:C.crimson,color:C.cream}}>▶ Modo Aula</Btn>
-          <Btn small variant="ghost" onClick={()=>setShowWarmupPanel(p=>!p)} style={{color:showWarmupPanel?C.crimson:C.mist}}>✦ Warm-up / Cool-down</Btn>
           {onDeleteClass&&<Btn small variant="danger" onClick={()=>onDeleteClass(cls.id)}><Icon name="x" size={13}/> Apagar aula</Btn>}
         </div>
-        {/* Row 2: level + meta */}
-        <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",marginBottom:4}}>
-          <Badge label={cls.type==="signature"?"✦ Signature":cls.type==="reformer"?"Reformer":"Barre"} color={cls.type==="signature"?"gold":cls.type==="reformer"?"teal":"coral"}/>
-          {classLevels.map(lvl=>(
-            <button key={lvl} onClick={()=>{ const n=editLevel===lvl?"":lvl; setEditLevel(n); onUpdateClass({...currentCls, level:n}); }}
-              style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"3px 10px",borderRadius:20,border:`1px solid ${editLevel===lvl?C.neutral:C.stone}`,background:editLevel===lvl?C.neutral:"transparent",color:editLevel===lvl?C.white:C.mist,cursor:"pointer"}}>
-              {lvl}
-            </button>
-          ))}
-          <span style={{fontSize:11,color:C.mist,marginLeft:4}}>{seriesList.length} série{seriesList.length!==1?"s":""}</span>
-          <button onClick={()=>setShowDateLog(p=>!p)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"3px 10px",borderRadius:20,border:`1px solid ${showDateLog?C.neutral:C.stone}`,background:showDateLog?C.neutral:"transparent",color:showDateLog?C.white:C.mist,cursor:"pointer",marginLeft:4}}>
-            📅 {usedDates.length>0?`${usedDates.length}×`:"Registar uso"}
-          </button>
-        </div>
-        {/* Date log */}
-        {showDateLog&&(
-          <div className="no-print" style={{marginTop:8,background:C.white,borderRadius:10,border:`1px solid ${C.stone}`,padding:"10px 14px",display:"flex",flexWrap:"wrap",alignItems:"center",gap:8}}>
-            <span style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.06em"}}>Dias usada:</span>
-            {usedDates.map(d=>(
-              <span key={d} style={{display:"inline-flex",alignItems:"center",gap:4,background:C.cream,border:`1px solid ${C.stone}`,borderRadius:20,padding:"2px 10px",fontSize:12,color:C.ink}}>
-                {d}
-                <button onClick={()=>removeUsedDate(d)} style={{background:"none",border:"none",cursor:"pointer",color:C.mist,padding:0,lineHeight:1,fontSize:11}}>×</button>
-              </span>
-            ))}
-            <input type="date" defaultValue={new Date().toISOString().split('T')[0]}
-              style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,padding:"3px 8px",borderRadius:6,border:`1px solid ${C.stone}`,color:C.ink}}
-              onChange={e=>{ if(e.target.value) addUsedDate(e.target.value); e.target.value=""; }}/>
-            <Btn small onClick={()=>addUsedDate(new Date().toISOString().split('T')[0])}>+ Hoje</Btn>
-            {usedDates.length>0&&<button onClick={()=>{ setUsedDates([]); onUpdateClass({...currentCls,usedDates:[]}); }} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,color:C.mist,background:"none",border:`1px solid ${C.stone}`,borderRadius:20,padding:"3px 10px",cursor:"pointer",marginLeft:"auto"}}>× Limpar tudo</button>}
-          </div>
-        )}
         </>)}
       </div>
       <div style={{padding:"0 24px 32px", background:C.cream, minHeight:"100vh"}}>
-        {/* Print header */}
-        <div className="no-print" style={{paddingTop:8,paddingBottom:12,borderBottom:`1px solid ${C.stone}`,marginBottom:16}}>
-          <div style={{fontFamily:"'Clash Display', sans-serif",fontSize:22,fontWeight:500,color:C.ink}}>{editName||cls.name}</div>
-          {(editDate||cls.date)&&<div style={{fontSize:12,color:C.mist,marginTop:2,marginBottom:10}}>{editDate||cls.date}</div>}
-          {/* Toggles row — visible on screen between title and content */}
-          {!teachingMode&&<div style={{display:"flex",gap:5,flexWrap:"wrap",marginTop:10}}>
-            {tBtn("Timing",showTiming,()=>setShowTiming(p=>!p))}
-            {tBtn("Lyric",showLyric,()=>setShowLyric(p=>!p))}
-            {tBtn("Setup",showSetup,()=>setShowSetup(p=>!p))}
-            {tBtn("Intro",showIntro,()=>setShowIntro(p=>!p))}
-            {tBtn("Cues",showCues,()=>setShowCues(p=>!p))}
-            {tBtn("Instr Notes",showInstrNotes,()=>setShowInstrNotes(p=>!p))}
-            {tBtn("Notas da Aula",showAulaNotes,()=>setShowAulaNotes(p=>!p))}
-          </div>}
-        </div>
         {/* PDF-only header */}
         <div className="print-only" style={{display:"none",textAlign:"left",marginBottom:8}}>
           <div style={{fontFamily:"'Clash Display', sans-serif",fontSize:9,letterSpacing:"0.3em",textTransform:"uppercase",color:C.crimson,marginBottom:2}}>The Haven</div>
@@ -2720,42 +2705,108 @@ const AulaView = ({ cls, allSeries, onBack, onDeleteClass, onUpdateSeries, onUpd
           {isSig&&<div style={{fontSize:9,color:"#666",marginTop:2}}>● Reformer ×8 &nbsp; ● Barre ×8</div>}
         </div>
 
-        {/* Notas da Aula */}
-        {showAulaNotes&&(
-          <div className="no-print" style={{background:C.white,borderRadius:12,border:`1px solid ${C.stone}`,padding:16,marginBottom:20}}>
-            <label style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em",display:"block",marginBottom:6}}>Notas da aula</label>
-            <AutoTextarea value={notes} onChange={e=>{setNotes(e.target.value);onUpdateClass({...cls,notes:e.target.value});}}
-              placeholder="Notas gerais, reminders, modificações…"
-              style={{fontSize:13,color:C.ink,padding:"8px 0"}}
-              minRows={2}/>
-          </div>
-        )}
-
-        {/* Warm-up / Cool-down Panel */}
-        {showWarmupPanel&&(
-          <div className="no-print" style={{background:C.white,borderRadius:12,border:`1px solid ${C.stone}`,padding:16,marginBottom:20}}>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
-              <div style={{fontFamily:"'Clash Display',sans-serif",fontSize:15,fontWeight:500,color:C.crimson}}>✦ Warm-up / Cool-down</div>
-              <Btn small variant="gold" onClick={generateWarmupCooldown} disabled={generatingWC}>
-                <Icon name="ai" size={12}/>{generatingWC?"A gerar…":"Gerar com IA"}
-              </Btn>
-            </div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+        {/* Two-column layout: left sidebar + main content */}
+        <div className="no-print" style={{display:"flex",gap:20,alignItems:"flex-start",paddingTop:16}}>
+          {/* Left sidebar — meta, filters, toggles */}
+          {!teachingMode&&(
+            <div style={{width:160,flexShrink:0,display:"flex",flexDirection:"column",gap:16}}>
+              {/* Date */}
               <div>
-                <label style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em",display:"block",marginBottom:6}}>Warm-up</label>
-                <AutoTextarea value={warmupNotes} onChange={e=>{setWarmupNotes(e.target.value);onUpdateClass({...currentCls,warmupNotes:e.target.value,cooldownNotes});}}
-                  placeholder="Descreve o warm-up para esta aula…"
-                  style={{width:"100%",fontSize:13,minHeight:80,resize:"vertical",borderRadius:8,border:`1px solid ${C.stone}`,padding:"8px 10px",fontFamily:"'Satoshi',sans-serif",color:C.ink,background:C.cream,outline:"none",boxSizing:"border-box"}}/>
+                <div style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Data</div>
+                <input type="date" value={editDate} onChange={e=>{ setEditDate(e.target.value); onUpdateClass({...currentCls, date:e.target.value}); }}
+                  style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,padding:"5px 8px",borderRadius:6,border:`1px solid ${C.stone}`,color:C.ink,width:"100%",boxSizing:"border-box",background:C.white}}/>
               </div>
+              {/* Used dates */}
               <div>
-                <label style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em",display:"block",marginBottom:6}}>Cool-down</label>
-                <AutoTextarea value={cooldownNotes} onChange={e=>{setCooldownNotes(e.target.value);onUpdateClass({...currentCls,warmupNotes,cooldownNotes:e.target.value});}}
-                  placeholder="Descreve o cool-down para esta aula…"
-                  style={{width:"100%",fontSize:13,minHeight:80,resize:"vertical",borderRadius:8,border:`1px solid ${C.stone}`,padding:"8px 10px",fontFamily:"'Satoshi',sans-serif",color:C.ink,background:C.cream,outline:"none",boxSizing:"border-box"}}/>
+                <button onClick={()=>setShowDateLog(p=>!p)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"5px 12px",borderRadius:20,border:`1px solid ${showDateLog?C.neutral:C.stone}`,background:showDateLog?C.neutral:"transparent",color:showDateLog?C.white:C.mist,cursor:"pointer",width:"100%",textAlign:"left"}}>
+                  📅 {usedDates.length>0?`Usada ${usedDates.length}×`:"Registar uso"}
+                </button>
+                {showDateLog&&(
+                  <div style={{marginTop:8,background:C.white,borderRadius:8,border:`1px solid ${C.stone}`,padding:"8px 10px",display:"flex",flexDirection:"column",gap:4}}>
+                    {usedDates.map(d=>(
+                      <span key={d} style={{display:"inline-flex",alignItems:"center",justifyContent:"space-between",gap:4,fontSize:11,color:C.ink}}>
+                        {d}
+                        <button onClick={()=>removeUsedDate(d)} style={{background:"none",border:"none",cursor:"pointer",color:C.mist,padding:0,lineHeight:1,fontSize:11}}>×</button>
+                      </span>
+                    ))}
+                    <div style={{display:"flex",gap:4,marginTop:4}}>
+                      <input type="date" defaultValue={new Date().toISOString().split('T')[0]}
+                        style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,padding:"3px 5px",borderRadius:5,border:`1px solid ${C.stone}`,color:C.ink,flex:1,minWidth:0}}
+                        onChange={e=>{ if(e.target.value) addUsedDate(e.target.value); e.target.value=""; }}/>
+                      <button onClick={()=>addUsedDate(new Date().toISOString().split('T')[0])} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"3px 8px",borderRadius:6,border:`1px solid ${C.stone}`,background:"transparent",color:C.ink,cursor:"pointer",flexShrink:0}}>Hoje</button>
+                    </div>
+                    {usedDates.length>0&&<button onClick={()=>{ setUsedDates([]); onUpdateClass({...currentCls,usedDates:[]}); }} style={{fontFamily:"'Satoshi',sans-serif",fontSize:10,color:C.mist,background:"none",border:`1px solid ${C.stone}`,borderRadius:20,padding:"2px 8px",cursor:"pointer",marginTop:2}}>× Limpar</button>}
+                  </div>
+                )}
               </div>
+              {/* Level filter */}
+              <div>
+                <div style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Nível</div>
+                <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                  {classLevels.map(lvl=>(
+                    <button key={lvl} onClick={()=>{ const n=editLevel===lvl?"":lvl; setEditLevel(n); onUpdateClass({...currentCls, level:n}); }}
+                      style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"4px 10px",borderRadius:20,border:`1px solid ${editLevel===lvl?C.neutral:C.stone}`,background:editLevel===lvl?C.neutral:"transparent",color:editLevel===lvl?C.white:C.mist,cursor:"pointer",textAlign:"left"}}>
+                      {lvl}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {/* Column toggles */}
+              <div>
+                <div style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Colunas</div>
+                <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                  {tBtn("Timing",showTiming,()=>setShowTiming(p=>!p))}
+                  {tBtn("Lyric",showLyric,()=>setShowLyric(p=>!p))}
+                  {tBtn("Setup",showSetup,()=>setShowSetup(p=>!p))}
+                  {tBtn("Intro",showIntro,()=>setShowIntro(p=>!p))}
+                  {tBtn("Cues",showCues,()=>setShowCues(p=>!p))}
+                  {tBtn("Instr Notes",showInstrNotes,()=>setShowInstrNotes(p=>!p))}
+                  {tBtn("Notas da Aula",showAulaNotes,()=>setShowAulaNotes(p=>!p))}
+                </div>
+              </div>
+              {/* Warm-up button */}
+              <button onClick={()=>setShowWarmupPanel(p=>!p)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"5px 12px",borderRadius:20,border:`1px solid ${showWarmupPanel?C.crimson:C.stone}`,background:showWarmupPanel?`${C.crimson}10`:"transparent",color:showWarmupPanel?C.crimson:C.mist,cursor:"pointer",textAlign:"left"}}>✦ Warm-up / Cool-down</button>
+              {/* Series count */}
+              <div style={{fontSize:11,color:C.mist}}>{seriesList.length} série{seriesList.length!==1?"s":""}</div>
             </div>
-          </div>
-        )}
+          )}
+          {/* Main content */}
+          <div style={{flex:1,minWidth:0}}>
+            {/* Notas da Aula */}
+            {showAulaNotes&&(
+              <div style={{background:C.white,borderRadius:12,border:`1px solid ${C.stone}`,padding:16,marginBottom:20}}>
+                <label style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em",display:"block",marginBottom:6}}>Notas da aula</label>
+                <AutoTextarea value={notes} onChange={e=>{setNotes(e.target.value);onUpdateClass({...cls,notes:e.target.value});}}
+                  placeholder="Notas gerais, reminders, modificações…"
+                  style={{fontSize:13,color:C.ink,padding:"8px 0"}}
+                  minRows={2}/>
+              </div>
+            )}
+            {/* Warm-up / Cool-down Panel */}
+            {showWarmupPanel&&(
+              <div style={{background:C.white,borderRadius:12,border:`1px solid ${C.stone}`,padding:16,marginBottom:20}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+                  <div style={{fontFamily:"'Clash Display',sans-serif",fontSize:15,fontWeight:500,color:C.crimson}}>✦ Warm-up / Cool-down</div>
+                  <Btn small variant="gold" onClick={generateWarmupCooldown} disabled={generatingWC}>
+                    <Icon name="ai" size={12}/>{generatingWC?"A gerar…":"Gerar com IA"}
+                  </Btn>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+                  <div>
+                    <label style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em",display:"block",marginBottom:6}}>Warm-up</label>
+                    <AutoTextarea value={warmupNotes} onChange={e=>{setWarmupNotes(e.target.value);onUpdateClass({...currentCls,warmupNotes:e.target.value,cooldownNotes});}}
+                      placeholder="Descreve o warm-up para esta aula…"
+                      style={{width:"100%",fontSize:13,minHeight:80,resize:"vertical",borderRadius:8,border:`1px solid ${C.stone}`,padding:"8px 10px",fontFamily:"'Satoshi',sans-serif",color:C.ink,background:C.cream,outline:"none",boxSizing:"border-box"}}/>
+                  </div>
+                  <div>
+                    <label style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em",display:"block",marginBottom:6}}>Cool-down</label>
+                    <AutoTextarea value={cooldownNotes} onChange={e=>{setCooldownNotes(e.target.value);onUpdateClass({...currentCls,warmupNotes,cooldownNotes:e.target.value});}}
+                      placeholder="Descreve o cool-down para esta aula…"
+                      style={{width:"100%",fontSize:13,minHeight:80,resize:"vertical",borderRadius:8,border:`1px solid ${C.stone}`,padding:"8px 10px",fontFamily:"'Satoshi',sans-serif",color:C.ink,background:C.cream,outline:"none",boxSizing:"border-box"}}/>
+                  </div>
+                </div>
+              </div>
+            )}
 
         {/* Flow Editor */}
         {showFlowEditor&&(
@@ -2833,6 +2884,8 @@ const AulaView = ({ cls, allSeries, onBack, onDeleteClass, onUpdateSeries, onUpd
           </div>
         ))}
         </div>
+          </div>{/* end main content column */}
+        </div>{/* end two-column flex */}
       </div>
       {forkModal&&<ForkModal seriesName={forkModal.updated.name} classCount={forkModal.classCount}
         onApplyAll={()=>{ onUpdateSeries(forkModal.updated); setSeriesList(p=>p.map(s=>s.id===forkModal.updated.id?forkModal.updated:s)); setEditingId(null); setForkModal(null); }}
@@ -2962,7 +3015,7 @@ Only use IDs from the available list. Return only the JSON array, no explanation
 };
 
 // ─── CLASS BUILDER ────────────────────────────────────────────────────────────
-const ClassBuilder = ({ allSeries, classes, onSave, onDeleteClass, onViewAula, studioSettings, onPublishClass, hasStudio, onToggleClassPublic, onSendClass }) => {
+const ClassBuilder = ({ allSeries, classes, onSave, onDeleteClass, onViewAula, studioSettings, onPublishClass, onUnpublishClass, hasStudio, onToggleClassPublic, onSendClass }) => {
   const [creating, setCreating] = useState(false);
   const [newCls, setNewCls] = useState(null);
   const [classSearch, setClassSearch] = useState("");
@@ -3014,6 +3067,7 @@ const ClassBuilder = ({ allSeries, classes, onSave, onDeleteClass, onViewAula, s
 
   return (
     <div>
+      {/* Top bar: create buttons + search */}
       <div style={{display:"flex",gap:12,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
         <Btn onClick={()=>startCreate("reformer")}><Icon name="plus" size={14}/> Nova aula Reformer</Btn>
         <Btn variant="ghost" onClick={()=>startCreate("barre")}><Icon name="plus" size={14}/> Nova aula Barre</Btn>
@@ -3022,31 +3076,48 @@ const ClassBuilder = ({ allSeries, classes, onSave, onDeleteClass, onViewAula, s
         <input value={classSearch} onChange={e=>setClassSearch(e.target.value)} placeholder="Pesquisar aulas…"
           style={{fontFamily:"'Satoshi',sans-serif",fontSize:13,padding:"6px 14px",borderRadius:20,border:`1px solid ${C.stone}`,outline:"none",width:180}}/>
       </div>
-      <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:16}}>
-        <button onClick={()=>setClassLevelFilter("")} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"3px 12px",borderRadius:20,border:`1px solid ${!classLevelFilter?C.neutral:C.stone}`,background:!classLevelFilter?C.neutral:"transparent",color:!classLevelFilter?C.white:C.mist,cursor:"pointer"}}>Todos</button>
-        {classLevels.map(lvl=>(
-          <button key={lvl} onClick={()=>setClassLevelFilter(p=>p===lvl?"":lvl)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"3px 12px",borderRadius:20,border:`1px solid ${classLevelFilter===lvl?C.neutral:C.stone}`,background:classLevelFilter===lvl?C.neutral:"transparent",color:classLevelFilter===lvl?C.white:C.mist,cursor:"pointer"}}>{lvl}</button>
-        ))}
-      </div>
-      {filteredClasses.length===0&&<div style={{textAlign:"center",color:C.mist,padding:40,fontSize:14}}>{classes.length===0?"Ainda não há aulas criadas.":"Nenhuma aula encontrada."}</div>}
-      <div style={{display:"flex",flexDirection:"column",gap:10}}>
-        {filteredClasses.map(c=>(
-          <div key={c.id} onClick={()=>onViewAula(c)} style={{background:C.white,borderRadius:12,border:`1px solid ${C.stone}`,padding:"16px 20px",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",cursor:"pointer",transition:"border-color 0.15s"}}
-            onMouseEnter={e=>e.currentTarget.style.borderColor=C.neutral}
-            onMouseLeave={e=>e.currentTarget.style.borderColor=C.stone}>
-            <div style={{flex:1,minWidth:0}}>
-              <div style={{fontFamily:"'Clash Display', sans-serif",fontSize:18,fontWeight:500,color:C.ink}}>{c.name||"Sem nome"}</div>
-              <div style={{fontSize:12,color:C.mist,marginTop:2}}>{c.date} · {c.seriesIds.length} série{c.seriesIds.length!==1?"s":""}{c.level?` · ${c.level}`:""}</div>
-            </div>
-            <Badge label={c.type==="signature"?"✦ Signature":c.type} color={c.type==="signature"?"gold":c.type==="reformer"?"teal":"coral"}/>
-            {c.visibility==='pending_studio'&&<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:20,background:"#fef9ec",color:"#b45309",border:"1px solid #fcd34d"}}>⏳ Em revisão</span>}
-            {hasStudio&&c.visibility==='personal'&&onPublishClass&&<Btn small variant="ghost" onClick={e=>{e.stopPropagation();onPublishClass(c);}} title="Submeter para revisão do studio" style={{color:"#1a56db"}}>↑ Studio</Btn>}
-            {onToggleClassPublic&&<button onClick={e=>{e.stopPropagation();onToggleClassPublic(c);}} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"4px 10px",borderRadius:20,border:`1px solid ${c.visibility==='public'?C.crimson:C.stone}`,background:"transparent",color:c.visibility==='public'?C.crimson:C.mist,cursor:"pointer"}}>{c.visibility==='public'?'🌐 Pública':'🔒 Privada'}</button>}
-            {onSendClass&&<Btn small variant="ghost" onClick={e=>{e.stopPropagation();onSendClass({...c,_discoverType:'class'});}} style={{color:C.mist}}>Enviar →</Btn>}
-            <Btn small onClick={e=>{e.stopPropagation();onViewAula(c);}}><Icon name="eye" size={13}/> Ver Aula</Btn>
-            <button onClick={e=>{e.stopPropagation();onDeleteClass(c.id);}} title="Apagar aula" style={{background:"none",border:`1px solid ${C.stone}`,borderRadius:8,cursor:"pointer",color:C.coral,padding:"6px 8px",display:"inline-flex",alignItems:"center"}}><Icon name="x" size={13}/></button>
+      {/* Two-column layout: filters left, list right */}
+      <div style={{display:"flex",gap:20,alignItems:"flex-start"}}>
+        {/* Left column: filters */}
+        <div style={{width:140,flexShrink:0}}>
+          <div style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Nível</div>
+          <div style={{display:"flex",flexDirection:"column",gap:5}}>
+            <button onClick={()=>setClassLevelFilter("")} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 12px",borderRadius:20,border:`1px solid ${!classLevelFilter?C.neutral:C.stone}`,background:!classLevelFilter?C.neutral:"transparent",color:!classLevelFilter?C.white:C.mist,cursor:"pointer",textAlign:"left"}}>Todos</button>
+            {classLevels.map(lvl=>(
+              <button key={lvl} onClick={()=>setClassLevelFilter(p=>p===lvl?"":lvl)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 12px",borderRadius:20,border:`1px solid ${classLevelFilter===lvl?C.neutral:C.stone}`,background:classLevelFilter===lvl?C.neutral:"transparent",color:classLevelFilter===lvl?C.white:C.mist,cursor:"pointer",textAlign:"left"}}>{lvl}</button>
+            ))}
           </div>
-        ))}
+        </div>
+        {/* Right column: class list */}
+        <div style={{flex:1,minWidth:0}}>
+          {filteredClasses.length===0&&<div style={{textAlign:"center",color:C.mist,padding:40,fontSize:14}}>{classes.length===0?"Ainda não há aulas criadas.":"Nenhuma aula encontrada."}</div>}
+          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+            {filteredClasses.map(c=>(
+              <div key={c.id} onClick={()=>onViewAula(c)} style={{background:C.white,borderRadius:12,border:`1px solid ${C.stone}`,padding:"14px 18px",cursor:"pointer",transition:"border-color 0.15s"}}
+                onMouseEnter={e=>e.currentTarget.style.borderColor=C.neutral}
+                onMouseLeave={e=>e.currentTarget.style.borderColor=C.stone}>
+                <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontFamily:"'Clash Display', sans-serif",fontSize:18,fontWeight:500,color:C.ink}}>{c.name||"Sem nome"}</div>
+                    <div style={{fontSize:12,color:C.mist,marginTop:2}}>{c.date} · {c.seriesIds.length} série{c.seriesIds.length!==1?"s":""}{c.level?` · ${c.level}`:""}</div>
+                    {c.studioComment&&<div style={{fontSize:11,color:"#b91c1c",marginTop:4,background:"#fef2f2",padding:"3px 8px",borderRadius:6,display:"inline-block"}}>Studio: {c.studioComment}</div>}
+                  </div>
+                  <Badge label={c.type==="signature"?"✦ Signature":c.type} color={c.type==="signature"?"gold":c.type==="reformer"?"teal":"coral"}/>
+                  {c.visibility==='pending_studio'&&(onUnpublishClass ? (
+                    <span onClick={e=>{e.stopPropagation();onUnpublishClass(c);}} title="Clica para retirar submissão" style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:20,background:"#fef9ec",color:"#b45309",border:"1px solid #fcd34d",cursor:"pointer"}}>⏳ Em revisão ×</span>
+                  ) : (
+                    <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:20,background:"#fef9ec",color:"#b45309",border:"1px solid #fcd34d"}}>⏳ Em revisão</span>
+                  ))}
+                  {hasStudio&&c.visibility==='personal'&&onPublishClass&&<Btn small variant="ghost" onClick={e=>{e.stopPropagation();onPublishClass(c);}} title="Submeter para revisão do studio" style={{color:"#1a56db"}}>↑ Studio</Btn>}
+                  {onToggleClassPublic&&c.visibility!=='pending_studio'&&<button onClick={e=>{e.stopPropagation();onToggleClassPublic(c);}} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"4px 10px",borderRadius:20,border:`1px solid ${c.visibility==='public'?C.crimson:C.stone}`,background:"transparent",color:c.visibility==='public'?C.crimson:C.mist,cursor:"pointer"}}>{c.visibility==='public'?'🌐 Pública':'🔒 Privada'}</button>}
+                  {onSendClass&&<Btn small variant="ghost" onClick={e=>{e.stopPropagation();onSendClass({...c,_discoverType:'class'});}} style={{color:C.mist}}>Enviar →</Btn>}
+                  <Btn small onClick={e=>{e.stopPropagation();onViewAula(c);}}><Icon name="eye" size={13}/> Ver Aula</Btn>
+                  <button onClick={e=>{e.stopPropagation();onDeleteClass(c.id);}} title="Apagar aula" style={{background:"none",border:`1px solid ${C.stone}`,borderRadius:8,cursor:"pointer",color:C.coral,padding:"6px 8px",display:"inline-flex",alignItems:"center"}}><Icon name="x" size={13}/></button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -3492,9 +3563,11 @@ const ProfilePage = ({ profile, user, onProfileUpdate, studioSettings, aiStyle, 
   );
 };
 
-const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary }) => {
+const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotification }) => {
   const [activeTab, setActiveTab] = useState('series');
   const [members, setMembers] = useState([]);
+  const [rejectingItem, setRejectingItem] = useState(null); // { item, itemType, comment }
+  const [savingFeatured, setSavingFeatured] = useState(false);
   const [loading, setLoading] = useState(true);
   const [studioSeries, setStudioSeries] = useState([]);
   const [studioClasses, setStudioClasses] = useState([]);
@@ -3595,27 +3668,45 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary }) => {
   };
 
   const approveSeries = async s => {
-    await supabase.from('series').update({ visibility: 'studio' }).eq('id', s.id);
+    await supabase.from('series').update({ visibility: 'studio', studio_comment: null }).eq('id', s.id);
     toast_?.('Série aprovada');
+    if (s.created_by) sendNotification?.(s.created_by, 'series_approved', 'Série aprovada ✓', `"${s.name}" foi aprovada pelo studio e adicionada à biblioteca partilhada`, 'series', s.id);
     refreshContent();
   };
 
-  const rejectSeries = async s => {
-    await supabase.from('series').update({ visibility: 'personal', studio_id: null }).eq('id', s.id);
-    toast_?.('Série rejeitada — devolvida ao Instructor');
+  const rejectSeries = async (s, comment) => {
+    await supabase.from('series').update({ visibility: 'personal', studio_id: null, studio_comment: comment||null }).eq('id', s.id);
+    toast_?.('Série devolvida ao Instructor');
+    if (s.created_by) sendNotification?.(s.created_by, 'series_rejected', 'Série devolvida', `"${s.name}" foi devolvida pelo studio${comment?': '+comment:''}`, 'series', s.id);
+    setRejectingItem(null);
     refreshContent();
   };
 
   const approveClass = async c => {
-    await supabase.from('classes').update({ visibility: 'studio' }).eq('id', c.id);
+    await supabase.from('classes').update({ visibility: 'studio', studio_comment: null }).eq('id', c.id);
     toast_?.('Aula aprovada');
+    if (c.created_by) sendNotification?.(c.created_by, 'class_approved', 'Aula aprovada ✓', `"${c.name||'Aula'}" foi aprovada pelo studio`, 'class', c.id);
     refreshContent();
   };
 
-  const rejectClass = async c => {
-    await supabase.from('classes').update({ visibility: 'personal', studio_id: null }).eq('id', c.id);
-    toast_?.('Aula rejeitada — devolvida ao Instructor');
+  const rejectClass = async (c, comment) => {
+    await supabase.from('classes').update({ visibility: 'personal', studio_id: null, studio_comment: comment||null }).eq('id', c.id);
+    toast_?.('Aula devolvida ao Instructor');
+    if (c.created_by) sendNotification?.(c.created_by, 'class_rejected', 'Aula devolvida', `"${c.name||'Aula'}" foi devolvida pelo studio${comment?': '+comment:''}`, 'class', c.id);
+    setRejectingItem(null);
     refreshContent();
+  };
+
+  const toggleFeatured = async (itemId, itemType) => {
+    const settings = studio?.settings || {};
+    const key = itemType === 'series' ? 'featured_series' : 'featured_classes';
+    const current = settings[key] || [];
+    const wasFeatured = current.includes(itemId);
+    const next = wasFeatured ? current.filter(x=>x!==itemId) : [...current, itemId];
+    const newSettings = { ...settings, [key]: next };
+    await supabase.from('studios').update({ settings: newSettings }).eq('id', profile.studio_id);
+    onProfileUpdate({ ...profile, studios: { ...studio, settings: newSettings } });
+    toast_?.(wasFeatured ? 'Removido dos destaques' : 'Adicionado aos destaques ★');
   };
 
   const changeRole = async (memberId, newRole) => {
@@ -3738,42 +3829,104 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary }) => {
 
       {/* ── Séries do Studio ── */}
       {activeTab==='series'&&(
-        <div>
-          {loadingContent ? <div style={{color:C.mist,fontSize:13}}>A carregar…</div>
-          : studioSeries.length===0 ? <div style={{color:C.mist,fontSize:13,padding:'24px 0'}}>Ainda não há séries aprovadas no studio.</div>
-          : <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(260px,1fr))',gap:14}}>
-            {studioSeries.map(s=>(
-              <div key={s.id} style={{background:C.white,borderRadius:12,border:`1px solid ${C.stone}`,padding:16}}>
-                <div style={{fontWeight:700,fontSize:14,color:C.ink,marginBottom:4}}>{s.name}</div>
-                <div style={{fontSize:11,color:C.mist,marginBottom:8}}>{s.profiles?.name||'Instructor'}</div>
-                <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:10}}>
-                  {s.type&&<span style={{fontSize:10,fontWeight:700,color:typeColor(s.type),background:`${typeColor(s.type)}15`,border:`1px solid ${typeColor(s.type)}40`,borderRadius:20,padding:'2px 8px',textTransform:'uppercase'}}>{s.type}</span>}
-                  {s.primary_zone&&<span style={{fontSize:10,color:C.mist,background:C.stone,borderRadius:20,padding:'2px 8px'}}>{s.primary_zone}</span>}
-                </div>
-                {onCopyToLibrary&&<button onClick={()=>onCopyToLibrary(s)} style={{fontSize:11,padding:'5px 12px',borderRadius:8,border:`1px solid ${C.stone}`,background:'transparent',color:C.ink,cursor:'pointer',fontFamily:"'Satoshi',sans-serif",fontWeight:600}}>Copiar para a minha biblioteca</button>}
+        <div style={{display:'flex',flexDirection:'column',gap:24}}>
+          {/* Recently added */}
+          {studioSeries.length>0&&(
+            <div>
+              <div style={{fontSize:12,fontWeight:700,color:C.mist,textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:10}}>Adicionadas recentemente</div>
+              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(240px,1fr))',gap:10}}>
+                {[...studioSeries].sort((a,b)=>(b.updated_at||b.created_at||'').localeCompare(a.updated_at||a.created_at||'')).slice(0,6).map(s=>{
+                  const featuredIds = studio?.settings?.featured_series||[];
+                  const isFeat = featuredIds.includes(s.id);
+                  return (
+                    <div key={s.id} style={{background:C.white,borderRadius:12,border:`1px solid ${C.stone}`,padding:14,position:'relative'}}>
+                      <div style={{fontWeight:700,fontSize:13,color:C.ink,marginBottom:2,paddingRight:24}}>{s.name}</div>
+                      <div style={{fontSize:11,color:C.mist,marginBottom:6}}>{s.profiles?.name||'Instructor'}</div>
+                      <div style={{display:'flex',gap:5,flexWrap:'wrap',alignItems:'center'}}>
+                        {s.type&&<span style={{fontSize:10,fontWeight:700,color:typeColor(s.type),background:`${typeColor(s.type)}15`,border:`1px solid ${typeColor(s.type)}40`,borderRadius:20,padding:'2px 7px',textTransform:'uppercase'}}>{s.type}</span>}
+                        {onCopyToLibrary&&<button onClick={()=>onCopyToLibrary(s)} style={{fontSize:10,padding:'3px 9px',borderRadius:8,border:`1px solid ${C.stone}`,background:'transparent',color:C.ink,cursor:'pointer',fontFamily:"'Satoshi',sans-serif",fontWeight:600}}>Copiar</button>}
+                        {isAdmin&&<button onClick={()=>toggleFeatured(s.id,'series')} title={isFeat?'Remover destaque':'Destacar'} style={{fontSize:13,background:'none',border:'none',cursor:'pointer',color:isFeat?'#f59e0b':C.stone,padding:'2px',position:'absolute',top:10,right:10}}>★</button>}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-            ))}
-          </div>}
+            </div>
+          )}
+          {/* Featured */}
+          {(studio?.settings?.featured_series||[]).length>0&&(
+            <div>
+              <div style={{fontSize:12,fontWeight:700,color:C.mist,textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:10}}>Em destaque</div>
+              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(240px,1fr))',gap:10}}>
+                {studioSeries.filter(s=>(studio?.settings?.featured_series||[]).includes(s.id)).map(s=>(
+                  <div key={s.id} style={{background:'#fffbf0',borderRadius:12,border:`2px solid #f59e0b40`,padding:14,position:'relative'}}>
+                    <span style={{position:'absolute',top:10,right:10,color:'#f59e0b',fontSize:14}}>★</span>
+                    <div style={{fontWeight:700,fontSize:13,color:C.ink,marginBottom:2,paddingRight:24}}>{s.name}</div>
+                    <div style={{fontSize:11,color:C.mist,marginBottom:6}}>{s.profiles?.name||'Instructor'}</div>
+                    <div style={{display:'flex',gap:5,flexWrap:'wrap'}}>
+                      {s.type&&<span style={{fontSize:10,fontWeight:700,color:typeColor(s.type),background:`${typeColor(s.type)}15`,border:`1px solid ${typeColor(s.type)}40`,borderRadius:20,padding:'2px 7px',textTransform:'uppercase'}}>{s.type}</span>}
+                      {onCopyToLibrary&&<button onClick={()=>onCopyToLibrary(s)} style={{fontSize:10,padding:'3px 9px',borderRadius:8,border:`1px solid ${C.stone}`,background:'transparent',color:C.ink,cursor:'pointer',fontFamily:"'Satoshi',sans-serif",fontWeight:600}}>Copiar</button>}
+                      {isAdmin&&<button onClick={()=>toggleFeatured(s.id,'series')} style={{fontSize:10,padding:'3px 9px',borderRadius:8,border:`1px solid #f59e0b`,background:'transparent',color:'#b45309',cursor:'pointer',fontFamily:"'Satoshi',sans-serif",fontWeight:600}}>- Tirar destaque</button>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {loadingContent&&<div style={{color:C.mist,fontSize:13}}>A carregar…</div>}
+          {!loadingContent&&studioSeries.length===0&&<div style={{color:C.mist,fontSize:13,padding:'24px 0'}}>Ainda não há séries aprovadas no studio.</div>}
         </div>
       )}
 
       {/* ── Aulas do Studio ── */}
       {activeTab==='classes'&&(
-        <div>
-          {loadingContent ? <div style={{color:C.mist,fontSize:13}}>A carregar…</div>
-          : studioClasses.length===0 ? <div style={{color:C.mist,fontSize:13,padding:'24px 0'}}>Ainda não há aulas aprovadas no studio.</div>
-          : <div style={{display:'flex',flexDirection:'column',gap:8}}>
-            {studioClasses.map(c=>(
-              <div key={c.id} style={{background:C.white,borderRadius:12,border:`1px solid ${C.stone}`,padding:'12px 16px',display:'flex',alignItems:'center',gap:12}}>
-                <div style={{flex:1}}>
-                  <div style={{fontWeight:700,fontSize:14,color:C.ink}}>{c.name||'(sem título)'}</div>
-                  <div style={{fontSize:11,color:C.mist,marginTop:2}}>{c.profiles?.name||'Instructor'}{c.date&&' · '+c.date}</div>
-                </div>
-                {c.type&&<span style={{fontSize:10,fontWeight:700,color:typeColor(c.type),background:`${typeColor(c.type)}15`,border:`1px solid ${typeColor(c.type)}40`,borderRadius:20,padding:'2px 8px',textTransform:'uppercase'}}>{c.type}</span>}
-                {c.level&&<span style={{fontSize:10,color:C.mist,background:C.stone,borderRadius:20,padding:'2px 8px'}}>{c.level}</span>}
+        <div style={{display:'flex',flexDirection:'column',gap:24}}>
+          {/* Recently added */}
+          {studioClasses.length>0&&(
+            <div>
+              <div style={{fontSize:12,fontWeight:700,color:C.mist,textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:10}}>Adicionadas recentemente</div>
+              <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                {[...studioClasses].sort((a,b)=>(b.updated_at||b.created_at||'').localeCompare(a.updated_at||a.created_at||'')).slice(0,6).map(c=>{
+                  const featuredIds = studio?.settings?.featured_classes||[];
+                  const isFeat = featuredIds.includes(c.id);
+                  return (
+                    <div key={c.id} style={{background:C.white,borderRadius:12,border:`1px solid ${C.stone}`,padding:'12px 16px',display:'flex',alignItems:'center',gap:12,position:'relative'}}>
+                      <div style={{flex:1}}>
+                        <div style={{fontWeight:700,fontSize:13,color:C.ink}}>{c.name||'(sem título)'}</div>
+                        <div style={{fontSize:11,color:C.mist,marginTop:2}}>{c.profiles?.name||'Instructor'}{c.date&&' · '+c.date}</div>
+                      </div>
+                      {c.type&&<span style={{fontSize:10,fontWeight:700,color:typeColor(c.type),background:`${typeColor(c.type)}15`,border:`1px solid ${typeColor(c.type)}40`,borderRadius:20,padding:'2px 8px',textTransform:'uppercase'}}>{c.type}</span>}
+                      {c.level&&<span style={{fontSize:10,color:C.mist,background:C.stone,borderRadius:20,padding:'2px 8px'}}>{c.level}</span>}
+                      {onCopyToLibrary&&<button onClick={()=>onCopyToLibrary(c)} style={{fontSize:10,padding:'3px 9px',borderRadius:8,border:`1px solid ${C.stone}`,background:'transparent',color:C.ink,cursor:'pointer',fontFamily:"'Satoshi',sans-serif",fontWeight:600}}>Copiar</button>}
+                      {isAdmin&&<button onClick={()=>toggleFeatured(c.id,'class')} title={isFeat?'Remover destaque':'Destacar'} style={{fontSize:13,background:'none',border:'none',cursor:'pointer',color:isFeat?'#f59e0b':C.stone,padding:'2px'}}>★</button>}
+                    </div>
+                  );
+                })}
               </div>
-            ))}
-          </div>}
+            </div>
+          )}
+          {/* Featured classes */}
+          {(studio?.settings?.featured_classes||[]).length>0&&(
+            <div>
+              <div style={{fontSize:12,fontWeight:700,color:C.mist,textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:10}}>Em destaque</div>
+              <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                {studioClasses.filter(c=>(studio?.settings?.featured_classes||[]).includes(c.id)).map(c=>(
+                  <div key={c.id} style={{background:'#fffbf0',borderRadius:12,border:`2px solid #f59e0b40`,padding:'12px 16px',display:'flex',alignItems:'center',gap:12}}>
+                    <span style={{color:'#f59e0b',fontSize:14,flexShrink:0}}>★</span>
+                    <div style={{flex:1}}>
+                      <div style={{fontWeight:700,fontSize:13,color:C.ink}}>{c.name||'(sem título)'}</div>
+                      <div style={{fontSize:11,color:C.mist}}>{c.profiles?.name||'Instructor'}{c.date&&' · '+c.date}</div>
+                    </div>
+                    {c.type&&<span style={{fontSize:10,fontWeight:700,color:typeColor(c.type),background:`${typeColor(c.type)}15`,border:`1px solid ${typeColor(c.type)}40`,borderRadius:20,padding:'2px 8px',textTransform:'uppercase'}}>{c.type}</span>}
+                    {onCopyToLibrary&&<button onClick={()=>onCopyToLibrary(c)} style={{fontSize:10,padding:'3px 9px',borderRadius:8,border:`1px solid ${C.stone}`,background:'transparent',color:C.ink,cursor:'pointer',fontFamily:"'Satoshi',sans-serif",fontWeight:600}}>Copiar</button>}
+                    {isAdmin&&<button onClick={()=>toggleFeatured(c.id,'class')} style={{fontSize:10,padding:'3px 9px',borderRadius:8,border:`1px solid #f59e0b`,background:'transparent',color:'#b45309',cursor:'pointer',fontFamily:"'Satoshi',sans-serif",fontWeight:600}}>- Tirar destaque</button>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {loadingContent&&<div style={{color:C.mist,fontSize:13}}>A carregar…</div>}
+          {!loadingContent&&studioClasses.length===0&&<div style={{color:C.mist,fontSize:13,padding:'24px 0'}}>Ainda não há aulas aprovadas no studio.</div>}
         </div>
       )}
 
@@ -3817,14 +3970,31 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary }) => {
                 <div style={{fontSize:12,fontWeight:700,color:C.mist,textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:12}}>Séries pendentes</div>
                 <div style={{display:'flex',flexDirection:'column',gap:8}}>
                   {pendingSeries.map(s=>(
-                    <div key={s.id} style={{background:C.white,borderRadius:12,border:`1px solid ${C.stone}`,padding:'12px 16px',display:'flex',alignItems:'center',gap:12}}>
-                      <div style={{flex:1}}>
-                        <div style={{fontWeight:700,fontSize:14,color:C.ink}}>{s.name}</div>
-                        <div style={{fontSize:11,color:C.mist,marginTop:2}}>{s.profiles?.name||'Instructor'}</div>
+                    <div key={s.id} style={{background:C.white,borderRadius:12,border:`1px solid ${C.stone}`,padding:'12px 16px'}}>
+                      <div style={{display:'flex',alignItems:'center',gap:12}}>
+                        <div style={{flex:1}}>
+                          <div style={{fontWeight:700,fontSize:14,color:C.ink}}>{s.name}</div>
+                          <div style={{fontSize:11,color:C.mist,marginTop:2}}>{s.profiles?.name||'Instructor'}</div>
+                        </div>
+                        {s.type&&<span style={{fontSize:10,fontWeight:700,color:typeColor(s.type),background:`${typeColor(s.type)}15`,border:`1px solid ${typeColor(s.type)}40`,borderRadius:20,padding:'2px 8px',textTransform:'uppercase'}}>{s.type}</span>}
+                        <button onClick={()=>approveSeries(s)} style={{fontSize:12,padding:'5px 12px',borderRadius:8,border:'none',background:'#ecfdf5',color:'#059669',fontWeight:700,cursor:'pointer',fontFamily:"'Satoshi',sans-serif"}}>✓ Aprovar</button>
+                        {rejectingItem?.id===s.id ? (
+                          <button onClick={()=>setRejectingItem(null)} style={{fontSize:12,padding:'5px 12px',borderRadius:8,border:`1px solid ${C.stone}`,background:'transparent',color:C.mist,cursor:'pointer',fontFamily:"'Satoshi',sans-serif"}}>Cancelar</button>
+                        ) : (
+                          <button onClick={()=>setRejectingItem({id:s.id,type:'series',item:s})} style={{fontSize:12,padding:'5px 12px',borderRadius:8,border:`1px solid ${C.stone}`,background:'transparent',color:'#b91c1c',fontWeight:700,cursor:'pointer',fontFamily:"'Satoshi',sans-serif"}}>✗ Rejeitar</button>
+                        )}
                       </div>
-                      {s.type&&<span style={{fontSize:10,fontWeight:700,color:typeColor(s.type),background:`${typeColor(s.type)}15`,border:`1px solid ${typeColor(s.type)}40`,borderRadius:20,padding:'2px 8px',textTransform:'uppercase'}}>{s.type}</span>}
-                      <button onClick={()=>approveSeries(s)} style={{fontSize:12,padding:'5px 12px',borderRadius:8,border:'none',background:'#ecfdf5',color:'#059669',fontWeight:700,cursor:'pointer',fontFamily:"'Satoshi',sans-serif"}}>✓ Aprovar</button>
-                      <button onClick={()=>rejectSeries(s)} style={{fontSize:12,padding:'5px 12px',borderRadius:8,border:`1px solid ${C.stone}`,background:'transparent',color:'#b91c1c',fontWeight:700,cursor:'pointer',fontFamily:"'Satoshi',sans-serif"}}>✗ Rejeitar</button>
+                      {rejectingItem?.id===s.id&&(
+                        <div style={{marginTop:10,borderTop:`1px solid ${C.stone}`,paddingTop:10}}>
+                          <div style={{fontSize:12,color:C.mist,marginBottom:6}}>Comentário para o Instructor (opcional):</div>
+                          <textarea value={rejectingItem.comment||''} onChange={e=>setRejectingItem(p=>({...p,comment:e.target.value}))}
+                            placeholder="Ex: A série precisa de mais detalhes nas transições…"
+                            rows={3} style={{width:'100%',padding:'8px 10px',borderRadius:8,border:`1px solid ${C.stone}`,fontFamily:"'Satoshi',sans-serif",fontSize:13,resize:'vertical',outline:'none',boxSizing:'border-box'}} />
+                          <div style={{display:'flex',justifyContent:'flex-end',marginTop:8}}>
+                            <button onClick={()=>rejectSeries(s, rejectingItem.comment||'')} style={{fontSize:12,padding:'6px 16px',borderRadius:8,border:'none',background:'#b91c1c',color:'#fff',fontWeight:700,cursor:'pointer',fontFamily:"'Satoshi',sans-serif"}}>Confirmar rejeição</button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -3835,15 +4005,32 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary }) => {
                 <div style={{fontSize:12,fontWeight:700,color:C.mist,textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:12}}>Aulas pendentes</div>
                 <div style={{display:'flex',flexDirection:'column',gap:8}}>
                   {pendingClasses.map(c=>(
-                    <div key={c.id} style={{background:C.white,borderRadius:12,border:`1px solid ${C.stone}`,padding:'12px 16px',display:'flex',alignItems:'center',gap:12}}>
-                      <div style={{flex:1}}>
-                        <div style={{fontWeight:700,fontSize:14,color:C.ink}}>{c.name||'(sem título)'}</div>
-                        <div style={{fontSize:11,color:C.mist,marginTop:2}}>{c.profiles?.name||'Instructor'}{c.date&&' · '+c.date}</div>
+                    <div key={c.id} style={{background:C.white,borderRadius:12,border:`1px solid ${C.stone}`,padding:'12px 16px'}}>
+                      <div style={{display:'flex',alignItems:'center',gap:12}}>
+                        <div style={{flex:1}}>
+                          <div style={{fontWeight:700,fontSize:14,color:C.ink}}>{c.name||'(sem título)'}</div>
+                          <div style={{fontSize:11,color:C.mist,marginTop:2}}>{c.profiles?.name||'Instructor'}{c.date&&' · '+c.date}</div>
+                        </div>
+                        {c.type&&<span style={{fontSize:10,fontWeight:700,color:typeColor(c.type),background:`${typeColor(c.type)}15`,border:`1px solid ${typeColor(c.type)}40`,borderRadius:20,padding:'2px 8px',textTransform:'uppercase'}}>{c.type}</span>}
+                        {c.level&&<span style={{fontSize:10,color:C.mist,background:C.stone,borderRadius:20,padding:'2px 8px'}}>{c.level}</span>}
+                        <button onClick={()=>approveClass(c)} style={{fontSize:12,padding:'5px 12px',borderRadius:8,border:'none',background:'#ecfdf5',color:'#059669',fontWeight:700,cursor:'pointer',fontFamily:"'Satoshi',sans-serif"}}>✓ Aprovar</button>
+                        {rejectingItem?.id===c.id ? (
+                          <button onClick={()=>setRejectingItem(null)} style={{fontSize:12,padding:'5px 12px',borderRadius:8,border:`1px solid ${C.stone}`,background:'transparent',color:C.mist,cursor:'pointer',fontFamily:"'Satoshi',sans-serif"}}>Cancelar</button>
+                        ) : (
+                          <button onClick={()=>setRejectingItem({id:c.id,type:'class',item:c})} style={{fontSize:12,padding:'5px 12px',borderRadius:8,border:`1px solid ${C.stone}`,background:'transparent',color:'#b91c1c',fontWeight:700,cursor:'pointer',fontFamily:"'Satoshi',sans-serif"}}>✗ Rejeitar</button>
+                        )}
                       </div>
-                      {c.type&&<span style={{fontSize:10,fontWeight:700,color:typeColor(c.type),background:`${typeColor(c.type)}15`,border:`1px solid ${typeColor(c.type)}40`,borderRadius:20,padding:'2px 8px',textTransform:'uppercase'}}>{c.type}</span>}
-                      {c.level&&<span style={{fontSize:10,color:C.mist,background:C.stone,borderRadius:20,padding:'2px 8px'}}>{c.level}</span>}
-                      <button onClick={()=>approveClass(c)} style={{fontSize:12,padding:'5px 12px',borderRadius:8,border:'none',background:'#ecfdf5',color:'#059669',fontWeight:700,cursor:'pointer',fontFamily:"'Satoshi',sans-serif"}}>✓ Aprovar</button>
-                      <button onClick={()=>rejectClass(c)} style={{fontSize:12,padding:'5px 12px',borderRadius:8,border:`1px solid ${C.stone}`,background:'transparent',color:'#b91c1c',fontWeight:700,cursor:'pointer',fontFamily:"'Satoshi',sans-serif"}}>✗ Rejeitar</button>
+                      {rejectingItem?.id===c.id&&(
+                        <div style={{marginTop:10,borderTop:`1px solid ${C.stone}`,paddingTop:10}}>
+                          <div style={{fontSize:12,color:C.mist,marginBottom:6}}>Comentário para o Instructor (opcional):</div>
+                          <textarea value={rejectingItem.comment||''} onChange={e=>setRejectingItem(p=>({...p,comment:e.target.value}))}
+                            placeholder="Ex: A aula precisa de mais contexto nas séries…"
+                            rows={3} style={{width:'100%',padding:'8px 10px',borderRadius:8,border:`1px solid ${C.stone}`,fontFamily:"'Satoshi',sans-serif",fontSize:13,resize:'vertical',outline:'none',boxSizing:'border-box'}} />
+                          <div style={{display:'flex',justifyContent:'flex-end',marginTop:8}}>
+                            <button onClick={()=>rejectClass(c, rejectingItem.comment||'')} style={{fontSize:12,padding:'6px 16px',borderRadius:8,border:'none',background:'#b91c1c',color:'#fff',fontWeight:700,cursor:'pointer',fontFamily:"'Satoshi',sans-serif"}}>Confirmar rejeição</button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -4423,7 +4610,7 @@ const ContextAIPanel = ({ open, onToggle, screen, editingSeries, series, classes
 };
 
 // ─── HOME PAGE ─────────────────────────────────────────────────────────────────
-const HomePage = ({ series, classes, profile, onNewSeries, onNewClass, onViewSeries, onViewClass, onGoStudio, shares=[], onAcceptShare, onDismissShare }) => {
+const HomePage = ({ series, classes, profile, onNewSeries, onNewClass, onViewSeries, onViewClass, onGoStudio, shares=[], onAcceptShare, onDismissShare, notifications=[], onDismissNotif, onMarkAllRead, studioHighlights=[] }) => {
   const recentSeries = [...series].sort((a,b)=>(b.updatedAt||b.createdAt||"").localeCompare(a.updatedAt||a.createdAt||"")).slice(0,5);
   const recentClasses = [...classes].sort((a,b)=>(b.date||"").localeCompare(a.date||"")||0).slice(0,5);
   const pendingCount = series.filter(s=>s.visibility==='pending_studio').length + classes.filter(c=>c.visibility==='pending_studio').length;
@@ -4509,6 +4696,47 @@ const HomePage = ({ series, classes, profile, onNewSeries, onNewClass, onViewSer
           </div>
         </div>
       </div>
+
+      {/* Notifications */}
+      {notifications.length > 0 && (
+        <div>
+          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+            <div style={{fontFamily:"'Clash Display',sans-serif",fontSize:14,fontWeight:600,color:C.ink,textTransform:"uppercase",letterSpacing:"0.06em",flex:1}}>Notificações</div>
+            <button onClick={onMarkAllRead} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,color:C.mist,background:"none",border:"none",cursor:"pointer",padding:0,textDecoration:"underline"}}>Marcar tudo como lido</button>
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:6}}>
+            {notifications.slice(0,8).map(n=>(
+              <div key={n.id} style={{background:C.white,border:`1px solid ${!n.read?C.crimson+'40':C.stone}`,borderLeft:`3px solid ${!n.read?C.crimson:C.stone}`,borderRadius:10,padding:"10px 14px",display:"flex",alignItems:"flex-start",gap:10}}>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:13,fontWeight:n.read?500:700,color:C.ink}}>{n.title}</div>
+                  {n.body&&<div style={{fontSize:12,color:C.mist,marginTop:2}}>{n.body}</div>}
+                  <div style={{fontSize:10,color:C.mist,marginTop:4}}>{new Date(n.created_at).toLocaleDateString('pt-PT',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</div>
+                </div>
+                <button onClick={()=>onDismissNotif?.(n.id)} style={{background:"none",border:"none",cursor:"pointer",color:C.mist,fontSize:14,padding:"0 2px",flexShrink:0}}>×</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Studio destaques */}
+      {studioHighlights.length > 0 && (
+        <div>
+          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+            <div style={{fontFamily:"'Clash Display',sans-serif",fontSize:14,fontWeight:600,color:C.ink,textTransform:"uppercase",letterSpacing:"0.06em",flex:1}}>Em destaque no Studio</div>
+            <button onClick={onGoStudio} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,color:C.mist,background:"none",border:"none",cursor:"pointer",textDecoration:"underline"}}>Ver studio →</button>
+          </div>
+          <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+            {studioHighlights.map(item=>(
+              <div key={item.id} onClick={item._hType==='series'?()=>onViewSeries(item):()=>onViewClass(item)}
+                style={{background:C.white,border:`1px solid ${C.stone}`,borderRadius:10,padding:"10px 14px",cursor:"pointer",minWidth:160,flex:"0 0 auto",maxWidth:240}}>
+                <div style={{fontSize:12,fontWeight:700,color:C.ink,marginBottom:3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.name}</div>
+                <div style={{fontSize:10,color:C.mist}}>{item._hType==='series'?(item.type||'Série'):(item.type||'Aula')} {item._hType==='series'&&item.primaryZone?`· ${item.primaryZone}`:''}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Shares inbox */}
       {shares.length > 0 && (
@@ -4755,6 +4983,8 @@ function HavenApp() {
   const [discoverLoading, setDiscoverLoading] = useState(false);
   const [shares, setShares] = useState([]);
   const [sendModalItem, setSendModalItem] = useState(null);
+  const [notifications, setNotifications] = useState([]);
+  const [studioHighlights, setStudioHighlights] = useState([]);
 
   const navigate = (newScreen) => {
     const newStack = [...screenStack, screen];
@@ -4820,6 +5050,22 @@ function HavenApp() {
       // Load shares inbox
       const { data: sharesData } = await supabase.from('shares').select('*').eq('to_user_id', user.id).order('created_at', { ascending: false });
       setShares(sharesData || []);
+      // Load notifications
+      const { data: notifData } = await supabase.from('notifications').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(50);
+      setNotifications(notifData || []);
+      // Load studio highlights if member of a studio
+      if (p?.studio_id && p?.studios?.settings) {
+        const featSeriesIds = p.studios.settings.featured_series || [];
+        const featClassIds  = p.studios.settings.featured_classes || [];
+        const [sr, cr] = await Promise.all([
+          featSeriesIds.length ? supabase.from('series').select('*').in('id', featSeriesIds) : Promise.resolve({ data: [] }),
+          featClassIds.length  ? supabase.from('classes').select('*').in('id', featClassIds)  : Promise.resolve({ data: [] }),
+        ]);
+        setStudioHighlights([
+          ...(sr.data||[]).map(r=>({ ...seriesFromDB(r), _hType:'series' })),
+          ...(cr.data||[]).map(r=>({ ...classFromDB(r),  _hType:'class'  })),
+        ]);
+      }
     })();
   }, [user]);
 
@@ -4866,8 +5112,12 @@ function HavenApp() {
     if (!profile?.studio_id) return;
     const updated = { ...s, visibility: 'pending_studio', studioId: profile.studio_id };
     setSeries(p=>p.map(x=>x.id===s.id?updated:x));
-    await supabase.from('series').update({ visibility:'pending_studio', studio_id: profile.studio_id }).eq('id', s.id);
+    await supabase.from('series').update({ visibility:'pending_studio', studio_id: profile.studio_id, studio_comment: null }).eq('id', s.id);
     toast("Série submetida para revisão do studio");
+    const { data: admins } = await supabase.from('profiles').select('id').eq('studio_id', profile.studio_id).in('role', ['admin','owner']);
+    for (const a of admins||[]) {
+      if (a.id !== user.id) sendNotification(a.id, 'series_submitted', 'Nova série para revisão', `${profile.name||'Instructor'} submeteu "${s.name}"`, 'series', s.id);
+    }
   };
   const unpublishFromStudio = async s => {
     const updated = { ...s, visibility: 'personal', studioId: null };
@@ -4875,12 +5125,22 @@ function HavenApp() {
     await supabase.from('series').update({ visibility:'personal', studio_id: null }).eq('id', s.id);
     toast("Série tornada privada");
   };
+  const unpublishClassFromStudio = async c => {
+    const updated = { ...c, visibility: 'personal', studioId: null };
+    setClasses(p=>p.map(x=>x.id===c.id?updated:x));
+    await supabase.from('classes').update({ visibility:'personal', studio_id: null }).eq('id', c.id);
+    toast("Aula retirada da submissão");
+  };
   const publishClassToStudio = async c => {
     if (!profile?.studio_id) return;
     const updated = { ...c, visibility: 'pending_studio', studioId: profile.studio_id };
     setClasses(p=>p.map(x=>x.id===c.id?updated:x));
-    await supabase.from('classes').update({ visibility:'pending_studio', studio_id: profile.studio_id }).eq('id', c.id);
+    await supabase.from('classes').update({ visibility:'pending_studio', studio_id: profile.studio_id, studio_comment: null }).eq('id', c.id);
     toast("Aula submetida para revisão do studio");
+    const { data: admins } = await supabase.from('profiles').select('id').eq('studio_id', profile.studio_id).in('role', ['admin','owner']);
+    for (const a of admins||[]) {
+      if (a.id !== user.id) sendNotification(a.id, 'class_submitted', 'Nova aula para revisão', `${profile.name||'Instructor'} submeteu "${c.name||'Aula sem título'}"`, 'class', c.id);
+    }
   };
   const makeSeriesPublic = async s => {
     const updated = { ...s, visibility: 'public' };
@@ -4982,13 +5242,38 @@ function HavenApp() {
 
   const toggleClassPublic = async (c) => {
     const isPublic = c.visibility === 'public';
-    const updated = { ...c, visibility: isPublic ? 'personal' : 'public' };
-    setClasses(p=>p.map(x=>x.id===c.id?updated:x));
-    await supabase.from('classes').update({ visibility: updated.visibility }).eq('id', c.id);
+    const newVisibility = isPublic ? 'personal' : 'public';
+    const updated = { ...c, visibility: newVisibility };
+    setClasses(p => p.map(x => x.id === c.id ? updated : x));
+    const { error } = await supabase.from('classes').update({ visibility: newVisibility }).eq('id', c.id);
+    if (error) { console.error('toggleClassPublic error:', error); toast('Erro ao alterar visibilidade', 'error'); return; }
     toast(isPublic ? 'Aula tornada privada' : 'Aula publicada na plataforma');
   };
 
   const unseenSharesCount = shares.length;
+  const unseenNotifCount = notifications.filter(n => !n.read).length;
+
+  const sendNotification = async (userId, type, title, body, itemType, itemId) => {
+    try {
+      const { data } = await supabase.from('notifications').insert({ user_id: userId, type, title, body, item_type: itemType, item_id: itemId }).select().single();
+      if (data && userId === user?.id) setNotifications(p => [data, ...p]);
+    } catch(e) { console.error('sendNotification error:', e); }
+  };
+
+  const markNotifRead = async (id) => {
+    setNotifications(p => p.map(n => n.id === id ? { ...n, read: true } : n));
+    await supabase.from('notifications').update({ read: true }).eq('id', id);
+  };
+
+  const dismissNotif = async (id) => {
+    setNotifications(p => p.filter(n => n.id !== id));
+    await supabase.from('notifications').delete().eq('id', id);
+  };
+
+  const markAllNotifsRead = async () => {
+    setNotifications(p => p.map(n => ({ ...n, read: true })));
+    await supabase.from('notifications').update({ read: true }).eq('user_id', user.id);
+  };
 
   const isChoreoSeries = s => {
     const movs=[...(s.reformer?.movements||[]),...(s.barre?.movements||[])];
@@ -5081,6 +5366,10 @@ function HavenApp() {
                 </button>
               ))}
             </div>
+            <button onClick={()=>{ goTab("home"); markAllNotifsRead(); }} title="Notificações" style={{position:"relative",background:"transparent",border:`1px solid ${unseenNotifCount>0?C.cream:`${C.cream}40`}`,borderRadius:6,padding:"6px 10px",cursor:"pointer",color:unseenNotifCount>0?C.cream:`${C.cream}80`,fontSize:14,display:"inline-flex",alignItems:"center"}}>
+              🔔
+              {unseenNotifCount>0&&<span style={{position:"absolute",top:-4,right:-4,background:"#e74c3c",color:"#fff",borderRadius:"50%",fontSize:9,padding:"0 4px",fontWeight:700,lineHeight:"14px",minWidth:14,textAlign:"center"}}>{unseenNotifCount}</span>}
+            </button>
             <button onClick={()=>supabase.auth.signOut()} style={{fontFamily:"'Satoshi',sans-serif",fontWeight:600,fontSize:12,padding:"6px 14px",borderRadius:6,border:`1px solid ${C.cream}40`,background:"transparent",color:`${C.cream}80`,cursor:"pointer"}} title="Sair">Sair</button>
           </div>
         </div>
@@ -5105,6 +5394,10 @@ function HavenApp() {
             shares={shares}
             onAcceptShare={acceptShare}
             onDismissShare={dismissShare}
+            notifications={notifications}
+            onDismissNotif={dismissNotif}
+            onMarkAllRead={markAllNotifsRead}
+            studioHighlights={studioHighlights}
           />
         )}
 
@@ -5210,7 +5503,7 @@ function HavenApp() {
 
         {/* ── STUDIO ── */}
         {screen.mode==="studio"&&(
-          <StudioPage profile={profile} user={user} onProfileUpdate={p=>setProfile(p)} onCopyToLibrary={copyToLibrary}/>
+          <StudioPage profile={profile} user={user} onProfileUpdate={p=>setProfile(p)} onCopyToLibrary={copyToLibrary} sendNotification={sendNotification}/>
         )}
 
         {/* ── PERFIL ── */}
@@ -5235,6 +5528,7 @@ function HavenApp() {
             onViewAula={c=>navigate({mode:"aula",cls:c,fromLibrary:false})}
             studioSettings={profile?.studios?.settings}
             onPublishClass={publishClassToStudio}
+            onUnpublishClass={unpublishClassFromStudio}
             hasStudio={!!profile?.studio_id}
             onToggleClassPublic={toggleClassPublic}
             onSendClass={item=>setSendModalItem(item)}
