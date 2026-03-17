@@ -359,6 +359,7 @@ const seriesToDB = (s, userId) => ({
   visibility: s.visibility || 'personal', studio_id: s.studioId || null,
   updated_at: new Date().toISOString(),
   duration: s.duration ?? null,
+  attribution: s.attribution || null,
 });
 const seriesFromDB = row => ({
   id: row.id, name: row.name, type: row.type, status: row.status || 'testing',
@@ -371,6 +372,7 @@ const seriesFromDB = row => ({
   videoUrl: row.video_url || '', createdAt: row.created_at ? row.created_at.split('T')[0] : '',
   createdBy: row.created_by || null, visibility: row.visibility || 'personal', studioId: row.studio_id || null,
   duration: row.duration ?? null,
+  attribution: row.attribution || null,
 });
 const classToDB = (c, userId) => ({
   id: c.id, name: c.name, type: c.type, date: c.date || null,
@@ -379,6 +381,7 @@ const classToDB = (c, userId) => ({
   studio_id: c.studioId || null,
   level: c.level || null,
   warmup_notes: c.warmupNotes || null, cooldown_notes: c.cooldownNotes || null,
+  attribution: c.attribution || null,
 });
 const classFromDB = row => ({
   id: row.id, name: row.name, type: row.type, date: row.date || '',
@@ -388,6 +391,7 @@ const classFromDB = row => ({
   visibility: row.visibility || 'personal',
   studioId: row.studio_id || null,
   warmupNotes: row.warmup_notes || '', cooldownNotes: row.cooldown_notes || '',
+  attribution: row.attribution || null,
 });
 
 // ─── PERSIST (Supabase) ──────────────────────────────────────────────────────
@@ -832,7 +836,7 @@ const CardCueGen = ({ series, rowIndex, rows, aiStyle, onUpdate, nonsig, getCurr
 };
 
 // ─── SERIES CARD (expandable) ─────────────────────────────────────────────────
-const SeriesCard = ({ series, onEdit, onDelete, onUpdateSeries, aiStyle, modalityFilter=null, currentUserId=null, hasStudio=false, onCopy=null, onPublish=null, onUnpublish=null, onMakePublic=null, compact=false }) => {
+const SeriesCard = ({ series, onEdit, onDelete, onUpdateSeries, aiStyle, modalityFilter=null, currentUserId=null, hasStudio=false, onCopy=null, onPublish=null, onUnpublish=null, onMakePublic=null, compact=false, onTogglePublic=null, onSend=null }) => {
   const isOwner = !currentUserId || series.createdBy === currentUserId;
   const isSig = series.type === "signature";
   const [expanded, setExpanded] = useState(false);
@@ -1061,8 +1065,8 @@ const SeriesCard = ({ series, onEdit, onDelete, onUpdateSeries, aiStyle, modalit
             {isOwner&&hasStudio&&series.visibility==='personal'&&onPublish&&<Btn small variant="ghost" onClick={e=>{e.stopPropagation();onPublish(series);}} title="Submeter para revisão do studio (visível apenas aos membros)" style={{color:"#1a56db"}}>↑ Studio</Btn>}
             {isOwner&&series.visibility==='pending_studio'&&onUnpublish&&<Btn small variant="ghost" onClick={e=>{e.stopPropagation();onUnpublish(series);}} style={{color:C.mist}}>Cancelar submissão</Btn>}
             {isOwner&&series.visibility==='studio'&&onUnpublish&&<Btn small variant="ghost" onClick={e=>{e.stopPropagation();onUnpublish(series);}} style={{color:C.mist}}>Tornar privada</Btn>}
-            {isOwner&&series.visibility==='public'&&onUnpublish&&<Btn small variant="ghost" onClick={e=>{e.stopPropagation();onUnpublish(series);}} style={{color:C.mist}}>Tornar privada</Btn>}
-            {isOwner&&series.visibility!=='public'&&onMakePublic&&<Btn small variant="ghost" onClick={async e=>{e.stopPropagation();const ok=await confirm_?.("Tornares esta série pública significa que qualquer Instructor do The Haven a poderá ver. Tens a certeza?",{confirmLabel:"Tornar pública",danger:false});if(ok)onMakePublic(series);}} title="Tornar visível a todos os Instructors do The Haven (todas as academias)" style={{color:"#059669"}}>↑ Público</Btn>}
+            {isOwner&&onTogglePublic&&<button onClick={e=>{e.stopPropagation();onTogglePublic(series);}} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"4px 10px",borderRadius:20,border:`1px solid ${series.visibility==='public'?C.crimson:C.stone}`,background:"transparent",color:series.visibility==='public'?C.crimson:C.mist,cursor:"pointer"}}>{series.visibility==='public'?'🌐 Pública':'🔒 Privada'}</button>}
+            {onSend&&<Btn small variant="ghost" onClick={e=>{e.stopPropagation();onSend({...series,_discoverType:'series'});}} style={{color:C.mist}}>Enviar →</Btn>}
           </>)}
         </div>
         <span style={{ color:C.mist, display:"inline-flex", transition:"transform 0.2s",
@@ -1078,6 +1082,11 @@ const SeriesCard = ({ series, onEdit, onDelete, onUpdateSeries, aiStyle, modalit
           {isOwner&&hasStudio&&(series.visibility==='personal'||series.visibility==='studio')&&(
             <div style={{fontSize:10,color:C.mist,marginTop:-6}}>
               Studio — partilha com os teus colegas · Público — visível a todos os Instructors do The Haven
+            </div>
+          )}
+          {series.attribution&&(
+            <div style={{fontSize:11,color:C.mist,fontStyle:"italic"}}>
+              {series.attribution.author_name ? `Partilhado por ${series.attribution.author_name}${series.attribution.studio_name?` · ${series.attribution.studio_name}`:''}` : 'Copiado de outro Instructor'}
             </div>
           )}
 
@@ -2953,7 +2962,7 @@ Only use IDs from the available list. Return only the JSON array, no explanation
 };
 
 // ─── CLASS BUILDER ────────────────────────────────────────────────────────────
-const ClassBuilder = ({ allSeries, classes, onSave, onDeleteClass, onViewAula, studioSettings, onPublishClass, hasStudio }) => {
+const ClassBuilder = ({ allSeries, classes, onSave, onDeleteClass, onViewAula, studioSettings, onPublishClass, hasStudio, onToggleClassPublic, onSendClass }) => {
   const [creating, setCreating] = useState(false);
   const [newCls, setNewCls] = useState(null);
   const [classSearch, setClassSearch] = useState("");
@@ -3032,6 +3041,8 @@ const ClassBuilder = ({ allSeries, classes, onSave, onDeleteClass, onViewAula, s
             <Badge label={c.type==="signature"?"✦ Signature":c.type} color={c.type==="signature"?"gold":c.type==="reformer"?"teal":"coral"}/>
             {c.visibility==='pending_studio'&&<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:20,background:"#fef9ec",color:"#b45309",border:"1px solid #fcd34d"}}>⏳ Em revisão</span>}
             {hasStudio&&c.visibility==='personal'&&onPublishClass&&<Btn small variant="ghost" onClick={e=>{e.stopPropagation();onPublishClass(c);}} title="Submeter para revisão do studio" style={{color:"#1a56db"}}>↑ Studio</Btn>}
+            {onToggleClassPublic&&<button onClick={e=>{e.stopPropagation();onToggleClassPublic(c);}} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"4px 10px",borderRadius:20,border:`1px solid ${c.visibility==='public'?C.crimson:C.stone}`,background:"transparent",color:c.visibility==='public'?C.crimson:C.mist,cursor:"pointer"}}>{c.visibility==='public'?'🌐 Pública':'🔒 Privada'}</button>}
+            {onSendClass&&<Btn small variant="ghost" onClick={e=>{e.stopPropagation();onSendClass({...c,_discoverType:'class'});}} style={{color:C.mist}}>Enviar →</Btn>}
             <Btn small onClick={e=>{e.stopPropagation();onViewAula(c);}}><Icon name="eye" size={13}/> Ver Aula</Btn>
             <button onClick={e=>{e.stopPropagation();onDeleteClass(c.id);}} title="Apagar aula" style={{background:"none",border:`1px solid ${C.stone}`,borderRadius:8,cursor:"pointer",color:C.coral,padding:"6px 8px",display:"inline-flex",alignItems:"center"}}><Icon name="x" size={13}/></button>
           </div>
@@ -3274,6 +3285,7 @@ const ProfilePage = ({ profile, user, onProfileUpdate, studioSettings, aiStyle, 
   const [newPrefClassType, setNewPrefClassType] = useState('');
   const [newPrefLevel, setNewPrefLevel] = useState('');
   const [newSeriesType, setNewSeriesType] = useState('');
+  const [isPublic, setIsPublic] = useState(profile?.is_public || false);
   const [saving, setSaving] = useState(false);
   const [aiLang, setAiLang] = useState('');
   const [aiTone, setAiTone] = useState('');
@@ -3324,6 +3336,7 @@ const ProfilePage = ({ profile, user, onProfileUpdate, studioSettings, aiStyle, 
     onAiStyleChange?.(assembled);
     const { error } = await supabase.from('profiles').update({
       name: editName,
+      is_public: isPublic,
       settings: { ...(profile?.settings || {}), preferred_zones: editPrefZones, class_types: editPrefClassTypes, preferred_levels: editPrefLevels, series_types: editSeriesTypes },
     }).eq('id', profile.id);
     setSaving(false);
@@ -3418,6 +3431,16 @@ const ProfilePage = ({ profile, user, onProfileUpdate, studioSettings, aiStyle, 
             onRemove={l => setEditPrefLevels(p => p.filter(x => x !== l))}
             newVal={newPrefLevel} onNewVal={setNewPrefLevel} placeholder="Adicionar nível personalizado…"
             onAdd={() => { const v = newPrefLevel.trim(); if (v && !editPrefLevels.map(x => x.toLowerCase()).includes(v.toLowerCase())) { setEditPrefLevels(p => [...p, v]); setNewPrefLevel(''); } }} />
+        </div>
+
+        {/* Visibilidade */}
+        <div>
+          <div style={{fontSize:12,fontWeight:700,color:C.mist,textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:10}}>Visibilidade do perfil</div>
+          <p style={{fontSize:13,color:C.mist,marginBottom:10,margin:'0 0 10px'}}>Torna o teu perfil público para que outros Instrutores te possam enviar conteúdo diretamente e encontrar-te no Descobrir.</p>
+          <label style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer",userSelect:"none"}}>
+            <input type="checkbox" checked={isPublic} onChange={e=>setIsPublic(e.target.checked)} style={{width:16,height:16,cursor:"pointer",accentColor:C.crimson}}/>
+            <span style={{fontFamily:"'Satoshi',sans-serif",fontSize:13,fontWeight:600,color:C.ink}}>Perfil público</span>
+          </label>
         </div>
 
         {/* AI Style */}
@@ -4400,7 +4423,7 @@ const ContextAIPanel = ({ open, onToggle, screen, editingSeries, series, classes
 };
 
 // ─── HOME PAGE ─────────────────────────────────────────────────────────────────
-const HomePage = ({ series, classes, profile, onNewSeries, onNewClass, onViewSeries, onViewClass, onGoStudio }) => {
+const HomePage = ({ series, classes, profile, onNewSeries, onNewClass, onViewSeries, onViewClass, onGoStudio, shares=[], onAcceptShare, onDismissShare }) => {
   const recentSeries = [...series].sort((a,b)=>(b.updatedAt||b.createdAt||"").localeCompare(a.updatedAt||a.createdAt||"")).slice(0,5);
   const recentClasses = [...classes].sort((a,b)=>(b.date||"").localeCompare(a.date||"")||0).slice(0,5);
   const pendingCount = series.filter(s=>s.visibility==='pending_studio').length + classes.filter(c=>c.visibility==='pending_studio').length;
@@ -4486,6 +4509,210 @@ const HomePage = ({ series, classes, profile, onNewSeries, onNewClass, onViewSer
           </div>
         </div>
       </div>
+
+      {/* Shares inbox */}
+      {shares.length > 0 && (
+        <div>
+          <div style={{fontFamily:"'Clash Display',sans-serif",fontSize:14,fontWeight:600,color:C.ink,marginBottom:10,textTransform:"uppercase",letterSpacing:"0.06em"}}>Partilhas recebidas</div>
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            {shares.map(share=>(
+              <div key={share.id} style={{background:C.white,border:`2px solid ${C.crimson}30`,borderRadius:12,padding:"12px 16px",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:13,fontWeight:700,color:C.ink,fontFamily:"'Clash Display',sans-serif"}}>{share.item_snapshot?.name||'Item'}</div>
+                  <div style={{fontSize:11,color:C.mist,marginTop:2,display:"flex",gap:8}}>
+                    <span>{share.item_type==='series'?'Série':'Aula'}</span>
+                    {share.message&&<span>· {share.message}</span>}
+                  </div>
+                </div>
+                <div style={{display:"flex",gap:8,flexShrink:0}}>
+                  <button onClick={()=>onAcceptShare?.(share)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:700,padding:"6px 14px",borderRadius:8,border:"none",background:C.crimson,color:C.cream,cursor:"pointer"}}>Adicionar à biblioteca</button>
+                  <button onClick={()=>onDismissShare?.(share.id)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"6px 12px",borderRadius:8,border:`1px solid ${C.stone}`,background:"transparent",color:C.mist,cursor:"pointer"}}>Ignorar</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ─── DISCOVER PAGE ────────────────────────────────────────────────────────────
+const DiscoverPage = ({ items, loading, onRefresh, onCopy, onSend, profile }) => {
+  const [search, setSearch] = React.useState('');
+  const [typeFilter, setTypeFilter] = React.useState('all'); // 'all','series','class'
+  const [zoneFilter, setZoneFilter] = React.useState('');
+
+  const zones = React.useMemo(() => {
+    const zs = new Set();
+    items.filter(i=>i._discoverType==='series').forEach(i=>{ if(i.primaryZone) zs.add(i.primaryZone); });
+    return [...zs].sort();
+  }, [items]);
+
+  const filtered = items.filter(item => {
+    if(typeFilter!=='all' && item._discoverType!==typeFilter) return false;
+    if(search && !(item.name||'').toLowerCase().includes(search.toLowerCase())) return false;
+    if(zoneFilter && item._discoverType==='series' && item.primaryZone!==zoneFilter) return false;
+    return true;
+  });
+
+  const seriesItems = filtered.filter(i=>i._discoverType==='series');
+  const classItems  = filtered.filter(i=>i._discoverType==='class');
+
+  const authorLabel = (item) => {
+    const name = item._author?.name;
+    const studio = item._author?.studios?.name;
+    if (!name) return null;
+    return studio ? `${name} · ${studio}` : name;
+  };
+
+  const typeColors = { reformer: C.reformer, barre: C.barre, signature: '#7a4010' };
+
+  return (
+    <div>
+      {/* Header */}
+      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20,flexWrap:"wrap"}}>
+        <h2 style={{fontFamily:"'Clash Display', sans-serif",fontSize:26,fontWeight:500,color:C.crimson,margin:0,flex:1}}>Descobrir</h2>
+        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Pesquisar…" style={{fontFamily:"'Satoshi',sans-serif",fontSize:13,padding:"7px 14px",borderRadius:20,border:`1px solid ${C.stone}`,outline:"none",background:C.white,color:C.ink,width:180}}/>
+        <div style={{display:"flex",gap:4}}>
+          {[['all','Tudo'],['series','Séries'],['class','Aulas']].map(([v,l])=>(
+            <button key={v} onClick={()=>setTypeFilter(v)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"6px 14px",borderRadius:20,border:`1px solid ${typeFilter===v?C.crimson:C.stone}`,background:typeFilter===v?C.crimson:"transparent",color:typeFilter===v?C.cream:C.ink,cursor:"pointer"}}>{l}</button>
+          ))}
+        </div>
+        {zones.length>0&&(
+          <select value={zoneFilter} onChange={e=>setZoneFilter(e.target.value)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,padding:"7px 10px",borderRadius:8,border:`1px solid ${C.stone}`,color:C.ink,background:C.white,outline:"none"}}>
+            <option value="">Todas as zonas</option>
+            {zones.map(z=><option key={z} value={z}>{z}</option>)}
+          </select>
+        )}
+        <button onClick={onRefresh} disabled={loading} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"7px 14px",borderRadius:8,border:`1px solid ${C.stone}`,background:C.white,color:C.ink,cursor:"pointer",opacity:loading?0.5:1}}>{loading?"A carregar…":"↻ Atualizar"}</button>
+      </div>
+
+      {loading && <div style={{color:C.mist,fontSize:14,padding:"40px 0",textAlign:"center"}}>A carregar conteúdo público…</div>}
+
+      {!loading && filtered.length===0 && (
+        <div style={{textAlign:"center",padding:"60px 0",color:C.mist}}>
+          <div style={{fontSize:32,marginBottom:12}}>✦</div>
+          <div style={{fontFamily:"'Clash Display',sans-serif",fontSize:18,color:C.ink,marginBottom:8}}>Nenhum conteúdo público encontrado</div>
+          <div style={{fontSize:13}}>Partilha as tuas séries para aparecer aqui!</div>
+        </div>
+      )}
+
+      {/* Series section */}
+      {(typeFilter==='all'||typeFilter==='series') && seriesItems.length>0 && (
+        <div style={{marginBottom:28}}>
+          {typeFilter==='all'&&<div style={{fontSize:10,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:10}}>Séries</div>}
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            {seriesItems.map(item=>(
+              <div key={item.id} style={{background:C.white,border:`1px solid ${C.stone}`,borderRadius:12,padding:"14px 18px",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:4}}>
+                    <span style={{fontFamily:"'Clash Display',sans-serif",fontSize:16,fontWeight:600,color:C.ink}}>{item.name}</span>
+                    {item.type&&<span style={{fontSize:11,fontWeight:700,color:C.white,background:typeColors[item.type]||C.mist,borderRadius:20,padding:"2px 8px"}}>{item.type}</span>}
+                    {item.primaryZone&&<span style={{fontSize:11,color:C.mist,background:C.stone,borderRadius:20,padding:"2px 8px"}}>{item.primaryZone}</span>}
+                    {item.seriesType&&<span style={{fontSize:11,fontWeight:600,color:"#5a2a00",background:`${C.sig}50`,border:`1px solid ${C.sig}`,borderRadius:20,padding:"2px 8px"}}>{item.seriesType}</span>}
+                  </div>
+                  {authorLabel(item)&&<div style={{fontSize:12,color:C.mist}}>{authorLabel(item)}</div>}
+                </div>
+                <div style={{display:"flex",gap:8,flexShrink:0}}>
+                  <button onClick={()=>onCopy(item)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"6px 14px",borderRadius:8,border:`1px solid ${C.crimson}`,background:"transparent",color:C.crimson,cursor:"pointer"}}>Copiar</button>
+                  <button onClick={()=>onSend(item)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"6px 14px",borderRadius:8,border:`1px solid ${C.stone}`,background:C.white,color:C.ink,cursor:"pointer"}}>Enviar →</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Classes section */}
+      {(typeFilter==='all'||typeFilter==='class') && classItems.length>0 && (
+        <div>
+          {typeFilter==='all'&&<div style={{fontSize:10,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:10}}>Aulas</div>}
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            {classItems.map(item=>(
+              <div key={item.id} style={{background:C.white,border:`1px solid ${C.stone}`,borderRadius:12,padding:"14px 18px",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:4}}>
+                    <span style={{fontFamily:"'Clash Display',sans-serif",fontSize:16,fontWeight:600,color:C.ink}}>{item.name}</span>
+                    {item.type&&<span style={{fontSize:11,fontWeight:700,color:C.white,background:typeColors[item.type]||C.mist,borderRadius:20,padding:"2px 8px"}}>{item.type}</span>}
+                    {item.level&&<span style={{fontSize:11,color:C.mist,background:C.stone,borderRadius:20,padding:"2px 8px"}}>{item.level}</span>}
+                    {item.date&&<span style={{fontSize:11,color:C.mist}}>{item.date}</span>}
+                  </div>
+                  {authorLabel(item)&&<div style={{fontSize:12,color:C.mist}}>{authorLabel(item)}</div>}
+                </div>
+                <div style={{display:"flex",gap:8,flexShrink:0}}>
+                  <button onClick={()=>onCopy(item)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"6px 14px",borderRadius:8,border:`1px solid ${C.crimson}`,background:"transparent",color:C.crimson,cursor:"pointer"}}>Copiar</button>
+                  <button onClick={()=>onSend(item)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"6px 14px",borderRadius:8,border:`1px solid ${C.stone}`,background:C.white,color:C.ink,cursor:"pointer"}}>Enviar →</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ─── SEND MODAL ───────────────────────────────────────────────────────────────
+const SendModal = ({ item, currentUserId, onSend, onClose }) => {
+  const [profiles, setProfiles] = React.useState([]);
+  const [search, setSearch] = React.useState('');
+  const [selected, setSelected] = React.useState(null);
+  const [message, setMessage] = React.useState('');
+  const [sending, setSending] = React.useState(false);
+  const [loading, setLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    (async () => {
+      const { data } = await supabase.from('profiles').select('id, name, studios(name)').eq('is_public', true);
+      setProfiles((data || []).filter(p => p.id !== currentUserId));
+      setLoading(false);
+    })();
+  }, []);
+
+  const filtered = profiles.filter(p => (p.name||'').toLowerCase().includes(search.toLowerCase()));
+
+  const handleSend = async () => {
+    if (!selected) return;
+    setSending(true);
+    await onSend(item, selected, message);
+    setSending(false);
+    onClose();
+  };
+
+  const itemLabel = item._discoverType === 'class' ? 'Aula' : 'Série';
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:9000,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
+      <div style={{background:C.cream,borderRadius:16,padding:28,width:420,maxWidth:"95vw",maxHeight:"80vh",display:"flex",flexDirection:"column",gap:16}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+          <h3 style={{fontFamily:"'Clash Display',sans-serif",fontSize:18,fontWeight:600,color:C.crimson,margin:0}}>Enviar {itemLabel}</h3>
+          <button onClick={onClose} style={{background:"none",border:"none",fontSize:18,cursor:"pointer",color:C.mist}}>✕</button>
+        </div>
+        <div style={{fontSize:13,color:C.ink}}>A enviar: <strong>{item.name}</strong></div>
+
+        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Pesquisar instrutor…" style={{fontFamily:"'Satoshi',sans-serif",fontSize:13,padding:"8px 14px",borderRadius:8,border:`1px solid ${C.stone}`,outline:"none",width:"100%",boxSizing:"border-box"}}/>
+
+        <div style={{flex:1,overflowY:"auto",maxHeight:220,display:"flex",flexDirection:"column",gap:6}}>
+          {loading&&<div style={{color:C.mist,fontSize:13,padding:8}}>A carregar instrutores…</div>}
+          {!loading&&filtered.length===0&&<div style={{color:C.mist,fontSize:13,padding:8}}>Nenhum instrutor público encontrado.</div>}
+          {filtered.map(p=>(
+            <button key={p.id} onClick={()=>setSelected(p)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:13,padding:"8px 12px",borderRadius:8,border:`2px solid ${selected?.id===p.id?C.crimson:C.stone}`,background:selected?.id===p.id?`${C.crimson}10`:C.white,color:C.ink,cursor:"pointer",textAlign:"left",display:"flex",alignItems:"center",gap:8}}>
+              <span style={{flex:1,fontWeight:600}}>{p.name}</span>
+              {p.studios?.name&&<span style={{fontSize:11,color:C.mist}}>{p.studios.name}</span>}
+            </button>
+          ))}
+        </div>
+
+        <textarea value={message} onChange={e=>setMessage(e.target.value)} placeholder="Mensagem (opcional)…" rows={2} style={{fontFamily:"'Satoshi',sans-serif",fontSize:13,padding:"8px 12px",borderRadius:8,border:`1px solid ${C.stone}`,outline:"none",resize:"vertical",width:"100%",boxSizing:"border-box"}}/>
+
+        <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+          <button onClick={onClose} style={{fontFamily:"'Satoshi',sans-serif",fontSize:13,fontWeight:600,padding:"8px 18px",borderRadius:8,border:`1px solid ${C.stone}`,background:"transparent",color:C.ink,cursor:"pointer"}}>Cancelar</button>
+          <button onClick={handleSend} disabled={!selected||sending} style={{fontFamily:"'Satoshi',sans-serif",fontSize:13,fontWeight:600,padding:"8px 18px",borderRadius:8,border:"none",background:selected&&!sending?C.crimson:`${C.crimson}60`,color:C.cream,cursor:selected&&!sending?"pointer":"not-allowed"}}>
+            {sending?"A enviar…":"Enviar"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 };
@@ -4524,6 +4751,10 @@ function HavenApp() {
   const [compactSeries, setCompactSeries] = useState(() => { try { return localStorage.getItem('compactSeries') === 'true'; } catch(e) { return false; } });
   const [aulaTeachingMode, setAulaTeachingMode] = useState(false);
   const [aulaEditingSeries, setAulaEditingSeries] = useState(null);
+  const [discoverItems, setDiscoverItems] = useState([]);
+  const [discoverLoading, setDiscoverLoading] = useState(false);
+  const [shares, setShares] = useState([]);
+  const [sendModalItem, setSendModalItem] = useState(null);
 
   const navigate = (newScreen) => {
     const newStack = [...screenStack, screen];
@@ -4586,6 +4817,9 @@ function HavenApp() {
 
       setProfile(p);
       setDataLoaded(true);
+      // Load shares inbox
+      const { data: sharesData } = await supabase.from('shares').select('*').eq('to_user_id', user.id).order('created_at', { ascending: false });
+      setShares(sharesData || []);
     })();
   }, [user]);
 
@@ -4661,6 +4895,100 @@ function HavenApp() {
     if (user) api.upsertSeries(copy, user.id);
     toast("Série copiada para a tua biblioteca");
   };
+
+  const loadDiscover = async () => {
+    setDiscoverLoading(true);
+    try {
+      const [{ data: pubSeries }, { data: pubClasses }] = await Promise.all([
+        supabase.from('series').select('*, profiles!created_by(id, name, studios(name))').eq('visibility','public').order('updated_at', { ascending: false }).limit(100),
+        supabase.from('classes').select('*, profiles!created_by(id, name, studios(name))').eq('visibility','public').order('updated_at', { ascending: false }).limit(100),
+      ]);
+      const items = [
+        ...(pubSeries||[]).map(r => ({ ...seriesFromDB(r), _discoverType:'series', _author: r.profiles })),
+        ...(pubClasses||[]).map(r => ({ ...classFromDB(r), _discoverType:'class', _author: r.profiles })),
+      ];
+      setDiscoverItems(items);
+    } catch(e) { console.error('loadDiscover error:', e); }
+    setDiscoverLoading(false);
+  };
+
+  const copyDiscoverItem = async (item) => {
+    const attribution = {
+      author_name: item._author?.name || null,
+      studio_name: item._author?.studios?.name || null,
+      original_id: item.id,
+      copied_at: new Date().toISOString(),
+    };
+    const newId = crypto.randomUUID ? crypto.randomUUID() : `copy-${Date.now()}`;
+    if (item._discoverType === 'series') {
+      const copy = { ...item, id: newId, attribution, visibility: 'personal', studioId: null, createdBy: user.id, createdAt: new Date().toISOString().split('T')[0] };
+      setSeries(p=>[...p, copy]);
+      if (user) api.upsertSeries(copy, user.id);
+    } else {
+      const copy = { ...item, id: newId, attribution, visibility: 'personal', studioId: null, created_by: user.id };
+      setClasses(p=>[...p, copy]);
+      if (user) api.upsertClass(copy, user.id);
+    }
+    toast('Copiado para a tua biblioteca!');
+  };
+
+  const sendToInstructor = async (item, toProfile, message) => {
+    try {
+      const itemType = item._discoverType || 'series';
+      const snapshot = itemType === 'series' ? seriesToDB(item, user.id) : classToDB(item, user.id);
+      await supabase.from('shares').insert({
+        from_user_id: user.id,
+        to_user_id: toProfile.id,
+        item_type: itemType,
+        item_id: item.id,
+        item_snapshot: snapshot,
+        message: message || null,
+      });
+      toast(`Enviado para ${toProfile.name}!`);
+    } catch(e) { console.error('sendToInstructor error:', e); toast('Erro ao enviar', 'error'); }
+  };
+
+  const acceptShare = async (share) => {
+    const newId = crypto.randomUUID ? crypto.randomUUID() : `share-${Date.now()}`;
+    const attribution = { shared_by_id: share.from_user_id, original_id: share.item_id, copied_at: new Date().toISOString() };
+    try {
+      if (share.item_type === 'series') {
+        const s = seriesFromDB({ ...share.item_snapshot, id: newId, created_by: user.id, attribution, visibility: 'personal' });
+        setSeries(p=>[...p, s]);
+        if (user) api.upsertSeries(s, user.id);
+      } else {
+        const c = classFromDB({ ...share.item_snapshot, id: newId, created_by: user.id, attribution, visibility: 'personal' });
+        setClasses(p=>[...p, c]);
+        if (user) api.upsertClass(c, user.id);
+      }
+      await supabase.from('shares').delete().eq('id', share.id);
+      setShares(p => p.filter(x => x.id !== share.id));
+      toast('Adicionado à tua biblioteca!');
+    } catch(e) { console.error('acceptShare error:', e); toast('Erro ao aceitar', 'error'); }
+  };
+
+  const dismissShare = async (shareId) => {
+    await supabase.from('shares').delete().eq('id', shareId);
+    setShares(p => p.filter(x => x.id !== shareId));
+  };
+
+  const toggleSeriesPublic = async (s) => {
+    const isPublic = s.visibility === 'public';
+    const updated = { ...s, visibility: isPublic ? 'personal' : 'public' };
+    setSeries(p=>p.map(x=>x.id===s.id?updated:x));
+    await supabase.from('series').update({ visibility: updated.visibility }).eq('id', s.id);
+    toast(isPublic ? 'Série tornada privada' : 'Série publicada na plataforma');
+  };
+
+  const toggleClassPublic = async (c) => {
+    const isPublic = c.visibility === 'public';
+    const updated = { ...c, visibility: isPublic ? 'personal' : 'public' };
+    setClasses(p=>p.map(x=>x.id===c.id?updated:x));
+    await supabase.from('classes').update({ visibility: updated.visibility }).eq('id', c.id);
+    toast(isPublic ? 'Aula tornada privada' : 'Aula publicada na plataforma');
+  };
+
+  const unseenSharesCount = shares.length;
 
   const isChoreoSeries = s => {
     const movs=[...(s.reformer?.movements||[]),...(s.barre?.movements||[])];
@@ -4746,8 +5074,11 @@ function HavenApp() {
           <div style={{flex:1}}/>
           <div style={{display:"flex",alignItems:"center",gap:8}}>
             <div style={{display:"flex",gap:2,background:`rgba(0,0,0,0.15)`,padding:3,borderRadius:8}}>
-              {[["home","Início"],["library","Séries"],["builder","Aulas"],["studio","Studio"],["perfil","Perfil"]].map(([id,lbl])=>(
-                <button key={id} onClick={()=>goTab(id)} style={{fontFamily:"'Satoshi', sans-serif",fontWeight:600,fontSize:12,padding:"6px 16px",borderRadius:6,border:"none",cursor:"pointer",background:screen.mode===id?C.cream:"transparent",color:screen.mode===id?C.crimson:`${C.cream}80`,transition:"all 0.15s"}}>{lbl}</button>
+              {[["home","Início"],["discover","Descobrir"],["library","Séries"],["builder","Aulas"],["studio","Studio"],["perfil","Perfil"]].map(([id,lbl])=>(
+                <button key={id} onClick={()=>{ goTab(id); if(id==="discover") loadDiscover(); }} style={{fontFamily:"'Satoshi', sans-serif",fontWeight:600,fontSize:12,padding:"6px 16px",borderRadius:6,border:"none",cursor:"pointer",background:screen.mode===id?C.cream:"transparent",color:screen.mode===id?C.crimson:`${C.cream}80`,transition:"all 0.15s",position:"relative"}}>
+                  {id==="discover"&&unseenSharesCount>0&&<span style={{position:"absolute",top:2,right:4,background:"#e74c3c",color:"#fff",borderRadius:"50%",fontSize:9,padding:"0 4px",fontWeight:700,lineHeight:"14px",minWidth:14,textAlign:"center"}}>{unseenSharesCount}</span>}
+                  {lbl}
+                </button>
               ))}
             </div>
             <button onClick={()=>supabase.auth.signOut()} style={{fontFamily:"'Satoshi',sans-serif",fontWeight:600,fontSize:12,padding:"6px 14px",borderRadius:6,border:`1px solid ${C.cream}40`,background:"transparent",color:`${C.cream}80`,cursor:"pointer"}} title="Sair">Sair</button>
@@ -4771,6 +5102,21 @@ function HavenApp() {
             onViewSeries={s=>{setEditingSeries(s);goTab("library");}}
             onViewClass={c=>navigate({mode:"aula",cls:c,fromLibrary:false})}
             onGoStudio={()=>goTab("studio")}
+            shares={shares}
+            onAcceptShare={acceptShare}
+            onDismissShare={dismissShare}
+          />
+        )}
+
+        {/* ── DESCOBRIR ── */}
+        {screen.mode==="discover"&&(
+          <DiscoverPage
+            items={discoverItems}
+            loading={discoverLoading}
+            onRefresh={loadDiscover}
+            onCopy={copyDiscoverItem}
+            onSend={item=>setSendModalItem(item)}
+            profile={profile}
           />
         )}
 
@@ -4849,6 +5195,8 @@ function HavenApp() {
                               onPublish={publishToStudio}
                               onUnpublish={unpublishFromStudio}
                               onMakePublic={makeSeriesPublic}
+                              onTogglePublic={toggleSeriesPublic}
+                              onSend={item=>setSendModalItem(item)}
                               compact={compactSeries}
                             />
                           </React.Fragment>
@@ -4888,6 +5236,8 @@ function HavenApp() {
             studioSettings={profile?.studios?.settings}
             onPublishClass={publishClassToStudio}
             hasStudio={!!profile?.studio_id}
+            onToggleClassPublic={toggleClassPublic}
+            onSendClass={item=>setSendModalItem(item)}
           />
         )}
 
@@ -4923,6 +5273,7 @@ function HavenApp() {
         profile={profile}
       />}
     </div>{/* end flex row */}
+    {sendModalItem&&<SendModal item={sendModalItem} currentUserId={user?.id} onSend={sendToInstructor} onClose={()=>setSendModalItem(null)}/>}
     </div>
   );
 }
