@@ -338,9 +338,9 @@ const SIGNATURE_SERIES = [
 
 const EMPTY_SERIES = { introCue:"",
   id:"", name:"", type:"reformer", status:"testing",
-  reformer:{ springs:"", props:"", startPosition:"", movements:[{ timing:"", lyric:"", movement:"", breath:"", transitionCue:"" }] },
-  barre:{ props:"", startPosition:"", movements:[{ timing:"", lyric:"", movement:"", breath:"", transitionCue:"" }] },
-  muscles:[], cues:"", song:"", videoUrl:"", targetZone:"", primaryZone:"", openCue:"", closeCue:"", createdAt:"", duration: null,
+  reformer:{ springs:"", props:"", startPosition:"", movements:[{ timing:"", lyric:"", movement:"", breath:"", transitionCue:"", timeReps:"" }] },
+  barre:{ props:"", startPosition:"", movements:[{ timing:"", lyric:"", movement:"", breath:"", transitionCue:"", timeReps:"" }] },
+  muscles:[], cues:"", song:"", videoUrl:"", targetZone:"", primaryZone:"", seriesType:"", openCue:"", closeCue:"", createdAt:"", duration: null,
 };
 
 const DEFAULT_CLASSES = [
@@ -353,7 +353,7 @@ const seriesToDB = (s, userId) => ({
   song: s.song || null, intro_cue: s.introCue || null, open_cue: s.openCue || null,
   close_cue: s.closeCue || null, modifications: s.modifications || null,
   muscles: s.muscles || [], cues: s.cues || null,
-  target_zone: s.targetZone || null, primary_zone: s.primaryZone || null,
+  target_zone: s.targetZone || null, primary_zone: s.primaryZone || null, series_type: s.seriesType || null,
   reformer: s.reformer || null, barre: s.barre || null,
   video_url: s.videoUrl || null, created_by: userId,
   visibility: s.visibility || 'personal', studio_id: s.studioId || null,
@@ -365,7 +365,7 @@ const seriesFromDB = row => ({
   song: row.song || '', introCue: row.intro_cue || '', openCue: row.open_cue || '',
   closeCue: row.close_cue || '', modifications: row.modifications || '',
   muscles: row.muscles || [], cues: row.cues || '',
-  targetZone: row.target_zone || '', primaryZone: row.primary_zone || '',
+  targetZone: row.target_zone || '', primaryZone: row.primary_zone || '', seriesType: row.series_type || '',
   reformer: row.reformer || { springs:'', props:'', startPosition:'', movements:[{ timing:'', lyric:'', movement:'', breath:'', transitionCue:'' }] },
   barre: row.barre || { props:'', startPosition:'', movements:[{ timing:'', lyric:'', movement:'', breath:'', transitionCue:'' }] },
   videoUrl: row.video_url || '', createdAt: row.created_at ? row.created_at.split('T')[0] : '',
@@ -378,6 +378,7 @@ const classToDB = (c, userId) => ({
   created_by: userId, visibility: c.visibility || 'personal',
   studio_id: c.studioId || null,
   level: c.level || null,
+  warmup_notes: c.warmupNotes || null, cooldown_notes: c.cooldownNotes || null,
 });
 const classFromDB = row => ({
   id: row.id, name: row.name, type: row.type, date: row.date || '',
@@ -386,6 +387,7 @@ const classFromDB = row => ({
   level: row.level || '',
   visibility: row.visibility || 'personal',
   studioId: row.studio_id || null,
+  warmupNotes: row.warmup_notes || '', cooldownNotes: row.cooldown_notes || '',
 });
 
 // ─── PERSIST (Supabase) ──────────────────────────────────────────────────────
@@ -830,7 +832,7 @@ const CardCueGen = ({ series, rowIndex, rows, aiStyle, onUpdate, nonsig, getCurr
 };
 
 // ─── SERIES CARD (expandable) ─────────────────────────────────────────────────
-const SeriesCard = ({ series, onEdit, onDelete, onUpdateSeries, aiStyle, modalityFilter=null, currentUserId=null, hasStudio=false, onCopy=null, onPublish=null, onUnpublish=null, onMakePublic=null }) => {
+const SeriesCard = ({ series, onEdit, onDelete, onUpdateSeries, aiStyle, modalityFilter=null, currentUserId=null, hasStudio=false, onCopy=null, onPublish=null, onUnpublish=null, onMakePublic=null, compact=false }) => {
   const isOwner = !currentUserId || series.createdBy === currentUserId;
   const isSig = series.type === "signature";
   const [expanded, setExpanded] = useState(false);
@@ -885,13 +887,7 @@ const SeriesCard = ({ series, onEdit, onDelete, onUpdateSeries, aiStyle, modalit
                 const rk=`${localSeries.id}-${i}`;
                 return (
                   <React.Fragment key={i}>
-                    {i>0&&(!cue&&!openCueRows.has(rk)?(
-                      <tr style={{background:"transparent"}}>
-                        <td colSpan={99} style={{padding:"2px 10px"}}>
-                          <button onClick={e=>{e.stopPropagation();toggleCueRow(rk);}} style={{background:"none",border:"none",cursor:"pointer",color:C.mist,fontSize:11,fontFamily:"'Satoshi',sans-serif",fontWeight:600,padding:"2px 4px",opacity:0.6}}>+ cue</button>
-                        </td>
-                      </tr>
-                    ):(
+                    {i>0&&(cue||openCueRows.has(rk))&&(
                       <tr className="print-cue-row" style={{background:"#F4EDE8"}}>
                         <td colSpan={99} style={{padding:"4px 10px"}}>
                           <div style={{display:"flex",alignItems:"center",gap:6}}>
@@ -913,7 +909,7 @@ const SeriesCard = ({ series, onEdit, onDelete, onUpdateSeries, aiStyle, modalit
                           </div>
                         </td>
                       </tr>
-                    ))}
+                    )}
                     <tr style={{borderBottom:`1px solid ${C.stone}`,background:C.white}}>
                       {choreo&&<td style={{fontSize:13,padding:"8px 12px",color:C.mist,whiteSpace:"nowrap"}}>{row.timing}</td>}
                       {choreo&&<td style={{fontSize:13,padding:"8px 12px",color:C.mist,fontStyle:"italic",maxWidth:180}}>{row.lyric}</td>}
@@ -956,6 +952,7 @@ const SeriesCard = ({ series, onEdit, onDelete, onUpdateSeries, aiStyle, modalit
             {choreo&&<th style={{fontSize:12,fontWeight:600,color:C.mist,textAlign:"left",padding:"8px 12px"}}>Timing</th>}
             {choreo&&<th style={{fontSize:12,fontWeight:600,color:C.mist,textAlign:"left",padding:"8px 12px"}}>Lyric</th>}
             <th style={{fontSize:12,fontWeight:600,color:C.mist,textAlign:"left",padding:"8px 10px"}}>Movimento</th>
+            {!choreo&&<th style={{fontSize:12,fontWeight:600,color:C.mist,textAlign:"left",padding:"8px 10px"}}>Tempo/Reps</th>}
           </tr></thead>
           <tbody>
             {localSeries.openCue&&<tr className="print-cue-row" style={{background:"#F4EDE8"}}><td colSpan={99} style={{padding:"4px 10px"}}><div style={{display:"flex",alignItems:"center",gap:6}}><span style={{fontSize:12,color:C.reformer,fontWeight:700,flexShrink:0}}>✦</span><span style={{fontSize:12,fontStyle:"italic",color:"#7a4010",fontFamily:"'Satoshi',sans-serif"}}>{localSeries.openCue}</span></div></td></tr>}
@@ -964,13 +961,7 @@ const SeriesCard = ({ series, onEdit, onDelete, onUpdateSeries, aiStyle, modalit
               const nsKey = `${localSeries.id}-ns-${i}`;
               return (
                 <React.Fragment key={i}>
-                  {i>0&&(!nsCue&&!openCueRows.has(nsKey)?(
-                    <tr style={{background:"transparent"}}>
-                      <td colSpan={99} style={{padding:"2px 10px"}}>
-                        <button onClick={e=>{e.stopPropagation();toggleCueRow(nsKey);}} style={{background:"none",border:"none",cursor:"pointer",color:C.mist,fontSize:11,fontFamily:"'Satoshi',sans-serif",fontWeight:600,padding:"2px 4px",opacity:0.6}}>+ cue</button>
-                      </td>
-                    </tr>
-                  ):(
+                  {i>0&&(nsCue||openCueRows.has(nsKey))&&(
                     <tr className="print-cue-row" style={{background:"#F4EDE8"}}>
                       <td colSpan={99} style={{padding:"4px 10px"}}>
                         <div style={{display:"flex",alignItems:"center",gap:6}}>
@@ -992,7 +983,7 @@ const SeriesCard = ({ series, onEdit, onDelete, onUpdateSeries, aiStyle, modalit
                         </div>
                       </td>
                     </tr>
-                  ))}
+                  )}
                   <tr style={{borderBottom:`1px solid ${C.stone}`,background:C.white}}>
                     {choreo&&<td style={{fontSize:13,padding:"8px 12px",color:C.mist,whiteSpace:"nowrap"}}>{m.timing}</td>}
                     {choreo&&<td style={{fontSize:13,padding:"8px 12px",color:C.mist,fontStyle:"italic"}}>{m.lyric}</td>}
@@ -1004,6 +995,7 @@ const SeriesCard = ({ series, onEdit, onDelete, onUpdateSeries, aiStyle, modalit
                         {m.notes&&<div style={{display:"flex",gap:8,alignItems:"flex-start"}}><span style={{fontSize:10,fontWeight:700,color:"#8a7e78",textTransform:"uppercase",flexShrink:0,paddingTop:2}}>Notas</span><span style={{fontSize:12,lineHeight:1.4}}>{m.notes}</span></div>}
                       </div>}
                     </td>
+                    {!choreo&&<td style={{fontSize:11,padding:"8px 10px",color:C.mist,whiteSpace:"nowrap"}}>{m.timeReps||""}</td>}
                   </tr>
                 </React.Fragment>
               );
@@ -1021,10 +1013,10 @@ const SeriesCard = ({ series, onEdit, onDelete, onUpdateSeries, aiStyle, modalit
       boxShadow:expanded?"0 4px 24px rgba(0,0,0,0.09)":"none" }}>
 
       {/* Collapsed header */}
-      <div style={{ padding:"14px 20px", display:"flex", alignItems:"center", gap:12, cursor:"pointer" }}
+      <div style={{ padding:compact?"8px 16px":"14px 20px", display:"flex", alignItems:"center", gap:compact?8:12, cursor:"pointer" }}
         onClick={()=>setExpanded(p=>!p)}>
         <div style={{ flex:1, minWidth:0 }}>
-          <div style={{ fontFamily:"'Clash Display', sans-serif", fontSize:18, fontWeight:500, color:C.ink, marginBottom:4 }}>{series.name}</div>
+          <div style={{ fontFamily:"'Clash Display', sans-serif", fontSize:compact?15:18, fontWeight:500, color:C.ink, marginBottom:compact?2:4 }}>{series.name}</div>
           <div style={{ display:"flex", gap:6, flexWrap:"wrap", alignItems:"center" }}>
             {isSig  && <Badge label="Signature" color="gold"/>}
             {!isSig && <Badge label={series.type==="reformer"?"Reformer":"Barre"} color={series.type==="reformer"?"teal":"coral"}/>}
@@ -1059,6 +1051,7 @@ const SeriesCard = ({ series, onEdit, onDelete, onUpdateSeries, aiStyle, modalit
                 ))}
               </div>;
             })()}
+            {series.seriesType&&<span style={{fontSize:11,fontWeight:600,color:"#5a2a00",background:`${C.sig}50`,border:`1px solid ${C.sig}`,borderRadius:20,padding:"2px 9px",flexShrink:0}}>{series.seriesType}</span>}
           </div>
         </div>
         <div style={{display:"flex",gap:6,flexShrink:0,alignItems:"center"}} onClick={e=>e.stopPropagation()}>
@@ -1096,7 +1089,7 @@ const SeriesCard = ({ series, onEdit, onDelete, onUpdateSeries, aiStyle, modalit
             </div>
           )}
 
-          {/* Setup — filtered by toggle */}
+          {/* Setup — Signature only */}
           {isSig&&(showR||showB)?(
             <div style={{display:"grid",gridTemplateColumns:showR&&showB?"1fr 1fr":"1fr",gap:10}}>
               {showR&&(()=>{ const d=series.reformer; return (
@@ -1119,24 +1112,7 @@ const SeriesCard = ({ series, onEdit, onDelete, onUpdateSeries, aiStyle, modalit
                 </div>
               );})()}
             </div>
-          ):isSig?null:(()=>{
-            const d=series.type==="barre"?series.barre:series.reformer;
-            const col=series.type==="barre"?C.barre:C.reformer;
-            return <div className="setup-box" style={{background:`${col}07`,borderRadius:8,padding:"8px 12px",border:`1px solid ${col}20`,fontSize:13,color:C.ink,display:"flex",gap:14,flexWrap:"wrap"}}>
-              {series.reformer?.springs&&<span><b>Springs:</b> {series.reformer.springs}</span>}
-              {d?.props&&<span><b>Props:</b> {d.props}</span>}
-              {d?.startPosition&&<span><b>Posição:</b> {d.startPosition}</span>}
-            </div>;
-          })()}
-
-
-          {/* Intro cue */}
-          <IntroCue
-            series={localSeries}
-            aiStyle={aiStyle}
-            stopProp
-            onChange={v=>setSeries_({...localSeries, introCue:v})}
-          />
+          ):isSig?null:null}
 
           {/* Movements */}
           {renderExpanded()}
@@ -1334,7 +1310,7 @@ const EditorMovTable = ({ side, data, chore, upMov, addMov, delMov, reorderMov }
   const [dragOver, setDragOver] = React.useState(null);
   const cols = chore
     ? "18px minmax(65px,80px) minmax(80px,1fr) 2fr minmax(65px,80px) 1.5fr 28px"
-    : "18px 2fr minmax(65px,80px) 1.5fr 28px";
+    : "18px 2fr minmax(80px,110px) minmax(65px,80px) 1.5fr 28px";
   return (
     <div style={{display:"flex",flexDirection:"column",gap:3}}>
       <div style={{display:"grid",gap:5,gridTemplateColumns:cols,marginBottom:3}}>
@@ -1342,6 +1318,7 @@ const EditorMovTable = ({ side, data, chore, upMov, addMov, delMov, reorderMov }
         {chore&&<div style={{fontSize:11,fontWeight:700,color:C.neutral,textTransform:"uppercase"}}>Timing</div>}
         {chore&&<div style={{fontSize:11,fontWeight:700,color:C.neutral,textTransform:"uppercase"}}>Lyric</div>}
         <div style={{fontSize:11,fontWeight:700,color:C.neutral,textTransform:"uppercase"}}>Movement</div>
+        {!chore&&<div style={{fontSize:11,fontWeight:700,color:C.neutral,textTransform:"uppercase"}}>Tempo/Reps</div>}
         <div style={{fontSize:11,fontWeight:700,color:C.neutral,textTransform:"uppercase"}}>Breath</div>
         {side==="r"&&<div style={{fontSize:11,fontWeight:700,color:C.crimson,textTransform:"uppercase"}}>Transition cue</div>}
         <div/>
@@ -1363,6 +1340,7 @@ const EditorMovTable = ({ side, data, chore, upMov, addMov, delMov, reorderMov }
             {chore&&<EditorInp ph="0''-30''" val={m.timing}  onChange={v=>upMov(side,i,"timing",v)}/>}
             {chore&&<EditorInp ph="Lyric"    val={m.lyric}   onChange={v=>upMov(side,i,"lyric",v)}/>}
             <EditorInp ph="Movement"         val={m.movement} onChange={v=>upMov(side,i,"movement",v)} listId="mov-library"/>
+            {!chore&&<EditorInp ph="ex. 8 reps, 30s" val={m.timeReps||""} onChange={v=>upMov(side,i,"timeReps",v)}/>}
             <EditorInp ph="Breath"           val={m.breath}   onChange={v=>upMov(side,i,"breath",v)}/>
             {side==="r"&&<EditorInp ph="✦ Transition cue…" val={m.transitionCue||""} onChange={v=>upMov(side,i,"transitionCue",v)} gold/>}
             <button onClick={()=>delMov(side,i)} style={{background:"none",border:"none",cursor:"pointer",color:C.neutral,padding:3,width:28}}><Icon name="x" size={13}/></button>
@@ -1540,16 +1518,19 @@ const SeriesVideo = ({ seriesId, videoUrl, onUpdate, readOnly }) => {
 };
 
 // ─── AI MOVEMENT ANALYSIS CHAT ────────────────────────────────────────────────
-const MovementAnalysisChat = ({ series, aiStyle }) => {
+const MovementAnalysisChat = ({ series, aiStyle, onUpdate }) => {
   const [open, setOpen] = React.useState(false);
   const [messages, setMessages] = React.useState([]);
   const [input, setInput] = React.useState("");
   const [loading, setLoading] = React.useState(false);
-  const bottomRef = React.useRef();
+  const chatScrollRef = React.useRef();
+  const [lastQuickAction, setLastQuickAction] = React.useState(null);
   const toast_ = useToast();
 
   React.useEffect(() => {
-    if (open && bottomRef.current) bottomRef.current.scrollIntoView({ behavior: "smooth" });
+    if (open && chatScrollRef.current) {
+      chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+    }
   }, [messages, open]);
 
   const buildContext = () => {
@@ -1574,7 +1555,8 @@ ${(d?.movements||[]).map((m,i)=>`  ${m.timing||i+1}: ${m.movement}`).join("\n")}
 Muscles: ${series.muscles?.join(", ")||"-"}`;
   };
 
-  const analyse = async (userMsg) => {
+  const analyse = async (userMsg, actionType) => {
+    setLastQuickAction(actionType || null);
     const userText = userMsg || "Analisa a minha série e sugere melhorias aos movimentos.";
     const newMessages = [...messages, { role: "user", text: userText }];
     setMessages(newMessages);
@@ -1620,6 +1602,16 @@ Muscles: ${series.muscles?.join(", ")||"-"}`;
 
   const reset = () => { setMessages([]); setInput(""); setOpen(false); };
 
+  const quickAction = (prompt, actionType) => {
+    setOpen(true);
+    analyse(prompt, actionType);
+  };
+  const QUICK_ACTIONS = [
+    { label: "✦ Músculos", actionType: "muscles", prompt: "Analisa a série e lista os 5 músculos principais trabalhados. Responde APENAS com JSON no formato: {\"muscles\":[\"músculo1\",\"músculo2\",...]}" },
+    { label: "✦ Notas de Instructor", actionType: "notes", prompt: "Escreve notas de instructor para esta série: técnica, erros comuns, e cues verbais em português (2-3 frases). Responde APENAS com o texto das notas, sem formatação extra." },
+    { label: "✦ Modificações", actionType: "mods", prompt: "Sugere modificações, progressões e regressões para esta série para diferentes níveis e limitações físicas comuns. Responde em português." },
+  ];
+
   return (
     <div style={{borderRadius:12,border:`1px solid ${C.stone}`,overflow:"hidden",background:C.white}}>
       {/* Header / trigger */}
@@ -1639,16 +1631,16 @@ Muscles: ${series.muscles?.join(", ")||"-"}`;
             }
           </div>
         </div>
-        <div style={{display:"flex",gap:8,alignItems:"center"}}>
-          {messages.length === 0 && (
-            <Btn small variant="gold"
-              onClick={e => { e.stopPropagation(); setOpen(true); analyse(); }}
+        <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+          {QUICK_ACTIONS.map(qa => (
+            <Btn key={qa.actionType} small variant="gold"
+              onClick={e => { e.stopPropagation(); quickAction(qa.prompt, qa.actionType); }}
               disabled={loading}>
-              <Icon name="ai" size={12}/> Analisa a minha série
+              {qa.label}
             </Btn>
-          )}
+          ))}
           {messages.length > 0 && (
-            <button onClick={e=>{e.stopPropagation();reset();}}
+            <button onClick={e=>{e.stopPropagation();reset();setLastQuickAction(null);}}
               style={{fontSize:11,color:C.mist,background:"none",border:"none",cursor:"pointer",padding:"3px 6px",borderRadius:4}}>
               Limpar
             </button>
@@ -1663,29 +1655,58 @@ Muscles: ${series.muscles?.join(", ")||"-"}`;
       {open && (
         <div style={{borderTop:`1px solid ${C.stone}`}}>
           {/* Messages */}
-          <div style={{maxHeight:340,overflowY:"auto",padding:"12px 16px",display:"flex",flexDirection:"column",gap:10}}>
+          <div ref={chatScrollRef} style={{maxHeight:340,overflowY:"auto",padding:"12px 16px",display:"flex",flexDirection:"column",gap:10}}>
             {messages.length === 0 && !loading && (
               <div style={{textAlign:"center",color:C.mist,fontSize:13,padding:"20px 0"}}>
                 Clica em "Analisa a minha série" para começar, ou faz uma pergunta específica.
               </div>
             )}
-            {messages.map((m, i) => (
-              <div key={i} style={{display:"flex",flexDirection:"column",gap:2,alignItems:m.role==="user"?"flex-end":"flex-start"}}>
-                <div style={{
-                  maxWidth:"85%",
-                  padding:"9px 13px",
-                  borderRadius:m.role==="user"?"12px 12px 3px 12px":"12px 12px 12px 3px",
-                  background:m.role==="user"?C.crimson:`${C.neutral}12`,
-                  color:m.role==="user"?C.white:C.ink,
-                  fontSize:13,
-                  lineHeight:1.55,
-                  whiteSpace:"pre-wrap",
-                  fontFamily:"'Satoshi', sans-serif",
-                }}>
-                  {m.text}
+            {messages.map((m, i) => {
+              const isLastAssistant = m.role==="assistant" && i===messages.length-1 && !loading;
+              return (
+                <div key={i} style={{display:"flex",flexDirection:"column",gap:2,alignItems:m.role==="user"?"flex-end":"flex-start"}}>
+                  <div style={{
+                    maxWidth:"85%",
+                    padding:"9px 13px",
+                    borderRadius:m.role==="user"?"12px 12px 3px 12px":"12px 12px 12px 3px",
+                    background:m.role==="user"?C.crimson:`${C.neutral}12`,
+                    color:m.role==="user"?C.white:C.ink,
+                    fontSize:13,
+                    lineHeight:1.55,
+                    whiteSpace:"pre-wrap",
+                    fontFamily:"'Satoshi', sans-serif",
+                  }}>
+                    {m.text}
+                  </div>
+                  {isLastAssistant && lastQuickAction && onUpdate && (
+                    <div style={{display:"flex",gap:6,marginTop:4}}>
+                      {lastQuickAction==="muscles" && (
+                        <button onClick={()=>{
+                          try {
+                            const parsed = JSON.parse(m.text.replace(/```json|```/g,"").trim());
+                            if (parsed.muscles) { onUpdate(prev=>({...prev, muscles: parsed.muscles})); }
+                          } catch(e) {
+                            const lines = m.text.split(/[\n,]+/).map(x=>x.replace(/^[-*\d.•\s"]+/,"").replace(/[",]/g,"").trim()).filter(Boolean);
+                            onUpdate(prev=>({...prev, muscles: lines.slice(0,8)}));
+                          }
+                          setLastQuickAction(null);
+                        }} style={{fontSize:11,fontWeight:600,padding:"3px 10px",borderRadius:6,border:`1px solid ${C.neutral}`,background:`${C.neutral}15`,color:C.neutral,cursor:"pointer",fontFamily:"'Satoshi',sans-serif"}}>
+                          ✓ Aceitar músculos
+                        </button>
+                      )}
+                      {lastQuickAction==="notes" && (
+                        <button onClick={()=>{
+                          onUpdate(prev=>({...prev, cues: m.text.trim()}));
+                          setLastQuickAction(null);
+                        }} style={{fontSize:11,fontWeight:600,padding:"3px 10px",borderRadius:6,border:`1px solid ${C.neutral}`,background:`${C.neutral}15`,color:C.neutral,cursor:"pointer",fontFamily:"'Satoshi',sans-serif"}}>
+                          ✓ Aceitar notas
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
-              </div>
-            ))}
+              );
+            })}
             {loading && (
               <div style={{display:"flex",alignItems:"center",gap:8,color:C.mist,fontSize:12}}>
                 <div style={{width:6,height:6,borderRadius:"50%",background:C.neutral,animation:"pulse 1s infinite"}}/>
@@ -1693,7 +1714,6 @@ Muscles: ${series.muscles?.join(", ")||"-"}`;
                 <div style={{width:6,height:6,borderRadius:"50%",background:C.neutral,animation:"pulse 1s infinite 0.4s"}}/>
               </div>
             )}
-            <div ref={bottomRef}/>
           </div>
 
           {/* Input */}
@@ -1717,7 +1737,7 @@ Muscles: ${series.muscles?.join(", ")||"-"}`;
 };
 
 // ─── SERIES EDITOR ────────────────────────────────────────────────────────────
-const SeriesEditor = ({ series, onSave, onSaveAsNew, onCancel, onDelete, aiStyle }) => {
+const SeriesEditor = ({ series, onSave, onSaveAsNew, onCancel, onDelete, aiStyle, studioSettings={}, availableZones, availableSeriesTypes }) => {
   const initS = series ? JSON.parse(JSON.stringify(series)) : {...JSON.parse(JSON.stringify(EMPTY_SERIES)), id:`s-${Date.now()}`, createdAt: new Date().toISOString()};
   const [s, setS] = useState(initS);
   const [originalSnap] = useState(()=>JSON.stringify({name:initS.name,song:initS.song,type:initS.type,status:initS.status,muscles:initS.muscles,cues:initS.cues,reformer:initS.reformer,barre:initS.barre}));
@@ -1854,58 +1874,9 @@ const SeriesEditor = ({ series, onSave, onSaveAsNew, onCancel, onDelete, aiStyle
         <Field label="Cue de abertura (início da série)" val={s.openCue||""} onChange={v=>up("openCue",v)} placeholder="ex. Vamos para o reformer — 2 vermelhas, pés na barra…"/>
         <Field label="Cue de fecho (saída / transição)" val={s.closeCue||""} onChange={v=>up("closeCue",v)} placeholder="ex. Muito bem, vamos guardar as correias e…"/>
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
-        <div style={{display:"flex",flexDirection:"column",gap:8}}>
-          <div style={{display:"flex",flexDirection:"column",gap:4}}>
-            <label style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em"}}>Zonas target</label>
-            <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-              {["Glutes","Hamstrings","Quads","Inner Thighs","Calves","Core","Back","Arms","Shoulders","Chest","Full Body","Cardio","Warm-Up","Mobility","Flexibility","Balance"].map(tag=>{
-                const active = (s.targetZone||"").split(",").map(x=>x.trim()).includes(tag);
-                const isPrimary = s.primaryZone===tag;
-                return <button key={tag} onClick={()=>{
-                  const tags = (s.targetZone||"").split(",").map(x=>x.trim()).filter(Boolean);
-                  const next = active ? tags.filter(t=>t!==tag) : [...tags,tag];
-                  const updates = {targetZone: next.join(", ")};
-                  // If removing the primary zone, clear it
-                  if(active && isPrimary) updates.primaryZone = "";
-                  // If only one tag left, auto-set as primary
-                  if(!active && next.length===1) updates.primaryZone = tag;
-                  setS(p=>({...p,...updates}));
-                }} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"3px 10px",borderRadius:20,
-                  border:`1px solid ${isPrimary?"#1a3a6a":active?"#2a5a8a":C.stone}`,
-                  background:isPrimary?`${C.blue}90`:active?`${C.blue}60`:"transparent",
-                  color:isPrimary?"#0a1a4a":active?"#1a3a6a":C.mist,cursor:"pointer"}}>{tag}</button>;
-              })}
-            </div>
-          </div>
-          {(()=>{
-            const activeTags = (s.targetZone||"").split(",").map(x=>x.trim()).filter(Boolean);
-            if(activeTags.length < 2) return null;
-            return (
-              <div style={{display:"flex",flexDirection:"column",gap:4}}>
-                <label style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em"}}>Zona principal <span style={{fontWeight:400,textTransform:"none",letterSpacing:0}}>(para ordenação)</span></label>
-                <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-                  {activeTags.map(tag=>{
-                    const isPrimary = s.primaryZone===tag;
-                    return <button key={tag} onClick={()=>setS(p=>({...p,primaryZone:tag}))}
-                      style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:isPrimary?700:500,
-                        padding:"3px 12px",borderRadius:20,cursor:"pointer",
-                        border:`1px solid ${isPrimary?"#1a3a6a":"#aac"}`,
-                        background:isPrimary?"#1a3a6a":"transparent",
-                        color:isPrimary?"#fff":"#3a5a8a",
-                        display:"flex",alignItems:"center",gap:5}}>
-                      {isPrimary&&<span style={{fontSize:9}}>★</span>}{tag}
-                    </button>;
-                  })}
-                </div>
-              </div>
-            );
-          })()}
-        </div>
-        <div style={{display:"flex",flexDirection:"column",gap:4}}>
-          <label style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em"}}>Data de criação</label>
-          <div style={{fontSize:13,color:C.mist,padding:"8px 0"}}>{s.createdAt?new Date(s.createdAt).toLocaleDateString("pt-PT",{day:"2-digit",month:"short",year:"numeric"}):"—"}</div>
-        </div>
+      <div style={{display:"flex",flexDirection:"column",gap:4}}>
+        <label style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em"}}>Data de criação</label>
+        <div style={{fontSize:13,color:C.mist,padding:"4px 0"}}>{s.createdAt?new Date(s.createdAt).toLocaleDateString("pt-PT",{day:"2-digit",month:"short",year:"numeric"}):"—"}</div>
       </div>
       <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
         <label style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em"}}>Tipo:</label>
@@ -1995,6 +1966,66 @@ const SeriesEditor = ({ series, onSave, onSaveAsNew, onCancel, onDelete, aiStyle
           <label style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em",display:"block",marginBottom:6}}>Músculos (separados por vírgula)</label>
           <input value={s.muscles.join(", ")} onChange={e=>setS(p=>({...p,muscles:e.target.value.split(",").map(x=>x.trim()).filter(Boolean)}))} style={{width:"100%",fontFamily:"'Satoshi', sans-serif",fontSize:13,padding:"8px 12px",borderRadius:8,border:`1px solid ${C.stone}`,outline:"none",color:C.ink,background:C.cream,boxSizing:"border-box"}}/>
         </div>
+        <div style={{marginBottom:10}}>
+          <div style={{display:"flex",flexDirection:"column",gap:6}}>
+            <label style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em"}}>Zonas target</label>
+            <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+              {(availableZones?.length ? availableZones : ["Glutes","Hamstrings","Quads","Inner Thighs","Calves","Core","Back","Arms","Shoulders","Chest","Full Body","Cardio","Warm-Up","Mobility","Flexibility","Balance"]).map(tag=>{
+                const active = (s.targetZone||"").split(",").map(x=>x.trim()).includes(tag);
+                const isPrimary = s.primaryZone===tag;
+                return <button key={tag} onClick={()=>{
+                  const tags = (s.targetZone||"").split(",").map(x=>x.trim()).filter(Boolean);
+                  const next = active ? tags.filter(t=>t!==tag) : [...tags,tag];
+                  const updates = {targetZone: next.join(", ")};
+                  if(active && isPrimary) updates.primaryZone = "";
+                  if(!active && next.length===1) updates.primaryZone = tag;
+                  setS(p=>({...p,...updates}));
+                }} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"3px 10px",borderRadius:20,
+                  border:`1px solid ${isPrimary?"#1a3a6a":active?"#2a5a8a":C.stone}`,
+                  background:isPrimary?`${C.blue}90`:active?`${C.blue}60`:"transparent",
+                  color:isPrimary?"#0a1a4a":active?"#1a3a6a":C.mist,cursor:"pointer"}}>{tag}</button>;
+              })}
+            </div>
+            {(()=>{
+              const activeTags = (s.targetZone||"").split(",").map(x=>x.trim()).filter(Boolean);
+              if(activeTags.length < 2) return null;
+              return (
+                <div style={{display:"flex",flexDirection:"column",gap:4,marginTop:4}}>
+                  <label style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em"}}>Zona principal <span style={{fontWeight:400,textTransform:"none",letterSpacing:0}}>(para ordenação)</span></label>
+                  <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+                    {activeTags.map(tag=>{
+                      const isPrimary = s.primaryZone===tag;
+                      return <button key={tag} onClick={()=>setS(p=>({...p,primaryZone:tag}))}
+                        style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:isPrimary?700:500,
+                          padding:"3px 12px",borderRadius:20,cursor:"pointer",
+                          border:`1px solid ${isPrimary?"#1a3a6a":"#aac"}`,
+                          background:isPrimary?"#1a3a6a":"transparent",
+                          color:isPrimary?"#fff":"#3a5a8a",
+                          display:"flex",alignItems:"center",gap:5}}>
+                        {isPrimary&&<span style={{fontSize:9}}>★</span>}{tag}
+                      </button>;
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+        </div>
+        <div style={{marginBottom:10}}>
+          <div style={{display:"flex",flexDirection:"column",gap:6}}>
+            <label style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em"}}>Tipo de série</label>
+            <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+              {(availableSeriesTypes||studioSettings?.series_types||DEFAULT_SERIES_TYPES).map(tag=>{
+                const active = s.seriesType===tag;
+                return <button key={tag} onClick={()=>setS(p=>({...p,seriesType:active?"":tag}))}
+                  style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"3px 10px",borderRadius:20,
+                    border:`1px solid ${active?"#8a4010":C.stone}`,
+                    background:active?`${C.sig}60`:"transparent",
+                    color:active?"#5a2a00":C.mist,cursor:"pointer"}}>{tag}</button>;
+              })}
+            </div>
+          </div>
+        </div>
         <Field label="Notas de Instructor" val={s.cues} onChange={v=>up("cues",v)} multiline/>
       </div>
 
@@ -2009,9 +2040,6 @@ const SeriesEditor = ({ series, onSave, onSaveAsNew, onCancel, onDelete, aiStyle
         <div style={{fontSize:12,fontWeight:700,color:C.neutral,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Vídeo de referência</div>
         <SeriesVideo seriesId={s.id} videoUrl={s.videoUrl||""} onUpdate={v=>up("videoUrl",v)}/>
       </div>
-
-      {/* AI movement analysis */}
-      <MovementAnalysisChat series={s} aiStyle={aiStyle}/>
 
       {/* Delete series — only shown when editing existing series */}
       {series?.id && onDelete && (
@@ -2176,13 +2204,34 @@ const ForkModal = ({ seriesName, classCount, onApplyAll, onFork, onCancel }) => 
 );
 
 // ─── AULA VIEW (merged Ver + Modo Aula) ───────────────────────────────────────
-const AulaView = ({ cls, allSeries, onBack, onEditClass, onDeleteClass, onUpdateSeries, onUpdateClass, aiStyle, allClasses=[], onSaveFork }) => {
+const AulaView = ({ cls, allSeries, onBack, onDeleteClass, onUpdateSeries, onUpdateClass, aiStyle, allClasses=[], onSaveFork, teachingMode, onTeachingModeChange, onSeriesEditChange, studioSettings }) => {
   const [seriesList, setSeriesList] = useState(()=>cls.seriesIds.map(id=>allSeries.find(s=>s.id===id)).filter(Boolean));
   const [editingId, setEditingId] = useState(null);
   const [notes, setNotes] = useState(cls.notes||"");
   const [shareToken, setShareToken] = useState(cls.shareToken||null);
   const [forkModal, setForkModal] = useState(null);
-  const currentCls = React.useMemo(()=>({...cls, notes}), [cls, notes]);
+  const [editName, setEditName] = useState(cls.name||"");
+  const [editDate, setEditDate] = useState(cls.date||"");
+  const [editLevel, setEditLevel] = useState(cls.level||"");
+  const [showFlowEditor, setShowFlowEditor] = useState(false);
+  const [flowZoneFilter, setFlowZoneFilter] = useState("all");
+  const flowDragRef = React.useRef(null);
+  const [usedDates, setUsedDates] = useState(()=>cls.usedDates||[]);
+  const [showDateLog, setShowDateLog] = useState(false);
+  const classLevels = studioSettings?.class_levels || DEFAULT_CLASS_LEVELS;
+  const currentCls = React.useMemo(()=>({...cls, name:editName, date:editDate, level:editLevel, notes, usedDates}), [cls, editName, editDate, editLevel, notes, usedDates]);
+
+  const addUsedDate = (d) => {
+    if (!d || usedDates.includes(d)) return;
+    const newDates = [...usedDates, d].sort().reverse();
+    setUsedDates(newDates);
+    onUpdateClass({...currentCls, usedDates: newDates});
+  };
+  const removeUsedDate = (d) => {
+    const newDates = usedDates.filter(x=>x!==d);
+    setUsedDates(newDates);
+    onUpdateClass({...currentCls, usedDates: newDates});
+  };
   const toast_ = useToast();
 
   const handleShare = async () => {
@@ -2197,7 +2246,6 @@ const AulaView = ({ cls, allSeries, onBack, onEditClass, onDeleteClass, onUpdate
     navigator.clipboard.writeText(`${window.location.origin}?share=${token}`);
     toast_?.('Link de partilha copiado!');
   };
-  const [teachingMode,   setTeachingMode]   = useState(false);
   const [showLyric,      setShowLyric]      = useState(false);
   const [showTiming,     setShowTiming]     = useState(false);
   const [showSetup,      setShowSetup]      = useState(true);
@@ -2205,6 +2253,10 @@ const AulaView = ({ cls, allSeries, onBack, onEditClass, onDeleteClass, onUpdate
   const [showCues,       setShowCues]       = useState(false);
   const [showInstrNotes, setShowInstrNotes] = useState(false);
   const [showAulaNotes,  setShowAulaNotes]  = useState(false);
+  const [warmupNotes, setWarmupNotes] = useState(cls.warmupNotes||"");
+  const [cooldownNotes, setCooldownNotes] = useState(cls.cooldownNotes||"");
+  const [showWarmupPanel, setShowWarmupPanel] = useState(false);
+  const [generatingWC, setGeneratingWC] = useState(false);
   const [modR, setModR] = useState({});
   const [modB, setModB] = useState({});
   const [openCueRows, setOpenCueRows] = React.useState(new Set());
@@ -2220,8 +2272,63 @@ const AulaView = ({ cls, allSeries, onBack, onEditClass, onDeleteClass, onUpdate
     } else {
       onUpdateSeries(updated);
       setSeriesList(p=>p.map(s=>s.id===updated.id?updated:s));
-      setEditingId(null);
+      setEditingId(null); onSeriesEditChange?.(null);
     }
+  };
+
+  const generateWarmupCooldown = async () => {
+    setGeneratingWC(true);
+    try {
+      const warmupSeries = seriesList.filter(s=>(s.primaryZone||s.targetZone||"").toLowerCase().includes("warm"));
+      const cooldownSeries = seriesList.filter(s=>(s.primaryZone||s.targetZone||"").toLowerCase().includes("cool")||(s.primaryZone||s.targetZone||"").toLowerCase().includes("mobil")||(s.primaryZone||s.targetZone||"").toLowerCase().includes("flex"));
+      const mainSeries = seriesList.filter(s=>!warmupSeries.includes(s)&&!cooldownSeries.includes(s));
+      const seriesData = mainSeries.map(s => ({
+        name: s.name,
+        zone: s.primaryZone||s.targetZone?.split(',').slice(0,2).join(',')||"-",
+        muscles: s.muscles?.slice(0,4).join(", ")||"-",
+      }));
+      const alreadyWarmup = warmupSeries.map(s=>s.name).join(", ");
+      const alreadyCooldown = cooldownSeries.map(s=>s.name).join(", ");
+      const classInfo = `Aula: "${currentCls.name}" (${currentCls.type||"geral"})\nSéries principais:\n${seriesData.map((s,i)=>`${i+1}. ${s.name} — zona: ${s.zone}, músculos: ${s.muscles}`).join("\n")}${alreadyWarmup?`\nJá tem warm-up: ${alreadyWarmup}`:""}${alreadyCooldown?`\nJá tem cool-down/mobilidade: ${alreadyCooldown}`:""}`;
+      const prompt = `És um expert STOTT Pilates. Com base nesta aula:\n\n${classInfo}\n\nSugere exercícios ESPECÍFICOS de warm-up e cool-down para esta aula. Foca nas zonas e músculos que a aula trabalha. Sê concreto: nomeia exercícios reais (ex: "cat-cow, hip flexor stretch, thoracic rotation"). Não escrevas texto longo — dá listas curtas e diretas.\n\nResponde APENAS com JSON: {"warmup":["exercício 1","exercício 2","exercício 3"],"cooldown":["exercício 1","exercício 2","exercício 3"]}`;
+      const text = await aiCall(prompt);
+      let parsed;
+      try {
+        parsed = JSON.parse(text);
+        if (Array.isArray(parsed.warmup)) parsed.warmup = parsed.warmup.join("\n");
+        if (Array.isArray(parsed.cooldown)) parsed.cooldown = parsed.cooldown.join("\n");
+      } catch(e) { parsed = { warmup: text, cooldown: "" }; }
+      if (parsed.warmup) { setWarmupNotes(parsed.warmup); onUpdateClass({...currentCls, warmupNotes: parsed.warmup, cooldownNotes: parsed.cooldown||cooldownNotes}); }
+      if (parsed.cooldown) { setCooldownNotes(parsed.cooldown); }
+    } catch(e) { console.error(e); }
+    setGeneratingWC(false);
+  };
+
+  // Flow editor helpers
+  const availableForFlow = React.useMemo(() =>
+    allSeries.filter(s => !seriesList.find(x=>x.id===s.id) &&
+      (cls.type==="signature" ? s.type==="signature" : s.type===cls.type||s.type==="signature"))
+  , [allSeries, seriesList, cls.type]);
+
+  const flowZones = React.useMemo(() => {
+    const zset = new Set();
+    availableForFlow.forEach(s=>(s.targetZone||"").split(",").map(z=>z.trim()).filter(Boolean).forEach(z=>zset.add(z)));
+    return [...zset].sort((a,b)=>a.localeCompare(b,"pt"));
+  }, [availableForFlow]);
+
+  const availableFlowFiltered = flowZoneFilter==="all" ? availableForFlow : availableForFlow.filter(s=>(s.targetZone||"").split(",").map(z=>z.trim()).includes(flowZoneFilter));
+
+  const addToFlow = (id) => {
+    const ser = allSeries.find(s=>s.id===id);
+    if (!ser) return;
+    const newList = [...seriesList, ser];
+    setSeriesList(newList);
+    onUpdateClass({...currentCls, seriesIds: newList.map(s=>s.id)});
+  };
+  const removeFromFlow = (id) => {
+    const newList = seriesList.filter(s=>s.id!==id);
+    setSeriesList(newList);
+    onUpdateClass({...currentCls, seriesIds: newList.map(s=>s.id)});
   };
 
   const buildRows = ser => {
@@ -2342,6 +2449,7 @@ const AulaView = ({ cls, allSeries, onBack, onEditClass, onDeleteClass, onUpdate
           {showTiming&&choreo&&<th style={{fontSize:12,fontWeight:600,color:C.mist,textAlign:"left",padding:"8px 12px"}}>Timing</th>}
           {showLyric&&choreo&&<th style={{fontSize:12,fontWeight:600,color:C.mist,textAlign:"left",padding:"8px 12px"}}>Lyric</th>}
           <th style={{fontSize:10,fontWeight:700,color:C.white,textAlign:"left",padding:"6px 10px"}}>Movement</th>
+          {!choreo&&<th style={{fontSize:10,fontWeight:700,color:C.white,textAlign:"left",padding:"6px 10px"}}>Tempo/Reps</th>}
         </tr></thead>
         <tbody>
           {ser.openCue&&<tr className="print-cue-row" style={{background:"#F4EDE8"}}><td colSpan={99} style={{padding:"4px 10px"}}><div style={{display:"flex",alignItems:"center",gap:6}}><span style={{fontSize:12,color:C.reformer,fontWeight:700,flexShrink:0}}>✦</span><span style={{fontSize:12,fontStyle:"italic",color:"#7a4010",fontFamily:"'Satoshi',sans-serif"}}>{ser.openCue}</span></div></td></tr>}
@@ -2393,6 +2501,7 @@ const AulaView = ({ cls, allSeries, onBack, onEditClass, onDeleteClass, onUpdate
                       {m.notes&&<div style={{display:"flex",gap:8,alignItems:"flex-start"}}><span style={{fontSize:10,fontWeight:700,color:"#8a7e78",textTransform:"uppercase",flexShrink:0,paddingTop:2}}>Notas</span><span style={{fontSize:12,lineHeight:1.4}}>{m.notes}</span></div>}
                     </div>}
                   </td>
+                  {!choreo&&<td style={{fontSize:11,padding:"8px 10px",color:C.mist,whiteSpace:"nowrap"}}>{m.timeReps||""}</td>}
                 </tr>
               </React.Fragment>
             );
@@ -2519,23 +2628,70 @@ const AulaView = ({ cls, allSeries, onBack, onEditClass, onDeleteClass, onUpdate
 
       {/* Top bar */}
       <div className="no-print" style={{padding:"20px 24px 0"}}>
-        {/* Row 1: navigation + title + actions + PDF */}
-        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10,flexWrap:"wrap"}}>
+        {teachingMode ? (
+          /* Teaching mode — minimal bar */
+          <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12}}>
+            <span style={{fontFamily:"'Clash Display',sans-serif",fontSize:20,fontWeight:500,color:C.ink,flex:1}}>{editName||cls.name}</span>
+            <Btn onClick={()=>onTeachingModeChange(false)} style={{background:C.crimson,color:C.cream}}>✕ Sair do Modo Aula</Btn>
+          </div>
+        ) : (<>
+        {/* Row 1: navigation + actions */}
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8,flexWrap:"wrap"}}>
           <Btn variant="ghost" onClick={onBack}><Icon name="back" size={14}/> Voltar</Btn>
-          <h2 style={{fontFamily:"'Clash Display', sans-serif",fontSize:24,fontWeight:500,color:C.ink,margin:0,flex:1}}>{cls.name}</h2>
-          {cls.level&&<span style={{fontSize:11,fontWeight:600,color:C.neutral,background:C.stone,borderRadius:20,padding:"2px 10px",letterSpacing:"0.04em",flexShrink:0}}>{cls.level}</span>}
-          {onEditClass&&<Btn small variant="ghost" onClick={()=>onEditClass(currentCls)}><Icon name="edit" size={13}/> Editar aula</Btn>}
+          <input value={editName} onChange={e=>{ setEditName(e.target.value); onUpdateClass({...currentCls, name:e.target.value}); }}
+            style={{fontFamily:"'Clash Display',sans-serif",fontSize:22,fontWeight:500,color:C.ink,border:"none",borderBottom:`1px solid transparent`,background:"transparent",outline:"none",flex:1,minWidth:120,padding:"2px 4px",borderRadius:4,transition:"border-color 0.15s"}}
+            onFocus={e=>e.target.style.borderBottomColor=C.stone}
+            onBlur={e=>e.target.style.borderBottomColor="transparent"}
+            placeholder="Nome da aula"/>
+          <input type="date" value={editDate} onChange={e=>{ setEditDate(e.target.value); onUpdateClass({...currentCls, date:e.target.value}); }}
+            style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,padding:"4px 8px",borderRadius:6,border:`1px solid ${C.stone}`,color:C.ink,flexShrink:0,background:C.white}}/>
+          <Btn small variant="ghost" onClick={()=>setShowFlowEditor(p=>!p)} style={{color:showFlowEditor?C.crimson:C.mist,borderColor:showFlowEditor?C.crimson:C.stone}}>
+            <Icon name="edit" size={13}/> {showFlowEditor?"Fechar fluxo":"Editar fluxo"}
+          </Btn>
           <Btn small variant="ghost" onClick={handleShare}><Icon name="link" size={13}/> Partilhar</Btn>
           <Btn small variant="ghost" onClick={()=>window.print()}><Icon name="print" size={13}/> PDF</Btn>
-          <Btn small onClick={()=>setTeachingMode(p=>!p)} style={{background:C.crimson,color:C.cream}}>{teachingMode ? '✕ Sair do Modo Aula' : '▶ Modo Aula'}</Btn>
+          <Btn small onClick={()=>onTeachingModeChange(true)} style={{background:C.crimson,color:C.cream}}>▶ Modo Aula</Btn>
+          <Btn small variant="ghost" onClick={()=>setShowWarmupPanel(p=>!p)} style={{color:showWarmupPanel?C.crimson:C.mist}}>✦ Warm-up / Cool-down</Btn>
           {onDeleteClass&&<Btn small variant="danger" onClick={()=>onDeleteClass(cls.id)}><Icon name="x" size={13}/> Apagar aula</Btn>}
         </div>
+        {/* Row 2: level + meta */}
+        <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",marginBottom:4}}>
+          <Badge label={cls.type==="signature"?"✦ Signature":cls.type==="reformer"?"Reformer":"Barre"} color={cls.type==="signature"?"gold":cls.type==="reformer"?"teal":"coral"}/>
+          {classLevels.map(lvl=>(
+            <button key={lvl} onClick={()=>{ const n=editLevel===lvl?"":lvl; setEditLevel(n); onUpdateClass({...currentCls, level:n}); }}
+              style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"3px 10px",borderRadius:20,border:`1px solid ${editLevel===lvl?C.neutral:C.stone}`,background:editLevel===lvl?C.neutral:"transparent",color:editLevel===lvl?C.white:C.mist,cursor:"pointer"}}>
+              {lvl}
+            </button>
+          ))}
+          <span style={{fontSize:11,color:C.mist,marginLeft:4}}>{seriesList.length} série{seriesList.length!==1?"s":""}</span>
+          <button onClick={()=>setShowDateLog(p=>!p)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"3px 10px",borderRadius:20,border:`1px solid ${showDateLog?C.neutral:C.stone}`,background:showDateLog?C.neutral:"transparent",color:showDateLog?C.white:C.mist,cursor:"pointer",marginLeft:4}}>
+            📅 {usedDates.length>0?`${usedDates.length}×`:"Registar uso"}
+          </button>
+        </div>
+        {/* Date log */}
+        {showDateLog&&(
+          <div className="no-print" style={{marginTop:8,background:C.white,borderRadius:10,border:`1px solid ${C.stone}`,padding:"10px 14px",display:"flex",flexWrap:"wrap",alignItems:"center",gap:8}}>
+            <span style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.06em"}}>Dias usada:</span>
+            {usedDates.map(d=>(
+              <span key={d} style={{display:"inline-flex",alignItems:"center",gap:4,background:C.cream,border:`1px solid ${C.stone}`,borderRadius:20,padding:"2px 10px",fontSize:12,color:C.ink}}>
+                {d}
+                <button onClick={()=>removeUsedDate(d)} style={{background:"none",border:"none",cursor:"pointer",color:C.mist,padding:0,lineHeight:1,fontSize:11}}>×</button>
+              </span>
+            ))}
+            <input type="date" defaultValue={new Date().toISOString().split('T')[0]}
+              style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,padding:"3px 8px",borderRadius:6,border:`1px solid ${C.stone}`,color:C.ink}}
+              onChange={e=>{ if(e.target.value) addUsedDate(e.target.value); e.target.value=""; }}/>
+            <Btn small onClick={()=>addUsedDate(new Date().toISOString().split('T')[0])}>+ Hoje</Btn>
+            {usedDates.length>0&&<button onClick={()=>{ setUsedDates([]); onUpdateClass({...currentCls,usedDates:[]}); }} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,color:C.mist,background:"none",border:`1px solid ${C.stone}`,borderRadius:20,padding:"3px 10px",cursor:"pointer",marginLeft:"auto"}}>× Limpar tudo</button>}
+          </div>
+        )}
+        </>)}
       </div>
       <div style={{padding:"0 24px 32px", background:C.cream, minHeight:"100vh"}}>
         {/* Print header */}
         <div className="no-print" style={{paddingTop:8,paddingBottom:12,borderBottom:`1px solid ${C.stone}`,marginBottom:16}}>
-          <div style={{fontFamily:"'Clash Display', sans-serif",fontSize:22,fontWeight:500,color:C.ink}}>{cls.name}</div>
-          {cls.date&&<div style={{fontSize:12,color:C.mist,marginTop:2,marginBottom:10}}>{cls.date}</div>}
+          <div style={{fontFamily:"'Clash Display', sans-serif",fontSize:22,fontWeight:500,color:C.ink}}>{editName||cls.name}</div>
+          {(editDate||cls.date)&&<div style={{fontSize:12,color:C.mist,marginTop:2,marginBottom:10}}>{editDate||cls.date}</div>}
           {/* Toggles row — visible on screen between title and content */}
           {!teachingMode&&<div style={{display:"flex",gap:5,flexWrap:"wrap",marginTop:10}}>
             {tBtn("Timing",showTiming,()=>setShowTiming(p=>!p))}
@@ -2566,19 +2722,98 @@ const AulaView = ({ cls, allSeries, onBack, onEditClass, onDeleteClass, onUpdate
           </div>
         )}
 
+        {/* Warm-up / Cool-down Panel */}
+        {showWarmupPanel&&(
+          <div className="no-print" style={{background:C.white,borderRadius:12,border:`1px solid ${C.stone}`,padding:16,marginBottom:20}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+              <div style={{fontFamily:"'Clash Display',sans-serif",fontSize:15,fontWeight:500,color:C.crimson}}>✦ Warm-up / Cool-down</div>
+              <Btn small variant="gold" onClick={generateWarmupCooldown} disabled={generatingWC}>
+                <Icon name="ai" size={12}/>{generatingWC?"A gerar…":"Gerar com IA"}
+              </Btn>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+              <div>
+                <label style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em",display:"block",marginBottom:6}}>Warm-up</label>
+                <AutoTextarea value={warmupNotes} onChange={e=>{setWarmupNotes(e.target.value);onUpdateClass({...currentCls,warmupNotes:e.target.value,cooldownNotes});}}
+                  placeholder="Descreve o warm-up para esta aula…"
+                  style={{width:"100%",fontSize:13,minHeight:80,resize:"vertical",borderRadius:8,border:`1px solid ${C.stone}`,padding:"8px 10px",fontFamily:"'Satoshi',sans-serif",color:C.ink,background:C.cream,outline:"none",boxSizing:"border-box"}}/>
+              </div>
+              <div>
+                <label style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em",display:"block",marginBottom:6}}>Cool-down</label>
+                <AutoTextarea value={cooldownNotes} onChange={e=>{setCooldownNotes(e.target.value);onUpdateClass({...currentCls,warmupNotes,cooldownNotes:e.target.value});}}
+                  placeholder="Descreve o cool-down para esta aula…"
+                  style={{width:"100%",fontSize:13,minHeight:80,resize:"vertical",borderRadius:8,border:`1px solid ${C.stone}`,padding:"8px 10px",fontFamily:"'Satoshi',sans-serif",color:C.ink,background:C.cream,outline:"none",boxSizing:"border-box"}}/>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Flow Editor */}
+        {showFlowEditor&&(
+          <div className="no-print" style={{background:C.white,borderRadius:12,border:`2px solid ${C.crimson}30`,padding:16,marginBottom:20}}>
+            <div style={{fontFamily:"'Clash Display',sans-serif",fontSize:15,fontWeight:500,color:C.crimson,marginBottom:12}}>Editar fluxo da aula</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
+              {/* Current flow */}
+              <div>
+                <div style={{fontSize:11,fontWeight:700,color:C.ink,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Fluxo atual ({seriesList.length})</div>
+                {seriesList.length===0&&<div style={{color:C.mist,fontSize:13,padding:"12px 0"}}>Adiciona séries da biblioteca →</div>}
+                {seriesList.map((ser,i)=>(
+                  <div key={ser.id} draggable
+                    onDragStart={()=>{ flowDragRef.current=i; }}
+                    onDragOver={e=>e.preventDefault()}
+                    onDrop={()=>{
+                      if(flowDragRef.current!=null&&flowDragRef.current!==i){
+                        const newList=[...seriesList]; const [item]=newList.splice(flowDragRef.current,1); newList.splice(i,0,item);
+                        setSeriesList(newList); onUpdateClass({...currentCls,seriesIds:newList.map(s=>s.id)});
+                      } flowDragRef.current=null;
+                    }}
+                    style={{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",background:C.cream,borderRadius:8,border:`1px solid ${C.stone}`,marginBottom:5,cursor:"grab"}}>
+                    <span style={{color:C.stone,fontSize:12,userSelect:"none"}}>⠿</span>
+                    <span style={{fontSize:11,fontWeight:700,color:C.mist,minWidth:18}}>{i+1}</span>
+                    <span style={{flex:1,fontSize:13,color:C.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ser.name}</span>
+                    <Badge label={ser.type==="signature"?"✦":ser.type==="reformer"?"R":"B"} color={ser.type==="signature"?"gold":ser.type==="reformer"?"teal":"coral"}/>
+                    <button onClick={()=>removeFromFlow(ser.id)} style={{background:"none",border:"none",cursor:"pointer",color:C.coral,padding:"2px 4px",flexShrink:0}}><Icon name="x" size={13}/></button>
+                  </div>
+                ))}
+                {(()=>{ const total=seriesList.reduce((acc,s)=>{ const d=parseDuration(s)??s.duration??null; return d!==null?acc+d:acc; },0); if(!total)return null; const m=Math.floor(total/60),s=total%60; return <div style={{fontSize:11,color:C.mist,marginTop:6,fontWeight:600}}>Duração estimada: {s>0?`${m}'${String(s).padStart(2,'0')}''`:`${m}'`}</div>; })()}
+              </div>
+              {/* Available series */}
+              <div>
+                <div style={{fontSize:11,fontWeight:700,color:C.ink,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Biblioteca disponível</div>
+                {flowZones.length>0&&(
+                  <div style={{display:"flex",gap:4,flexWrap:"wrap",marginBottom:8}}>
+                    <button onClick={()=>setFlowZoneFilter("all")} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"3px 9px",borderRadius:20,border:`1px solid ${flowZoneFilter==="all"?C.neutral:C.stone}`,background:flowZoneFilter==="all"?C.neutral:"transparent",color:flowZoneFilter==="all"?C.white:C.mist,cursor:"pointer"}}>Todas</button>
+                    {flowZones.map(z=>(
+                      <button key={z} onClick={()=>setFlowZoneFilter(p=>p===z?"all":z)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"3px 9px",borderRadius:20,border:`1px solid ${flowZoneFilter===z?C.neutral:C.stone}`,background:flowZoneFilter===z?C.neutral:"transparent",color:flowZoneFilter===z?C.white:C.mist,cursor:"pointer"}}>{z}</button>
+                    ))}
+                  </div>
+                )}
+                {availableFlowFiltered.map(ser=>(
+                  <div key={ser.id} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",background:C.cream,borderRadius:8,border:`1px solid ${C.stone}`,marginBottom:5}}>
+                    <span style={{flex:1,fontSize:13,color:C.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ser.name}</span>
+                    <Badge label={ser.type==="signature"?"✦":ser.type==="reformer"?"R":"B"} color={ser.type==="signature"?"gold":ser.type==="reformer"?"teal":"coral"}/>
+                    <Btn small variant="ghost" onClick={()=>addToFlow(ser.id)}><Icon name="plus" size={12}/></Btn>
+                  </div>
+                ))}
+                {availableFlowFiltered.length===0&&<div style={{color:C.mist,fontSize:13}}>{flowZoneFilter!=="all"?"Nenhuma série com esta zona.":"Todas as séries disponíveis foram adicionadas."}</div>}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Series */}
         <div className="print-series-grid">
         {seriesList.map((ser,idx)=>(
           <div key={ser.id} className="print-series-card" style={{marginBottom:16,pageBreakInside:"avoid"}}>
             {editingId===ser.id ? (
-              <SeriesEditor series={ser} onSave={saveEdit} onCancel={()=>setEditingId(null)} aiStyle={aiStyle}/>
+              <SeriesEditor series={ser} onSave={saveEdit} onCancel={()=>{ setEditingId(null); onSeriesEditChange?.(null); }} aiStyle={aiStyle} studioSettings={studioSettings} availableZones={studioSettings?.zones?.length?studioSettings.zones:undefined}/>
             ) : (
               <AulaSeriesCard ser={ser} idx={idx} isSig={isSig}
                 modR={modR} modB={modB} setModR={setModR} setModB={setModB}
                 showSetup={showSetup} showIntro={showIntro} showCues={showCues} showInstrNotes={showInstrNotes}
                 showTiming={showTiming} showLyric={showLyric}
                 aiStyle={aiStyle}
-                onEdit={()=>setEditingId(ser.id)}
+                onEdit={()=>{ setEditingId(ser.id); onSeriesEditChange?.(ser); }}
                 onUpdateSeries={onUpdateSeries}
                 setSeriesList={setSeriesList}
                 MovTable={MovTable}
@@ -2601,6 +2836,7 @@ const AulaView = ({ cls, allSeries, onBack, onEditClass, onDeleteClass, onUpdate
 // ─── AI CLASS BUILDER ─────────────────────────────────────────────────────────
 const DEFAULT_STUDIO_CLASS_TYPES = ['Reformer', 'Matwork', 'Barre', 'Cycling'];
 const DEFAULT_CLASS_LEVELS = ['foundations', 'intermediate', 'advanced', 'flow', 'dynamic'];
+const DEFAULT_SERIES_TYPES = ['Warm-up', 'Força', 'Cardio', 'Flow', 'Mobilidade', 'Cool-down'];
 const DEFAULT_STUDIO_ZONES = ['Glutes', 'Hamstrings', 'Quads', 'Inner Thighs', 'Calves', 'Core', 'Back', 'Arms', 'Shoulders', 'Chest', 'Full Body', 'Cardio', 'Warm-Up', 'Mobility', 'Flexibility', 'Balance'];
 
 const AIClassBuilder = ({ available, allSeries, cls, aiStyle, onApply }) => {
@@ -2717,141 +2953,89 @@ Only use IDs from the available list. Return only the JSON array, no explanation
 };
 
 // ─── CLASS BUILDER ────────────────────────────────────────────────────────────
-const ClassBuilder = ({ allSeries, classes, onSave, onDeleteClass, onViewAula, initialEditCls, aiStyle, studioSettings, onPublishClass, hasStudio }) => {
-  const [cls, setCls]     = useState(initialEditCls||null);
-  const [editing, setEditing] = useState(!!initialEditCls);
-
-  const dragRef   = React.useRef(null);
-  const [zoneFilter, setZoneFilter] = React.useState("all");
+const ClassBuilder = ({ allSeries, classes, onSave, onDeleteClass, onViewAula, studioSettings, onPublishClass, hasStudio }) => {
+  const [creating, setCreating] = useState(false);
+  const [newCls, setNewCls] = useState(null);
+  const [classSearch, setClassSearch] = useState("");
+  const [classLevelFilter, setClassLevelFilter] = useState("");
   const classLevels = studioSettings?.class_levels || DEFAULT_CLASS_LEVELS;
-  const newClass  = type => { setCls({id:`c-${Date.now()}`,name:"",type,date:new Date().toISOString().split("T")[0],seriesIds:[],notes:"",level:""}); setEditing(true); };
-  const editClass = c    => { setCls({...c}); setEditing(true); };
-  const addSer    = id   => setCls(p=>({...p,seriesIds:[...p.seriesIds,id]}));
-  const remSer    = id   => setCls(p=>({...p,seriesIds:p.seriesIds.filter(s=>s!==id)}));
-  const moveSer   = (i,d)=> setCls(p=>{ const ids=[...p.seriesIds]; const sw=i+d; if(sw<0||sw>=ids.length)return p; [ids[i],ids[sw]]=[ids[sw],ids[i]]; return {...p,seriesIds:ids}; });
-  const available = React.useMemo(()=>
-    allSeries.filter(s=>!cls?.seriesIds.includes(s.id)&&(cls?.type==="signature"?s.type==="signature":s.type===cls?.type||s.type==="signature"))
-  , [allSeries, cls?.seriesIds, cls?.type]);
 
-  // All zones across available series (all targetZone values, not just primary)
-  const availableZones = React.useMemo(()=>{
-    const zset = new Set();
-    available.forEach(s=>(s.targetZone||"").split(",").map(z=>z.trim()).filter(Boolean).forEach(z=>zset.add(z)));
-    return [...zset].sort((a,b)=>a.localeCompare(b,"pt"));
-  }, [available]);
+  const startCreate = type => {
+    setNewCls({ id:`c-${Date.now()}`, name:"", type, date:new Date().toISOString().split("T")[0], seriesIds:[], notes:"", level:"" });
+    setCreating(true);
+  };
+  const handleCreate = () => { onSave(newCls); onViewAula(newCls); setCreating(false); setNewCls(null); };
 
-  const availableFiltered = zoneFilter==="all"
-    ? available
-    : available.filter(s=>(s.targetZone||"").split(",").map(z=>z.trim()).includes(zoneFilter));
-
-  if (!editing) return (
-    <div>
-      <div style={{display:"flex",gap:12,marginBottom:24,flexWrap:"wrap"}}>
-        <Btn onClick={()=>newClass("reformer")}><Icon name="plus" size={14}/> Nova aula Reformer</Btn>
-        <Btn variant="ghost" onClick={()=>newClass("barre")}><Icon name="plus" size={14}/> Nova aula Barre</Btn>
-        <Btn variant="ghost" onClick={()=>newClass("signature")} style={{borderColor:C.sig,color:"#7a4010"}}><Icon name="plus" size={14}/> Nova Signature</Btn>
-      </div>
-      {classes.length===0&&<div style={{textAlign:"center",color:C.mist,padding:40,fontSize:14}}>Ainda não há aulas criadas.</div>}
-      <div style={{display:"flex",flexDirection:"column",gap:10}}>
-        {classes.map(c=>(
-          <div key={c.id} style={{background:C.white,borderRadius:12,border:`1px solid ${C.stone}`,padding:"16px 20px",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-            <div style={{flex:1,minWidth:0}}>
-              <div style={{fontFamily:"'Clash Display', sans-serif",fontSize:18,fontWeight:500,color:C.ink}}>{c.name||"Sem nome"}</div>
-              <div style={{fontSize:12,color:C.mist,marginTop:2}}>{c.date} · {c.seriesIds.length} série{c.seriesIds.length!==1?"s":""}</div>
-            </div>
-            <Badge label={c.type==="signature"?"✦ Signature":c.type} color={c.type==="signature"?"gold":c.type==="reformer"?"teal":"coral"}/>
-            {c.level&&<span style={{fontSize:11,fontWeight:600,color:C.neutral,background:C.stone,borderRadius:20,padding:"2px 10px",letterSpacing:"0.04em"}}>{c.level}</span>}
-            {c.visibility==='pending_studio'&&<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:20,background:"#fef9ec",color:"#b45309",border:"1px solid #fcd34d"}}>⏳ Em revisão</span>}
-            {hasStudio&&c.visibility==='personal'&&onPublishClass&&<Btn small variant="ghost" onClick={()=>onPublishClass(c)} title="Submeter para revisão do studio" style={{color:"#1a56db"}}>↑ Studio</Btn>}
-            <Btn small variant="ghost" onClick={()=>editClass(c)}><Icon name="edit" size={13}/> Editar</Btn>
-            <Btn small onClick={()=>onViewAula(c)}><Icon name="eye" size={13}/> Ver Aula</Btn>
-            <button onClick={()=>onDeleteClass(c.id)} title="Apagar aula" style={{background:"none",border:`1px solid ${C.stone}`,borderRadius:8,cursor:"pointer",color:C.coral,padding:"6px 8px",display:"inline-flex",alignItems:"center"}}><Icon name="x" size={13}/></button>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-
-  return (
-    <div style={{display:"flex",flexDirection:"column",gap:16}}>
+  if (creating && newCls) return (
+    <div style={{display:"flex",flexDirection:"column",gap:16,maxWidth:540}}>
       <div style={{display:"flex",gap:12,alignItems:"center"}}>
-        <Btn variant="ghost" small onClick={()=>setEditing(false)}><Icon name="back" size={13}/></Btn>
-        <h3 style={{fontFamily:"'Clash Display', sans-serif",fontSize:22,fontWeight:500,color:C.crimson,margin:0,flex:1}}>Biblioteca de Aulas</h3>
-        <Btn onClick={()=>{onSave(cls);setEditing(false);}}><Icon name="save" size={14}/> Guardar aula</Btn>
-        {cls.id&&classes.find(x=>x.id===cls.id)&&<Btn variant="ghost" small onClick={()=>{
-          const newName = window.prompt("Nome da nova aula:", cls.name+" (cópia)");
-          if(newName){ onSave({...cls, id:`c-${Date.now()}`, name:newName}); setEditing(false); }
-        }}><Icon name="copy" size={13}/> Duplicar</Btn>}
+        <Btn variant="ghost" small onClick={()=>setCreating(false)}><Icon name="back" size={13}/></Btn>
+        <h3 style={{fontFamily:"'Clash Display', sans-serif",fontSize:22,fontWeight:500,color:C.crimson,margin:0,flex:1}}>
+          Nova aula {newCls.type==="signature"?"Signature":newCls.type==="reformer"?"Reformer":"Barre"}
+        </h3>
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr auto",gap:12,alignItems:"end"}}>
-        <Field label="Nome da aula" val={cls.name} onChange={v=>setCls(p=>({...p,name:v}))} placeholder="ex. Cardio Flow Quarta"/>
-        <div>
-          <label style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em",display:"block",marginBottom:4}}>Data</label>
-          <input type="date" value={cls.date} onChange={e=>setCls(p=>({...p,date:e.target.value}))} style={{width:"100%",fontFamily:"'Satoshi', sans-serif",fontSize:13,padding:"8px 12px",borderRadius:8,border:`1px solid ${C.stone}`,outline:"none",boxSizing:"border-box"}}/>
-        </div>
-        <div style={{paddingBottom:2}}><Badge label={cls.type==="signature"?"✦ Signature":cls.type==="reformer"?"Reformer":"Barre"} color={cls.type==="signature"?"gold":cls.type==="reformer"?"teal":"coral"}/></div>
+      <Field label="Nome da aula" val={newCls.name} onChange={v=>setNewCls(p=>({...p,name:v}))} placeholder="ex. Cardio Flow Quarta"/>
+      <div>
+        <label style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em",display:"block",marginBottom:4}}>Data</label>
+        <input type="date" value={newCls.date} onChange={e=>setNewCls(p=>({...p,date:e.target.value}))} style={{width:"100%",fontFamily:"'Satoshi', sans-serif",fontSize:13,padding:"8px 12px",borderRadius:8,border:`1px solid ${C.stone}`,outline:"none",boxSizing:"border-box"}}/>
       </div>
-      <div style={{display:"flex",flexDirection:"column",gap:4}}>
-        <label style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em"}}>Nível</label>
+      <div>
+        <label style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em",display:"block",marginBottom:6}}>Nível</label>
         <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
           {classLevels.map(lvl=>(
-            <button key={lvl} onClick={()=>setCls(p=>({...p,level:p.level===lvl?"":lvl}))}
+            <button key={lvl} onClick={()=>setNewCls(p=>({...p,level:p.level===lvl?"":lvl}))}
               style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 14px",borderRadius:20,
-                border:`1px solid ${cls.level===lvl?C.neutral:C.stone}`,
-                background:cls.level===lvl?C.neutral:"transparent",
-                color:cls.level===lvl?C.white:C.mist,cursor:"pointer"}}>
+                border:`1px solid ${newCls.level===lvl?C.neutral:C.stone}`,
+                background:newCls.level===lvl?C.neutral:"transparent",
+                color:newCls.level===lvl?C.white:C.mist,cursor:"pointer"}}>
               {lvl}
             </button>
           ))}
         </div>
       </div>
-      <AIClassBuilder
-        available={available}
-        allSeries={allSeries}
-        cls={cls}
-        aiStyle={aiStyle}
-        onApply={ids => setCls(p => {
-          const toAdd = ids.filter(id => !p.seriesIds.includes(id));
-          return { ...p, seriesIds: [...p.seriesIds, ...toAdd] };
-        })}
-      />
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
-        <div>
-          <div style={{fontSize:12,fontWeight:700,color:C.slate,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:10}}>Aula ({cls.seriesIds.length} séries)</div>
-          {cls.seriesIds.length===0&&<div style={{color:C.mist,fontSize:13,padding:"16px 0"}}>Adiciona séries da biblioteca →</div>}
-          {cls.seriesIds.map((id,i)=>{ const ser=allSeries.find(s=>s.id===id); if(!ser)return null; return (
-              <div key={id} draggable
-                onDragStart={()=>{ dragRef.current=i; }}
-                onDragOver={e=>e.preventDefault()}
-                onDrop={()=>{ if(dragRef.current!=null&&dragRef.current!==i){ const ids=[...cls.seriesIds]; const [item]=ids.splice(dragRef.current,1); ids.splice(i,0,item); setCls(p=>({...p,seriesIds:ids})); } dragRef.current=null; }}
-                style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",background:C.white,borderRadius:8,border:`1px solid ${C.stone}`,marginBottom:6,cursor:"grab"}}>
-                <span style={{color:C.stone,fontSize:13,userSelect:"none"}}>⠿</span>
-                <span style={{fontSize:11,fontWeight:700,color:C.mist,minWidth:20}}>0{i+1}</span>
-                <span style={{flex:1,fontSize:13,fontWeight:500,color:C.ink}}>{ser.name}</span>
-                <button onClick={()=>remSer(id)} style={{background:"none",border:"none",cursor:"pointer",color:C.coral}}><Icon name="x" size={14}/></button>
-              </div>
-            );})}
-          {(()=>{ const total = cls.seriesIds.reduce((acc,id)=>{ const s=allSeries.find(x=>x.id===id); if(!s)return acc; const d=parseDuration(s)??s.duration??null; return d!==null?acc+d:acc; },0); if(!total)return null; const m=Math.floor(total/60),s=total%60; return <div style={{fontSize:11,color:C.mist,marginTop:8,fontWeight:600}}>Duração estimada: {s>0?`${m}'${String(s).padStart(2,'0')}''`:`${m}'`}</div>; })()}
-        </div>
-        <div>
-          <div style={{fontSize:12,fontWeight:700,color:C.slate,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Biblioteca disponível</div>
-          {availableZones.length>0&&(
-            <div style={{display:"flex",gap:4,flexWrap:"wrap",marginBottom:10}}>
-              <button onClick={()=>setZoneFilter("all")} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"3px 10px",borderRadius:20,border:`1px solid ${zoneFilter==="all"?C.neutral:C.stone}`,background:zoneFilter==="all"?C.neutral:"transparent",color:zoneFilter==="all"?C.white:C.mist,cursor:"pointer"}}>Todas</button>
-              {availableZones.map(z=>(
-                <button key={z} onClick={()=>setZoneFilter(p=>p===z?"all":z)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"3px 10px",borderRadius:20,border:`1px solid ${zoneFilter===z?C.neutral:C.stone}`,background:zoneFilter===z?C.neutral:"transparent",color:zoneFilter===z?C.white:C.mist,cursor:"pointer"}}>{z}</button>
-              ))}
+      <Btn onClick={handleCreate} style={{alignSelf:"flex-start"}}><Icon name="plus" size={14}/> Criar e começar a aula</Btn>
+    </div>
+  );
+
+  const filteredClasses = classes.filter(c=>{
+    if(classSearch && !c.name.toLowerCase().includes(classSearch.toLowerCase())) return false;
+    if(classLevelFilter && c.level!==classLevelFilter) return false;
+    return true;
+  });
+
+  return (
+    <div>
+      <div style={{display:"flex",gap:12,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
+        <Btn onClick={()=>startCreate("reformer")}><Icon name="plus" size={14}/> Nova aula Reformer</Btn>
+        <Btn variant="ghost" onClick={()=>startCreate("barre")}><Icon name="plus" size={14}/> Nova aula Barre</Btn>
+        <Btn variant="ghost" onClick={()=>startCreate("signature")} style={{borderColor:C.sig,color:"#7a4010"}}><Icon name="plus" size={14}/> Nova Signature</Btn>
+        <div style={{flex:1}}/>
+        <input value={classSearch} onChange={e=>setClassSearch(e.target.value)} placeholder="Pesquisar aulas…"
+          style={{fontFamily:"'Satoshi',sans-serif",fontSize:13,padding:"6px 14px",borderRadius:20,border:`1px solid ${C.stone}`,outline:"none",width:180}}/>
+      </div>
+      <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:16}}>
+        <button onClick={()=>setClassLevelFilter("")} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"3px 12px",borderRadius:20,border:`1px solid ${!classLevelFilter?C.neutral:C.stone}`,background:!classLevelFilter?C.neutral:"transparent",color:!classLevelFilter?C.white:C.mist,cursor:"pointer"}}>Todos</button>
+        {classLevels.map(lvl=>(
+          <button key={lvl} onClick={()=>setClassLevelFilter(p=>p===lvl?"":lvl)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"3px 12px",borderRadius:20,border:`1px solid ${classLevelFilter===lvl?C.neutral:C.stone}`,background:classLevelFilter===lvl?C.neutral:"transparent",color:classLevelFilter===lvl?C.white:C.mist,cursor:"pointer"}}>{lvl}</button>
+        ))}
+      </div>
+      {filteredClasses.length===0&&<div style={{textAlign:"center",color:C.mist,padding:40,fontSize:14}}>{classes.length===0?"Ainda não há aulas criadas.":"Nenhuma aula encontrada."}</div>}
+      <div style={{display:"flex",flexDirection:"column",gap:10}}>
+        {filteredClasses.map(c=>(
+          <div key={c.id} onClick={()=>onViewAula(c)} style={{background:C.white,borderRadius:12,border:`1px solid ${C.stone}`,padding:"16px 20px",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",cursor:"pointer",transition:"border-color 0.15s"}}
+            onMouseEnter={e=>e.currentTarget.style.borderColor=C.neutral}
+            onMouseLeave={e=>e.currentTarget.style.borderColor=C.stone}>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontFamily:"'Clash Display', sans-serif",fontSize:18,fontWeight:500,color:C.ink}}>{c.name||"Sem nome"}</div>
+              <div style={{fontSize:12,color:C.mist,marginTop:2}}>{c.date} · {c.seriesIds.length} série{c.seriesIds.length!==1?"s":""}{c.level?` · ${c.level}`:""}</div>
             </div>
-          )}
-          {availableFiltered.map(ser=>(
-            <div key={ser.id} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",background:C.cream,borderRadius:8,border:`1px solid ${C.stone}`,marginBottom:6}}>
-              <span style={{flex:1,fontSize:13,color:C.slate}}>{ser.name}</span>
-              <Badge label={ser.type} color={ser.type==="reformer"?"teal":ser.type==="barre"?"coral":"gold"}/>
-              <Btn small variant="ghost" onClick={()=>addSer(ser.id)}><Icon name="plus" size={12}/></Btn>
-            </div>
-          ))}
-          {availableFiltered.length===0&&<div style={{color:C.mist,fontSize:13}}>{zoneFilter!=="all"?"Nenhuma série com esta zona.":"Todas as séries já foram adicionadas."}</div>}
-        </div>
+            <Badge label={c.type==="signature"?"✦ Signature":c.type} color={c.type==="signature"?"gold":c.type==="reformer"?"teal":"coral"}/>
+            {c.visibility==='pending_studio'&&<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:20,background:"#fef9ec",color:"#b45309",border:"1px solid #fcd34d"}}>⏳ Em revisão</span>}
+            {hasStudio&&c.visibility==='personal'&&onPublishClass&&<Btn small variant="ghost" onClick={e=>{e.stopPropagation();onPublishClass(c);}} title="Submeter para revisão do studio" style={{color:"#1a56db"}}>↑ Studio</Btn>}
+            <Btn small onClick={e=>{e.stopPropagation();onViewAula(c);}}><Icon name="eye" size={13}/> Ver Aula</Btn>
+            <button onClick={e=>{e.stopPropagation();onDeleteClass(c.id);}} title="Apagar aula" style={{background:"none",border:`1px solid ${C.stone}`,borderRadius:8,cursor:"pointer",color:C.coral,padding:"6px 8px",display:"inline-flex",alignItems:"center"}}><Icon name="x" size={13}/></button>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -2963,23 +3147,29 @@ const MovementLibraryPage = ({ series, onUpdateSeries, aiStyle }) => {
     const newName = (fields.name ?? '').trim();
     const newBreath = (fields.breath ?? '').trim();
     const newNotes = (fields.notes ?? '').trim();
-    const bySeries = {};
-    refs.forEach(r => { if(!bySeries[r.seriesId]) bySeries[r.seriesId]=[]; bySeries[r.seriesId].push(r); });
-    for (const [seriesId, seriesRefs] of Object.entries(bySeries)) {
-      const s = series.find(x => x.id === seriesId);
-      if (!s) continue;
-      let updated = { ...s };
-      seriesRefs.forEach(r => {
-        const side = updated[r.sideKey];
-        if (!side?.movements) return;
-        const movs = [...side.movements];
-        movs[r.movIndex] = { ...movs[r.movIndex], movement: newName||movs[r.movIndex].movement, breath: newBreath, notes: newNotes };
-        updated = { ...updated, [r.sideKey]: { ...side, movements: movs } };
-      });
-      await onUpdateSeries(updated);
+    if (!newName) { toast_?.('O nome não pode estar vazio', 'error'); return; }
+    try {
+      const bySeries = {};
+      refs.forEach(r => { if(!bySeries[r.seriesId]) bySeries[r.seriesId]=[]; bySeries[r.seriesId].push(r); });
+      for (const [seriesId, seriesRefs] of Object.entries(bySeries)) {
+        const s = series.find(x => x.id === seriesId);
+        if (!s) continue;
+        let updated = { ...s };
+        seriesRefs.forEach(r => {
+          const side = updated[r.sideKey];
+          if (!side?.movements) return;
+          const movs = [...side.movements];
+          movs[r.movIndex] = { ...movs[r.movIndex], movement: newName, breath: newBreath, notes: newNotes };
+          updated = { ...updated, [r.sideKey]: { ...side, movements: movs } };
+        });
+        await onUpdateSeries(updated);
+      }
+      toast_?.('Guardado');
+      toggleExpand(movKey);
+    } catch(e) {
+      console.error('saveEdit failed:', e);
+      toast_?.('Erro ao guardar', 'error');
     }
-    toast_?.('Guardado');
-    toggleExpand(movKey);
   };
 
   return (
@@ -3074,20 +3264,49 @@ const MovementLibraryPage = ({ series, onUpdateSeries, aiStyle }) => {
 
 
 // ─── STUDIO PAGE ─────────────────────────────────────────────────────────────
-const ProfilePage = ({ profile, user, onProfileUpdate, studioSettings, aiStyle, onAiStyleChange }) => {
+const ProfilePage = ({ profile, user, onProfileUpdate, studioSettings, aiStyle, onAiStyleChange, series=[], onSaveSeries }) => {
   const [editName, setEditName] = useState(profile?.name || '');
   const [editPrefZones, setEditPrefZones] = useState(profile?.settings?.preferred_zones || []);
   const [editPrefClassTypes, setEditPrefClassTypes] = useState(profile?.settings?.class_types || []);
   const [editPrefLevels, setEditPrefLevels] = useState(profile?.settings?.preferred_levels || []);
+  const [editSeriesTypes, setEditSeriesTypes] = useState(profile?.settings?.series_types || []);
   const [newPrefZone, setNewPrefZone] = useState('');
   const [newPrefClassType, setNewPrefClassType] = useState('');
   const [newPrefLevel, setNewPrefLevel] = useState('');
+  const [newSeriesType, setNewSeriesType] = useState('');
   const [saving, setSaving] = useState(false);
   const [aiLang, setAiLang] = useState('');
   const [aiTone, setAiTone] = useState('');
   const [aiCueStyle, setAiCueStyle] = useState('');
   const [aiNotes, setAiNotes] = useState('');
   const toast_ = useToast();
+  const confirm_ = useConfirm();
+
+  const removeZone = async (z) => {
+    const affected = series.filter(s => (s.targetZone||"").split(",").map(x=>x.trim()).includes(z));
+    if (affected.length > 0) {
+      const also = await confirm_(`${affected.length} série${affected.length!==1?"s":""} ${affected.length===1?"tem":"têm"} a zona "${z}". Remover também das séries?`, { confirmLabel: "Remover das séries", cancelLabel: "Só da lista" });
+      if (also) {
+        affected.forEach(s => {
+          const zones = (s.targetZone||"").split(",").map(x=>x.trim()).filter(x=>x!==z);
+          const primaryZone = s.primaryZone===z ? (zones[0]||"") : s.primaryZone;
+          onSaveSeries?.({...s, targetZone: zones.join(", "), primaryZone});
+        });
+      }
+    }
+    setEditPrefZones(p => p.filter(x => x !== z));
+  };
+
+  const removeSeriesType = async (t) => {
+    const affected = series.filter(s => s.seriesType===t);
+    if (affected.length > 0) {
+      const also = await confirm_(`${affected.length} série${affected.length!==1?"s":""} ${affected.length===1?"tem":"têm"} o tipo "${t}". Remover também das séries?`, { confirmLabel: "Remover das séries", cancelLabel: "Só da lista" });
+      if (also) {
+        affected.forEach(s => onSaveSeries?.({...s, seriesType: ""}));
+      }
+    }
+    setEditSeriesTypes(p => p.filter(x => x !== t));
+  };
 
   useEffect(() => { if (aiStyle) setAiNotes(aiStyle); }, []);
 
@@ -3096,6 +3315,7 @@ const ProfilePage = ({ profile, user, onProfileUpdate, studioSettings, aiStyle, 
     setEditPrefZones(profile?.settings?.preferred_zones || []);
     setEditPrefClassTypes(profile?.settings?.class_types || []);
     setEditPrefLevels(profile?.settings?.preferred_levels || []);
+    setEditSeriesTypes(profile?.settings?.series_types || []);
   }, [profile]);
 
   const save = async () => {
@@ -3104,7 +3324,7 @@ const ProfilePage = ({ profile, user, onProfileUpdate, studioSettings, aiStyle, 
     onAiStyleChange?.(assembled);
     const { error } = await supabase.from('profiles').update({
       name: editName,
-      settings: { ...(profile?.settings || {}), preferred_zones: editPrefZones, class_types: editPrefClassTypes, preferred_levels: editPrefLevels },
+      settings: { ...(profile?.settings || {}), preferred_zones: editPrefZones, class_types: editPrefClassTypes, preferred_levels: editPrefLevels, series_types: editSeriesTypes },
     }).eq('id', profile.id);
     setSaving(false);
     if (!error) {
@@ -3155,25 +3375,34 @@ const ProfilePage = ({ profile, user, onProfileUpdate, studioSettings, aiStyle, 
           <div style={{ fontSize: 14, color: C.mist, padding: '8px 0' }}>{user?.email}</div>
         </div>
 
-        {/* Preferred Zones */}
+        {/* Zones */}
         <div>
-          <div style={{ fontSize: 12, fontWeight: 700, color: C.mist, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Zonas preferidas</div>
-          <PillRow items={editPrefZones} onRemove={z => setEditPrefZones(p => p.filter(x => x !== z))}
+          <div style={{ fontSize: 12, fontWeight: 700, color: C.mist, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Zonas target (corpo)</div>
+          <PillRow items={editPrefZones} onRemove={removeZone}
             newVal={newPrefZone} onNewVal={setNewPrefZone} placeholder="Adicionar zona…"
             onAdd={() => { const v = newPrefZone.trim(); if (v && !editPrefZones.map(x => x.toLowerCase()).includes(v.toLowerCase())) { setEditPrefZones(p => [...p, v]); setNewPrefZone(''); } }} />
         </div>
 
-        {/* Preferred Class Types */}
+        {/* Series Types */}
         <div>
-          <div style={{ fontSize: 12, fontWeight: 700, color: C.mist, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Tipos de aula preferidos</div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: C.mist, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Tipos de série</div>
+          <PillRow items={editSeriesTypes} onRemove={removeSeriesType}
+            newVal={newSeriesType} onNewVal={setNewSeriesType} placeholder="ex. Warm-up, Força, Flow…"
+            onAdd={() => { const v = newSeriesType.trim(); if (v && !editSeriesTypes.map(x => x.toLowerCase()).includes(v.toLowerCase())) { setEditSeriesTypes(p => [...p, v]); setNewSeriesType(''); } }} />
+          {editSeriesTypes.length===0&&<div style={{fontSize:11,color:C.mist,marginTop:4}}>Sem tipos personalizados — usa os padrões: {DEFAULT_SERIES_TYPES.join(', ')}</div>}
+        </div>
+
+        {/* Class Types */}
+        <div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: C.mist, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Tipos de aula</div>
           <PillRow items={editPrefClassTypes} onRemove={t => setEditPrefClassTypes(p => p.filter(x => x !== t))}
             newVal={newPrefClassType} onNewVal={setNewPrefClassType} placeholder="Adicionar tipo…"
             onAdd={() => { const v = newPrefClassType.trim(); if (v && !editPrefClassTypes.map(x => x.toLowerCase()).includes(v.toLowerCase())) { setEditPrefClassTypes(p => [...p, v]); setNewPrefClassType(''); } }} />
         </div>
 
-        {/* Preferred Levels */}
+        {/* Levels */}
         <div>
-          <div style={{ fontSize: 12, fontWeight: 700, color: C.mist, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Níveis preferidos</div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: C.mist, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Níveis</div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
             {classLevelOptions.map(lvl => {
               const active = editPrefLevels.includes(lvl);
@@ -3260,6 +3489,7 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary }) => {
   const [newZone, setNewZone] = useState('');
   const [newClassLevel, setNewClassLevel] = useState('');
   const [savingSettings, setSavingSettings] = useState(false);
+  const [editGuidelines, setEditGuidelines] = useState('');
   const toast_ = useToast();
   const confirm_ = useConfirm();
 
@@ -3271,17 +3501,19 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary }) => {
       setEditClassTypes(studio.settings.class_types || DEFAULT_STUDIO_CLASS_TYPES);
       setEditZones(studio.settings.zones || DEFAULT_STUDIO_ZONES);
       setEditClassLevels(studio.settings.class_levels || DEFAULT_CLASS_LEVELS);
+      setEditGuidelines(studio.settings.guidelines || '');
     } else {
       setEditClassTypes(DEFAULT_STUDIO_CLASS_TYPES);
       setEditZones(DEFAULT_STUDIO_ZONES);
       setEditClassLevels(DEFAULT_CLASS_LEVELS);
+      setEditGuidelines('');
     }
   }, [studio]);
 
   const saveSettings = async () => {
     setSavingSettings(true);
     const { error } = await supabase.from('studios').update({
-      settings: { ...(studio?.settings || {}), class_types: editClassTypes, zones: editZones, class_levels: editClassLevels },
+      settings: { ...(studio?.settings || {}), class_types: editClassTypes, zones: editZones, class_levels: editClassLevels, guidelines: editGuidelines },
     }).eq('id', profile.studio_id);
     setSavingSettings(false);
     if (!error) {
@@ -3658,6 +3890,17 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary }) => {
                 style={{ padding: '7px 14px', borderRadius: 8, border: `1px solid ${C.stone}`, background: 'transparent', color: C.ink, fontWeight: 600, fontSize: 13, cursor: 'pointer', fontFamily: "'Satoshi',sans-serif" }}>+ Adicionar</button>
             </div>
           </div>
+          {/* Studio AI Guidelines */}
+          <div style={{ marginBottom: 20 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.mist, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Diretrizes para IA</div>
+            <div style={{ fontSize: 12, color: C.mist, marginBottom: 8 }}>Descreve o método, equipamento, terminologia e regras do studio. Estas diretrizes são injetadas em todos os prompts de IA dos Instructors do studio.</div>
+            <AutoTextarea
+              value={editGuidelines}
+              onChange={e => setEditGuidelines(e.target.value)}
+              placeholder="ex. Usamos método STOTT Pilates. Sempre cue en português europeu. Nunca mencionar perda de peso. O studio tem reformers Balanced Body..."
+              style={{ width: '100%', fontSize: 13, minHeight: 100, resize: 'vertical', borderRadius: 8, border: `1px solid ${C.stone}`, padding: '8px 12px', fontFamily: "'Satoshi',sans-serif", color: C.ink, background: C.cream, outline: 'none', boxSizing: 'border-box' }}
+            />
+          </div>
           <button onClick={saveSettings} disabled={savingSettings} style={{ padding: '9px 24px', borderRadius: 8, border: 'none', background: savingSettings ? C.stone : C.crimson, color: C.cream, fontWeight: 700, fontSize: 13, cursor: savingSettings ? 'not-allowed' : 'pointer', fontFamily: "'Satoshi',sans-serif" }}>
             {savingSettings ? 'A guardar…' : 'Guardar definições'}
           </button>
@@ -3885,8 +4128,370 @@ const ClientPortal = ({ user, profile }) => {
   );
 };
 
+// ─── CONTEXT AI PANEL ─────────────────────────────────────────────────────────
+const CHATS_KEY = 'haven_ai_chats';
+const loadChats = () => { try { return JSON.parse(localStorage.getItem(CHATS_KEY)||'[]'); } catch(e) { return []; } };
+const deleteChat = id => { try { localStorage.setItem(CHATS_KEY, JSON.stringify(loadChats().filter(c=>c.id!==id))); } catch(e) {} };
+const newChatId = () => 'chat_'+(crypto.randomUUID?.()??Math.random().toString(36).slice(2)+Math.random().toString(36).slice(2));
+
+const ContextAIPanel = ({ open, onToggle, screen, editingSeries, series, classes, aiStyle, onUpdateSeries, onNavigate, profile }) => {
+  const [messages, setMessages] = React.useState([]);
+  const [input, setInput] = React.useState("");
+  const [loading, setLoading] = React.useState(false);
+  const [lastQuickAction, setLastQuickAction] = React.useState(null);
+  const [showHistory, setShowHistory] = React.useState(false);
+  const [chatId, setChatId] = React.useState(newChatId);
+  const [historyRefresh, setHistoryRefresh] = React.useState(0);
+  const scrollContainerRef = React.useRef();
+  const toast_ = useToast();
+
+  const saveChat = React.useCallback((id, msgs, label, cKey) => {
+    if (msgs.length < 2) return;
+    const chats = loadChats();
+    const title = msgs.find(m=>m.role==='user')?.text?.slice(0,50)||'Chat';
+    const idx = chats.findIndex(c=>c.id===id);
+    const item = { id, label, title, contextKey: cKey, messages: msgs, savedAt: new Date().toISOString() };
+    if (idx>=0) chats[idx]=item; else chats.unshift(item);
+    try { localStorage.setItem(CHATS_KEY, JSON.stringify(chats.slice(0,30))); } catch(e) {}
+  }, []);
+
+  // Reset chat when context changes meaningfully
+  const contextKey = `${screen.mode}-${screen.cls?.id||""}-${editingSeries?.id||""}`;
+  const prevContextKey = React.useRef(contextKey);
+  React.useEffect(() => {
+    if (prevContextKey.current !== contextKey) {
+      setMessages([]);
+      setInput("");
+      setLastQuickAction(null);
+      setChatId(newChatId());
+      setShowHistory(false);
+      prevContextKey.current = contextKey;
+    }
+  }, [contextKey]);
+
+  React.useEffect(() => {
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
+    }
+  }, [messages]);
+
+  const getContext = () => {
+    if (editingSeries) {
+      const s = editingSeries;
+      const isSig = s.type==="signature";
+      const d = s.type==="barre"?s.barre:s.reformer;
+      if (isSig) {
+        const rM=s.reformer?.movements||[], bM=s.barre?.movements||[];
+        return `Série: "${s.name}" (Signature)\nReformer setup: ${s.reformer?.springs||"-"} springs, ${s.reformer?.props||"-"}\nBarre setup: ${s.barre?.props||"-"}\nMovimentos:\n${rM.map((m,i)=>`  ${m.timing||i+1}: R: ${m.movement} | B: ${(bM[i]||{}).movement||"-"}`).join("\n")}\nMúsculos: ${s.muscles?.join(", ")||"-"}`;
+      }
+      return `Série: "${s.name}" (${s.type})\nSetup: ${d?.springs||"-"} springs, ${d?.props||"-"}, posição: ${d?.startPosition||"-"}\nMovimentos:\n${(d?.movements||[]).map((m,i)=>`  ${m.timing||i+1}: ${m.movement}`).join("\n")}\nMúsculos: ${s.muscles?.join(", ")||"-"}`;
+    }
+    if ((screen.mode==="aula" || screen.mode==="builder") && screen.cls) {
+      const cls = classes.find(c=>c.id===screen.cls.id) || screen.cls;
+      const seriesInClass = (cls.seriesIds||[]).map(id=>series.find(s=>s.id===id)).filter(Boolean);
+      return `Aula: "${cls.name}" (${cls.type||"geral"})\nData: ${cls.date||"-"}\nNível: ${cls.level||"-"}\nSéries (${seriesInClass.length}):\n${seriesInClass.map((s,i)=>`  ${i+1}. ${s.name} (${s.type}) — zona: ${s.primaryZone||s.targetZone||"-"}, músculos: ${s.muscles?.slice(0,3).join(", ")||"-"}`).join("\n")}`;
+    }
+    return null;
+  };
+
+  const getSystemPrompt = () => {
+    const styleCtx = aiStyle ? `\n\nEstilo de ensino do instructor: ${aiStyle}` : "";
+    if (editingSeries) {
+      return `És um expert STOTT Pilates a ajudar um instructor a melhorar as suas séries. Dá sugestões específicas sobre sequência, flow biomecânico, princípios STOTT, escolha de springs/props, e cues. Explica sempre o porquê. Não reescreves a série — ofereces sugestões que o instructor pode escolher aplicar ou ignorar. Responde em português (Portugal).${styleCtx}`;
+    }
+    if (screen.mode==="builder" || screen.mode==="aula") {
+      return `És um expert STOTT Pilates a ajudar um instructor a estruturar e melhorar as suas aulas. Podes ajudar com: estrutura da aula, fluxo da aula, progressão de séries, equilíbrio de trabalho muscular, e sugestões de warm-up/cool-down. Responde em português (Portugal).${styleCtx}`;
+    }
+    return `És um expert STOTT Pilates a ajudar um instructor. Podes responder a perguntas sobre técnica, metodologia STOTT, programação de aulas, e equipamento. Responde em português (Portugal).${styleCtx}`;
+  };
+
+  const getLabel = () => {
+    if (editingSeries) return `Análise — ${editingSeries.name}`;
+    if (screen.mode==="library") return "Assistente de séries";
+    if (screen.mode==="builder") return "Assistente de aulas";
+    if (screen.mode==="aula") return "Assistente da aula";
+    if (screen.mode==="movements") return "Assistente de movimentos";
+    return "Assistente IA";
+  };
+
+  const send = async (userMsg, actionType) => {
+    const text = userMsg || input.trim();
+    if (!text) return;
+    setLastQuickAction(actionType||null);
+    const newMessages = [...messages, { role:"user", text }];
+    setMessages(newMessages);
+    setInput("");
+    setLoading(true);
+    try {
+      const ctx = getContext();
+      const apiMessages = [];
+      const firstText = newMessages[0].text;
+      apiMessages.push({ role:"user", content: ctx ? `${ctx}\n\n---\n${firstText}` : firstText });
+      for (let i=1; i<newMessages.length; i++) {
+        const m = newMessages[i];
+        apiMessages.push({ role: m.role==="user"?"user":"assistant", content: m.text });
+      }
+      const resp = await fetch("/api/ai", {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ system: getSystemPrompt(), messages: apiMessages, max_tokens: 800 }),
+      });
+      const data = await resp.json();
+      const reply = data?.content?.[0]?.text || "Sem resposta.";
+      setMessages(prev=>{
+        const next=[...prev, { role:"assistant", text: reply }];
+        saveChat(chatId, next, getLabel(), contextKey);
+        return next;
+      });
+    } catch(e) {
+      console.error(e);
+      setMessages(prev=>[...prev, { role:"assistant", text:"Erro ao contactar a IA." }]);
+    }
+    setLoading(false);
+  };
+
+  const QUICK_ACTIONS = editingSeries ? [
+    { label:"✦ Músculos", actionType:"muscles", prompt:"Analisa a série e lista os 5 músculos principais trabalhados. Responde APENAS com JSON: {\"muscles\":[\"m1\",\"m2\",...]}" },
+    { label:"✦ Notas", actionType:"notes", prompt:"Escreve notas de instructor para esta série: técnica, erros comuns, e cues verbais em português (2-3 frases). Responde APENAS com o texto das notas." },
+    { label:"✦ Modificações", actionType:"mods", prompt:"Sugere modificações, progressões e regressões para diferentes níveis e limitações físicas. Responde em português." },
+  ] : [];
+
+  return (
+    <div style={{
+      width: open ? 340 : 44,
+      flexShrink: 0,
+      borderLeft: `1px solid ${C.stone}`,
+      background: C.white,
+      display: "flex",
+      flexDirection: "column",
+      minHeight: "calc(100vh - 54px)",
+      position: "sticky",
+      top: 54,
+      transition: "width 0.2s",
+      overflow: "hidden",
+    }}>
+      {/* Toggle button */}
+      <button onClick={onToggle} style={{
+        position:"absolute", top:12, left: open ? 12 : 8,
+        background:"none", border:`1px solid ${C.stone}`, borderRadius:6,
+        cursor:"pointer", color:C.mist, padding:"4px 7px", fontSize:12,
+        fontFamily:"'Satoshi',sans-serif", zIndex:10,
+        transition:"left 0.2s",
+      }} title={open?"Fechar painel":"Abrir painel IA"}>
+        {open ? "›" : "‹"}
+      </button>
+
+      {open && (
+        <>
+          {/* Header */}
+          <div style={{padding:"12px 16px 10px 44px",borderBottom:`1px solid ${C.stone}`,flexShrink:0,display:"flex",alignItems:"center",gap:6}}>
+            <div style={{fontSize:11,fontWeight:700,color:C.neutral,textTransform:"uppercase",letterSpacing:"0.08em",flex:1}}>{getLabel()}</div>
+            {!showHistory&&messages.length>0&&<button onClick={()=>{setMessages([]);setChatId(newChatId());}} style={{fontFamily:"'Satoshi',sans-serif",fontSize:10,color:C.mist,background:"none",border:`1px solid ${C.stone}`,borderRadius:5,cursor:"pointer",padding:"2px 7px",flexShrink:0}}>Nova</button>}
+            <button onClick={()=>setShowHistory(p=>!p)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:10,color:showHistory?C.crimson:C.mist,background:"none",border:`1px solid ${showHistory?C.crimson:C.stone}`,borderRadius:5,cursor:"pointer",padding:"2px 7px",flexShrink:0}}>{showHistory?"← Voltar":"Histórico"}</button>
+          </div>
+
+          {/* History view */}
+          {showHistory&&(
+            <div style={{flex:1,overflowY:"auto",padding:10,display:"flex",flexDirection:"column",gap:6}}>
+              {(()=>{
+                const chats = loadChats();
+                if(!chats.length) return <div style={{textAlign:"center",color:C.mist,fontSize:12,padding:"24px 8px",lineHeight:1.5}}>Sem conversas guardadas ainda.</div>;
+                return chats.map(chat=>(
+                  <div key={chat.id} onClick={()=>{setMessages(chat.messages);setChatId(chat.id);setShowHistory(false);}}
+                    style={{padding:"8px 10px",borderRadius:8,border:`1px solid ${C.stone}`,cursor:"pointer",background:C.cream,display:"flex",gap:6,alignItems:"flex-start",transition:"background 0.1s"}}
+                    onMouseEnter={e=>e.currentTarget.style.background=C.stone}
+                    onMouseLeave={e=>e.currentTarget.style.background=C.cream}>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:12,fontWeight:600,color:C.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{chat.title}</div>
+                      <div style={{fontSize:10,color:C.mist,marginTop:2}}>{chat.label} · {chat.savedAt?.split('T')[0]||""}</div>
+                    </div>
+                    <button onClick={e=>{e.stopPropagation();deleteChat(chat.id);setHistoryRefresh(p=>p+1);}}
+                      style={{background:"none",border:"none",color:C.mist,cursor:"pointer",padding:"1px 4px",fontSize:14,lineHeight:1,flexShrink:0}}>×</button>
+                  </div>
+                ));
+              })()}
+            </div>
+          )}
+
+          {/* Quick actions */}
+          {!showHistory && QUICK_ACTIONS.length > 0 && (
+            <div style={{padding:"8px 12px",borderBottom:`1px solid ${C.stone}`,display:"flex",gap:5,flexWrap:"wrap",flexShrink:0}}>
+              {QUICK_ACTIONS.map(qa=>(
+                <button key={qa.actionType} onClick={()=>send(qa.prompt, qa.actionType)} disabled={loading}
+                  style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"3px 9px",borderRadius:12,border:`1px solid ${C.sig}`,background:`${C.sig}30`,color:"#7a4010",cursor:loading?"not-allowed":"pointer"}}>
+                  {qa.label}
+                </button>
+              ))}
+              {messages.length>0&&<button onClick={()=>{setMessages([]);setLastQuickAction(null);}} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,color:C.mist,background:"none",border:"none",cursor:"pointer",padding:"3px 6px"}}>Limpar</button>}
+            </div>
+          )}
+
+          {/* Messages */}
+          {!showHistory&&<div ref={scrollContainerRef} style={{flex:1,overflowY:"auto",padding:"12px",display:"flex",flexDirection:"column",gap:8}}>
+            {messages.length===0&&!loading&&(
+              <div style={{textAlign:"center",color:C.mist,fontSize:12,padding:"20px 8px",lineHeight:1.5}}>
+                {editingSeries ? `A analisar "${editingSeries.name}". Usa os atalhos acima ou faz uma pergunta.` : "Como posso ajudar?"}
+              </div>
+            )}
+            {messages.map((m,i)=>{
+              const isLastAssistant = m.role==="assistant" && i===messages.length-1 && !loading;
+              return (
+                <div key={i} style={{display:"flex",flexDirection:"column",gap:3,alignItems:m.role==="user"?"flex-end":"flex-start"}}>
+                  <div style={{
+                    maxWidth:"92%",padding:"8px 11px",
+                    borderRadius:m.role==="user"?"10px 10px 3px 10px":"10px 10px 10px 3px",
+                    background:m.role==="user"?C.crimson:`${C.neutral}12`,
+                    color:m.role==="user"?C.white:C.ink,
+                    fontSize:12,lineHeight:1.5,whiteSpace:"pre-wrap",
+                    fontFamily:"'Satoshi',sans-serif",
+                  }}>{m.text}</div>
+                  {isLastAssistant && lastQuickAction && onUpdateSeries && editingSeries && (
+                    <div style={{display:"flex",gap:5,marginTop:2}}>
+                      {lastQuickAction==="muscles"&&(
+                        <button onClick={()=>{
+                          try {
+                            const parsed=JSON.parse(m.text.replace(/```json|```/g,"").trim());
+                            if(parsed.muscles) onUpdateSeries({...editingSeries,muscles:parsed.muscles});
+                          } catch(e) {
+                            const lines=m.text.split(/[\n,]+/).map(x=>x.replace(/^[-*\d.•\s"]+/,"").replace(/[",]/g,"").trim()).filter(Boolean);
+                            onUpdateSeries({...editingSeries,muscles:lines.slice(0,8)});
+                          }
+                          setLastQuickAction(null);
+                        }} style={{fontSize:10,fontWeight:600,padding:"2px 8px",borderRadius:5,border:`1px solid ${C.neutral}`,background:`${C.neutral}15`,color:C.neutral,cursor:"pointer",fontFamily:"'Satoshi',sans-serif"}}>
+                          ✓ Aceitar músculos
+                        </button>
+                      )}
+                      {lastQuickAction==="notes"&&(
+                        <button onClick={()=>{
+                          onUpdateSeries({...editingSeries,cues:m.text.trim()});
+                          setLastQuickAction(null);
+                        }} style={{fontSize:10,fontWeight:600,padding:"2px 8px",borderRadius:5,border:`1px solid ${C.neutral}`,background:`${C.neutral}15`,color:C.neutral,cursor:"pointer",fontFamily:"'Satoshi',sans-serif"}}>
+                          ✓ Aceitar notas
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            {loading&&(
+              <div style={{display:"flex",gap:4,padding:"4px 0",alignItems:"center"}}>
+                {[0,0.2,0.4].map((d,i)=><div key={i} style={{width:5,height:5,borderRadius:"50%",background:C.neutral,animation:`pulse 1s infinite ${d}s`}}/>)}
+              </div>
+            )}
+          </div>}
+
+          {/* Input */}
+          {!showHistory&&<div style={{padding:"8px 12px",borderTop:`1px solid ${C.stone}`,display:"flex",gap:6,alignItems:"flex-end",flexShrink:0}}>
+            <AutoTextarea
+              value={input}
+              onChange={e=>setInput(e.target.value)}
+              placeholder="Pergunta ou pedido…"
+              onKeyDown={e=>{ if(e.key==="Enter"&&!e.shiftKey&&input.trim()){e.preventDefault();send();} }}
+              style={{flex:1,fontSize:12,minHeight:32,resize:"none",borderRadius:8,border:`1px solid ${C.stone}`,padding:"6px 10px",fontFamily:"'Satoshi',sans-serif",outline:"none"}}
+            />
+            <button onClick={()=>send()} disabled={loading||!input.trim()} style={{padding:"6px 10px",borderRadius:8,border:"none",background:input.trim()&&!loading?C.crimson:C.stone,color:C.cream,cursor:input.trim()&&!loading?"pointer":"default",flexShrink:0}}>
+              <Icon name="send" size={12}/>
+            </button>
+          </div>}
+        </>
+      )}
+    </div>
+  );
+};
+
+// ─── HOME PAGE ─────────────────────────────────────────────────────────────────
+const HomePage = ({ series, classes, profile, onNewSeries, onNewClass, onViewSeries, onViewClass, onGoStudio }) => {
+  const recentSeries = [...series].sort((a,b)=>(b.updatedAt||b.createdAt||"").localeCompare(a.updatedAt||a.createdAt||"")).slice(0,5);
+  const recentClasses = [...classes].sort((a,b)=>(b.date||"").localeCompare(a.date||"")||0).slice(0,5);
+  const pendingCount = series.filter(s=>s.visibility==='pending_studio').length + classes.filter(c=>c.visibility==='pending_studio').length;
+  const hasStudio = !!profile?.studio_id;
+
+  const StatCard = ({ label, value, sub, onClick }) => (
+    <div onClick={onClick} style={{background:C.white,borderRadius:14,border:`1px solid ${C.stone}`,padding:"18px 20px",cursor:onClick?"pointer":"default",flex:1,minWidth:0}}>
+      <div style={{fontFamily:"'Clash Display',sans-serif",fontSize:28,fontWeight:600,color:C.crimson,lineHeight:1}}>{value}</div>
+      <div style={{fontSize:12,fontWeight:700,color:C.ink,marginTop:6,textTransform:"uppercase",letterSpacing:"0.06em"}}>{label}</div>
+      {sub&&<div style={{fontSize:11,color:C.mist,marginTop:2}}>{sub}</div>}
+    </div>
+  );
+
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:24}}>
+      {/* Welcome */}
+      <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",flexWrap:"wrap",gap:12}}>
+        <div>
+          <div style={{fontFamily:"'Clash Display', sans-serif",fontSize:30,fontWeight:500,color:C.crimson,marginBottom:2}}>
+            Olá{profile?.name?`, ${profile.name.split(' ')[0]}`:''}
+          </div>
+          <div style={{fontSize:13,color:C.mist}}>O que queres fazer hoje?</div>
+        </div>
+        <div style={{display:"flex",gap:8}}>
+          <button onClick={onNewSeries} style={{fontFamily:"'Satoshi',sans-serif",fontWeight:700,fontSize:13,padding:"10px 20px",borderRadius:10,border:"none",background:C.crimson,color:C.cream,cursor:"pointer"}}>+ Nova Série</button>
+          <button onClick={onNewClass} style={{fontFamily:"'Satoshi',sans-serif",fontWeight:700,fontSize:13,padding:"10px 20px",borderRadius:10,border:`2px solid ${C.crimson}`,background:"transparent",color:C.crimson,cursor:"pointer"}}>+ Nova Aula</button>
+        </div>
+      </div>
+
+      {/* Stat cards */}
+      <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
+        <StatCard label="Séries" value={series.length} sub={`${series.filter(s=>s.status==='approved').length} aprovadas`}/>
+        <StatCard label="Aulas" value={classes.length}/>
+        {hasStudio&&<StatCard label="Em revisão" value={pendingCount} sub="no studio" onClick={onGoStudio}/>}
+      </div>
+
+      {/* Studio notifications */}
+      {hasStudio && pendingCount > 0 && (
+        <div onClick={onGoStudio} style={{background:"#fef9ec",border:"1px solid #fcd34d",borderRadius:12,padding:"12px 16px",cursor:"pointer",display:"flex",alignItems:"center",gap:10}}>
+          <span style={{fontSize:16}}>⏳</span>
+          <div style={{fontSize:13,fontWeight:600,color:"#92400e"}}>Studio: {pendingCount} {pendingCount===1?"item":"itens"} em revisão — <span style={{fontWeight:400}}>clica para ver</span></div>
+        </div>
+      )}
+
+      {/* Two-column recent content */}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
+        {/* Recent series */}
+        <div>
+          <div style={{fontFamily:"'Clash Display',sans-serif",fontSize:14,fontWeight:600,color:C.ink,marginBottom:8,textTransform:"uppercase",letterSpacing:"0.06em"}}>Séries recentes</div>
+          {recentSeries.length===0&&<div style={{fontSize:13,color:C.mist}}>Ainda sem séries.</div>}
+          <div style={{display:"flex",flexDirection:"column",gap:5}}>
+            {recentSeries.map(s=>(
+              <div key={s.id} onClick={()=>onViewSeries(s)} style={{background:C.white,borderRadius:10,border:`1px solid ${C.stone}`,padding:"9px 14px",cursor:"pointer",display:"flex",alignItems:"center",gap:8,transition:"border-color 0.15s"}}
+                onMouseEnter={e=>e.currentTarget.style.borderColor=C.neutral}
+                onMouseLeave={e=>e.currentTarget.style.borderColor=C.stone}>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:13,fontWeight:600,color:C.ink,fontFamily:"'Clash Display',sans-serif",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.name}</div>
+                  <div style={{fontSize:11,color:C.mist,marginTop:1}}>{s.type==="signature"?"Signature":s.type==="barre"?"Barre":"Reformer"}{s.primaryZone||s.targetZone?` · ${(s.primaryZone||s.targetZone.split(',')[0]).trim()}`:""}
+                  </div>
+                </div>
+                <span style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:20,background:s.status==="approved"?"#e8f5e9":"#fef9ec",color:s.status==="approved"?"#2e7d32":"#b45309",flexShrink:0}}>{s.status==="approved"?"✓":""}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Recent classes */}
+        <div>
+          <div style={{fontFamily:"'Clash Display',sans-serif",fontSize:14,fontWeight:600,color:C.ink,marginBottom:8,textTransform:"uppercase",letterSpacing:"0.06em"}}>Aulas recentes</div>
+          {recentClasses.length===0&&<div style={{fontSize:13,color:C.mist}}>Ainda sem aulas.</div>}
+          <div style={{display:"flex",flexDirection:"column",gap:5}}>
+            {recentClasses.map(c=>(
+              <div key={c.id} onClick={()=>onViewClass(c)} style={{background:C.white,borderRadius:10,border:`1px solid ${C.stone}`,padding:"9px 14px",cursor:"pointer",display:"flex",alignItems:"center",gap:8,transition:"border-color 0.15s"}}
+                onMouseEnter={e=>e.currentTarget.style.borderColor=C.neutral}
+                onMouseLeave={e=>e.currentTarget.style.borderColor=C.stone}>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:13,fontWeight:600,color:C.ink,fontFamily:"'Clash Display',sans-serif",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name||"Sem nome"}</div>
+                  <div style={{fontSize:11,color:C.mist,marginTop:1}}>{c.date||"Sem data"}{c.type?` · ${c.type}`:""}{c.level?` · ${c.level}`:""}</div>
+                </div>
+                <Badge label={c.type==="signature"?"✦":c.type==="reformer"?"R":"B"} color={c.type==="signature"?"gold":c.type==="reformer"?"teal":"coral"}/>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
-export default function HavenInstructor() {
+function HavenApp() {
   const [user,    setUser]    = useState(null);
   const [profile, setProfile] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -3894,16 +4499,53 @@ export default function HavenInstructor() {
   const [classes, setClasses] = useState(DEFAULT_CLASSES);
   const [aiStyle, setAiStyle] = useState("");
   const [dataLoaded, setDataLoaded] = useState(false);
+
+  const effectiveAiStyle = React.useMemo(() => {
+    const guidelines = profile?.studios?.settings?.guidelines;
+    const parts = [
+      guidelines ? `Diretrizes do studio:\n${guidelines}` : '',
+      aiStyle || ''
+    ].filter(Boolean);
+    return parts.join('\n\n');
+  }, [profile?.studios?.settings?.guidelines, aiStyle]);
   const [filterType,    setFilterType]    = useState("all");
+  const [showChoreo,    setShowChoreo]    = useState(() => { try { return localStorage.getItem('showChoreo') !== 'false'; } catch(e) { return true; } });
   const [sortBy,        setSortBy]        = useState("targetZone");
   const [sortOrder,     setSortOrder]     = useState("asc");
   const [editingSeries, setEditingSeries] = useState(null);
   const [addingSeries,  setAddingSeries]  = useState(false);
-  const [screen, setScreen] = useState({ mode:"library", cls:null, fromLibrary:false });
+  const [screen, setScreen] = useState({ mode:"home", cls:null, fromLibrary:false });
   const [screenStack, setScreenStack] = useState([]);
+  const [aiPanelOpen, setAiPanelOpen] = useState(() => {
+    try { return localStorage.getItem('aiPanelOpen') !== 'false'; } catch(e) { return true; }
+  });
+  const toggleAiPanel = () => setAiPanelOpen(p => { const next=!p; try{localStorage.setItem('aiPanelOpen',String(next));}catch(e){} return next; });
+  const [seriesSearch, setSeriesSearch] = useState("");
+  const [compactSeries, setCompactSeries] = useState(() => { try { return localStorage.getItem('compactSeries') === 'true'; } catch(e) { return false; } });
+  const [aulaTeachingMode, setAulaTeachingMode] = useState(false);
+  const [aulaEditingSeries, setAulaEditingSeries] = useState(null);
 
-  const navigate = (newScreen) => { setScreenStack(prev => [...prev, screen]); setScreen(newScreen); };
-  const goBack = () => { const prev = screenStack[screenStack.length-1]; if(prev){ setScreen(prev); setScreenStack(p=>p.slice(0,-1)); } else setScreen({mode:'builder',cls:null}); };
+  const navigate = (newScreen) => {
+    const newStack = [...screenStack, screen];
+    setScreenStack(newStack);
+    setScreen(newScreen);
+    window.scrollTo(0, 0);
+    window.history.pushState({ screen: newScreen, screenStack: newStack }, '');
+    if (newScreen.mode !== 'aula') { setAulaTeachingMode(false); setAulaEditingSeries(null); }
+  };
+  const goBack = () => {
+    if (screenStack.length > 0) {
+      const prev = screenStack[screenStack.length - 1];
+      const newStack = screenStack.slice(0, -1);
+      setScreen(prev);
+      setScreenStack(newStack);
+      window.scrollTo(0, 0);
+      window.history.replaceState({ screen: prev, screenStack: newStack }, '');
+      if (prev.mode !== 'aula') { setAulaTeachingMode(false); setAulaEditingSeries(null); }
+    } else {
+      setScreen({mode:'builder',cls:null,fromLibrary:false});
+    }
+  };
 
   // Auth listener
   useEffect(()=>{
@@ -4020,7 +4662,13 @@ export default function HavenInstructor() {
     toast("Série copiada para a tua biblioteca");
   };
 
+  const isChoreoSeries = s => {
+    const movs=[...(s.reformer?.movements||[]),...(s.barre?.movements||[])];
+    return movs.some(m=>m.timing);
+  };
   const filteredSeries = series.filter(s=>{
+    if(!showChoreo && isChoreoSeries(s)) return false;
+    if(seriesSearch && !s.name.toLowerCase().includes(seriesSearch.toLowerCase())) return false;
     if(filterType==="all")      return true;
     if(filterType==="approved") return s.status==="approved";
     if(filterType==="reformer") return s.type==="reformer"||s.type==="signature";
@@ -4035,8 +4683,13 @@ export default function HavenInstructor() {
     return sortOrder==="asc" ? cmp : -cmp;
   });
 
-  const goTab = id => { setScreen({mode:id,cls:null,fromLibrary:false}); setEditingSeries(null); setAddingSeries(false); setScreenStack([]); };
-  const isAulaMode = screen.mode==="aula";
+  const goTab = id => {
+    const newScreen = {mode:id,cls:null,fromLibrary:false};
+    setScreen(newScreen); setEditingSeries(null); setAddingSeries(false); setScreenStack([]); setAulaTeachingMode(false); setAulaEditingSeries(null);
+    window.scrollTo(0, 0);
+    window.history.replaceState({ screen: newScreen, screenStack: [] }, '');
+  };
+  const isAulaMode = screen.mode==="aula" && aulaTeachingMode;
 
   useEffect(()=>{
     const id = "haven-fonts";
@@ -4046,6 +4699,24 @@ export default function HavenInstructor() {
       l.href = "https://api.fontshare.com/v2/css?f[]=clash-display@400,500,600,700&f[]=satoshi@400,500,700&display=swap";
       document.head.appendChild(l);
     }
+  }, []);
+
+  // Scroll to top after every screen change (useLayoutEffect fires after DOM update, before paint)
+  React.useLayoutEffect(() => {
+    window.scrollTo(0, 0);
+  }, [screen.mode, screen.cls?.id]);
+
+  useEffect(() => {
+    window.history.replaceState({ screen: { mode:"home", cls:null, fromLibrary:false }, screenStack: [] }, '');
+    const handlePop = (e) => {
+      if (e.state?.screen) {
+        setScreen(e.state.screen);
+        setScreenStack(e.state.screenStack || []);
+        if (e.state.screen.mode !== 'aula') { setAulaTeachingMode(false); setAulaEditingSeries(null); }
+      }
+    };
+    window.addEventListener('popstate', handlePop);
+    return () => window.removeEventListener('popstate', handlePop);
   }, []);
 
   if (authLoading) return <div style={{minHeight:"100vh",background:C.cream,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Satoshi',sans-serif",color:C.mist}}>A carregar…</div>;
@@ -4061,8 +4732,6 @@ export default function HavenInstructor() {
   );
 
   return (
-    <ToastProvider>
-    <ConfirmProvider>
     <div style={{minHeight:"100vh",background:C.cream,fontFamily:"'Satoshi', sans-serif"}}>
 
       {!isAulaMode&&(
@@ -4077,7 +4746,7 @@ export default function HavenInstructor() {
           <div style={{flex:1}}/>
           <div style={{display:"flex",alignItems:"center",gap:8}}>
             <div style={{display:"flex",gap:2,background:`rgba(0,0,0,0.15)`,padding:3,borderRadius:8}}>
-              {[["movements","Movimentos"],["library","Séries"],["builder","Aulas"],["studio","Studio"],["perfil","Perfil"]].map(([id,lbl])=>(
+              {[["home","Início"],["library","Séries"],["builder","Aulas"],["studio","Studio"],["perfil","Perfil"]].map(([id,lbl])=>(
                 <button key={id} onClick={()=>goTab(id)} style={{fontFamily:"'Satoshi', sans-serif",fontWeight:600,fontSize:12,padding:"6px 16px",borderRadius:6,border:"none",cursor:"pointer",background:screen.mode===id?C.cream:"transparent",color:screen.mode===id?C.crimson:`${C.cream}80`,transition:"all 0.15s"}}>{lbl}</button>
               ))}
             </div>
@@ -4086,70 +4755,107 @@ export default function HavenInstructor() {
         </div>
       )}
 
-      <div style={{maxWidth:1200,margin:"0 auto",padding:isAulaMode?"0":"28px 24px"}}>
+      <div style={{display:"flex",maxWidth:1600,margin:"0 auto",width:"100%",padding:isAulaMode?"0":"0",alignItems:"flex-start"}}>
+        <div style={{flex:1,minWidth:0,padding:isAulaMode?"0":"28px 24px",overflowX:"hidden"}}>
 
         <MovDatalist series={series}/>
+
+        {/* ── HOME ── */}
+        {screen.mode==="home"&&(
+          <HomePage
+            series={series}
+            classes={classes}
+            profile={profile}
+            onNewSeries={()=>{setAddingSeries(true);setEditingSeries(null);goTab("library");}}
+            onNewClass={()=>goTab("builder")}
+            onViewSeries={s=>{setEditingSeries(s);goTab("library");}}
+            onViewClass={c=>navigate({mode:"aula",cls:c,fromLibrary:false})}
+            onGoStudio={()=>goTab("studio")}
+          />
+        )}
 
         {/* ── LIBRARY ── */}
         {screen.mode==="library"&&(
           editingSeries||addingSeries
-            ? <SeriesEditor series={editingSeries} onSave={saveSeries} onSaveAsNew={s=>{saveSeries(s);}} onCancel={()=>{setEditingSeries(null);setAddingSeries(false);}} onDelete={id=>{deleteSeries(id);setEditingSeries(null);setAddingSeries(false);}} aiStyle={aiStyle}/>
+            ? <SeriesEditor series={editingSeries} onSave={saveSeries} onSaveAsNew={s=>{saveSeries(s);}} onCancel={()=>{setEditingSeries(null);setAddingSeries(false);}} onDelete={id=>{deleteSeries(id);setEditingSeries(null);setAddingSeries(false);}} aiStyle={effectiveAiStyle} studioSettings={profile?.studios?.settings} availableZones={profile?.settings?.preferred_zones?.length?profile.settings.preferred_zones:undefined} availableSeriesTypes={profile?.settings?.series_types?.length?profile.settings.series_types:undefined}/>
             : <>
+                {/* Top bar: title + search + new */}
                 <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16,flexWrap:"wrap"}}>
                   <h2 style={{fontFamily:"'Clash Display', sans-serif",fontSize:26,fontWeight:500,color:C.crimson,margin:0,flex:1}}>Biblioteca de Séries</h2>
-                  <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-                    {[["all","Todas"],["reformer","Reformer"],["barre","Barre"],["signature","Signature"],["approved","✓ Aprovadas"]].map(([val,lbl])=>(
-                      <button key={val} onClick={()=>setFilterType(val)} style={{fontFamily:"'Satoshi', sans-serif",fontSize:12,fontWeight:600,padding:"5px 14px",borderRadius:20,border:`1px solid ${filterType===val?C.neutral:C.stone}`,background:filterType===val?C.neutral:"transparent",color:filterType===val?C.white:C.mist,cursor:"pointer"}}>{lbl}</button>
-                    ))}
-                  </div>
-                  {/* Sort controls */}
-                  <div style={{display:"flex",gap:5,alignItems:"center"}}>
-                    <span style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.06em"}}>Ordenar:</span>
-                    {[["name","Nome"],["createdAt","Data"],["targetZone","Zona"]].map(([val,lbl])=>(
-                      <button key={val} onClick={()=>{ if(sortBy===val) setSortOrder(p=>p==="asc"?"desc":"asc"); else { setSortBy(val); setSortOrder("asc"); }}}
-                        style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"4px 10px",borderRadius:20,
-                          border:`1px solid ${sortBy===val?C.neutral:C.stone}`,
-                          background:sortBy===val?C.neutral:"transparent",
-                          color:sortBy===val?C.white:C.mist,cursor:"pointer"}}>
-                        {lbl}{sortBy===val?(sortOrder==="asc"?" ↑":" ↓"):""}
-                      </button>
-                    ))}
-                  </div>
+                  <input value={seriesSearch} onChange={e=>setSeriesSearch(e.target.value)} placeholder="Pesquisar séries…" style={{fontFamily:"'Satoshi',sans-serif",fontSize:13,padding:"7px 14px",borderRadius:20,border:`1px solid ${C.stone}`,outline:"none",background:C.white,color:C.ink,width:200,flexShrink:0}}/>
                   <Btn onClick={()=>setAddingSeries(true)}><Icon name="plus" size={14}/> Nova série</Btn>
                 </div>
-                <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                  {(()=>{
-                    let lastZone = undefined;
-                    return filteredSeries.map(s=>{
-                      const zone = sortBy==="targetZone" ? (s.primaryZone||s.targetZone?.split(",")[0]?.trim()||"") : null;
-                      const showDivider = zone!==null && zone!==lastZone;
-                      lastZone = zone;
-                      return (
-                        <React.Fragment key={s.id}>
-                          {showDivider&&(
-                            <div style={{display:"flex",alignItems:"center",gap:10,margin:"4px 0 2px"}}>
-                              <div style={{flex:1,height:1,background:C.stone}}/>
-                              <span style={{fontSize:10,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.1em"}}>{zone||"—"}</span>
-                              <div style={{flex:1,height:1,background:C.stone}}/>
-                            </div>
-                          )}
-                          <SeriesCard series={s}
-                            modalityFilter={filterType==="reformer"?"reformer":filterType==="barre"?"barre":null}
-                            onEdit={s=>setEditingSeries(s)}
-                            onDelete={deleteSeries}
-                            onUpdateSeries={saveSeries}
-                            aiStyle={aiStyle}
-                            currentUserId={user?.id}
-                            hasStudio={!!profile?.studio_id}
-                            onCopy={copyToLibrary}
-                            onPublish={publishToStudio}
-                            onUnpublish={unpublishFromStudio}
-                            onMakePublic={makeSeriesPublic}
-                          />
-                        </React.Fragment>
-                      );
-                    });
-                  })()}
+                {/* Two-column layout: left filters + right series */}
+                <div style={{display:"flex",gap:20,alignItems:"flex-start"}}>
+                  {/* Left filter panel */}
+                  <div style={{width:170,flexShrink:0,display:"flex",flexDirection:"column",gap:16}}>
+                    {/* Type filter */}
+                    <div>
+                      <div style={{fontSize:10,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Tipo</div>
+                      <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                        {[["all","Todas"],["reformer","Reformer"],["barre","Barre"],["signature","Signature"],["approved","✓ Aprovadas"]].map(([val,lbl])=>(
+                          <button key={val} onClick={()=>setFilterType(val)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 12px",borderRadius:8,border:`1px solid ${filterType===val?C.neutral:C.stone}`,background:filterType===val?C.neutral:"transparent",color:filterType===val?C.white:C.ink,cursor:"pointer",textAlign:"left"}}>{lbl}</button>
+                        ))}
+                      </div>
+                    </div>
+                    {/* Sort */}
+                    <div>
+                      <div style={{fontSize:10,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Ordenar</div>
+                      <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                        {[["name","Nome"],["createdAt","Data"],["targetZone","Zona"]].map(([val,lbl])=>(
+                          <button key={val} onClick={()=>{ if(sortBy===val) setSortOrder(p=>p==="asc"?"desc":"asc"); else { setSortBy(val); setSortOrder("asc"); }}} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 12px",borderRadius:8,border:`1px solid ${sortBy===val?C.neutral:C.stone}`,background:sortBy===val?C.neutral:"transparent",color:sortBy===val?C.white:C.ink,cursor:"pointer",textAlign:"left"}}>
+                            {lbl}{sortBy===val?(sortOrder==="asc"?" ↑":" ↓"):""}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    {/* View options */}
+                    <div>
+                      <div style={{fontSize:10,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Vista</div>
+                      <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                        <button onClick={()=>{ const n=!compactSeries; setCompactSeries(n); try{localStorage.setItem('compactSeries',String(n));}catch(e){} }} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 12px",borderRadius:8,border:`1px solid ${compactSeries?C.neutral:C.stone}`,background:compactSeries?C.neutral:"transparent",color:compactSeries?C.white:C.ink,cursor:"pointer",textAlign:"left"}}>{compactSeries?"☰ Normal":"⊞ Compacto"}</button>
+                        <button onClick={()=>{ const n=!showChoreo; setShowChoreo(n); try{localStorage.setItem('showChoreo',String(n));}catch(e){} }} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 12px",borderRadius:8,border:`1px solid ${!showChoreo?C.neutral:C.stone}`,background:!showChoreo?C.neutral:"transparent",color:!showChoreo?C.white:C.ink,cursor:"pointer",textAlign:"left"}}>{showChoreo?"Ocultar coreog.":"Mostrar coreog."}</button>
+                      </div>
+                    </div>
+                    {/* Movements link */}
+                    <button onClick={()=>navigate({mode:"movements",cls:null,fromLibrary:true})} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,color:C.mist,background:"none",border:"none",cursor:"pointer",padding:"4px 0",textAlign:"left",textDecoration:"underline",marginTop:4}}>Biblioteca de movimentos →</button>
+                  </div>
+                  {/* Right: series list */}
+                  <div style={{flex:1,minWidth:0,display:"flex",flexDirection:"column",gap:8}}>
+                    {(()=>{
+                      let lastZone = undefined;
+                      return filteredSeries.map(s=>{
+                        const zone = sortBy==="targetZone" ? (s.primaryZone||s.targetZone?.split(",")[0]?.trim()||"") : null;
+                        const showDivider = zone!==null && zone!==lastZone;
+                        lastZone = zone;
+                        return (
+                          <React.Fragment key={s.id}>
+                            {showDivider&&(
+                              <div style={{display:"flex",alignItems:"center",gap:10,margin:"4px 0 2px"}}>
+                                <div style={{flex:1,height:1,background:C.stone}}/>
+                                <span style={{fontSize:10,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.1em"}}>{zone||"—"}</span>
+                                <div style={{flex:1,height:1,background:C.stone}}/>
+                              </div>
+                            )}
+                            <SeriesCard series={s}
+                              modalityFilter={filterType==="reformer"?"reformer":filterType==="barre"?"barre":null}
+                              onEdit={s=>setEditingSeries(s)}
+                              onDelete={deleteSeries}
+                              onUpdateSeries={saveSeries}
+                              aiStyle={effectiveAiStyle}
+                              currentUserId={user?.id}
+                              hasStudio={!!profile?.studio_id}
+                              onCopy={copyToLibrary}
+                              onPublish={publishToStudio}
+                              onUnpublish={unpublishFromStudio}
+                              onMakePublic={makeSeriesPublic}
+                              compact={compactSeries}
+                            />
+                          </React.Fragment>
+                        );
+                      });
+                    })()}
+                  </div>
                 </div>
               </>
         )}
@@ -4163,24 +4869,22 @@ export default function HavenInstructor() {
         {screen.mode==="perfil"&&(
           <ProfilePage profile={profile} user={user} onProfileUpdate={p=>setProfile(p)}
             studioSettings={profile?.studios?.settings}
-            aiStyle={aiStyle} onAiStyleChange={v=>{setAiStyle(v); api.save('aistyle',{value:v});}}/>
+            aiStyle={aiStyle} onAiStyleChange={v=>{setAiStyle(v); api.save('aistyle',{value:v});}}
+            series={series} onSaveSeries={saveSeries}/>
         )}
 
         {/* ── MOVEMENTS ── */}
         {screen.mode==="movements"&&(
-          <MovementLibraryPage series={series} onUpdateSeries={saveSeries} aiStyle={aiStyle}/>
+          <MovementLibraryPage series={series} onUpdateSeries={saveSeries} aiStyle={effectiveAiStyle}/>
         )}
 
         {/* ── BUILDER ── */}
         {screen.mode==="builder"&&(
           <ClassBuilder
-            key={screen.cls?.id||"builder"}
             allSeries={series} classes={classes}
-            onSave={c=>{ saveClass(c); setScreen({mode:"builder",cls:null}); }}
+            onSave={c=>saveClass(c)}
             onDeleteClass={deleteClass}
             onViewAula={c=>navigate({mode:"aula",cls:c,fromLibrary:false})}
-            initialEditCls={screen.cls||null}
-            aiStyle={aiStyle}
             studioSettings={profile?.studios?.settings}
             onPublishClass={publishClassToStudio}
             hasStudio={!!profile?.studio_id}
@@ -4192,18 +4896,42 @@ export default function HavenInstructor() {
           <AulaView
             cls={screen.cls} allSeries={series}
             onBack={goBack}
-            onEditClass={cls=>navigate({mode:"builder",cls,fromLibrary:false})}
             onDeleteClass={async id=>{ await deleteClass(id); goBack(); }}
             onUpdateSeries={saveSeries}
             onUpdateClass={updateClass}
-            aiStyle={aiStyle}
+            aiStyle={effectiveAiStyle}
             allClasses={classes}
             onSaveFork={saveFork}
+            teachingMode={aulaTeachingMode}
+            onTeachingModeChange={setAulaTeachingMode}
+            onSeriesEditChange={setAulaEditingSeries}
+            studioSettings={profile?.studios?.settings}
           />
         )}
 
-      </div>
+      </div>{/* end main content */}
+      {!isAulaMode&&<ContextAIPanel
+        open={aiPanelOpen}
+        onToggle={toggleAiPanel}
+        screen={screen}
+        editingSeries={screen.mode==="aula" ? aulaEditingSeries : (editingSeries||null)}
+        series={series}
+        classes={classes}
+        aiStyle={effectiveAiStyle}
+        onUpdateSeries={saveSeries}
+        onNavigate={navigate}
+        profile={profile}
+      />}
+    </div>{/* end flex row */}
     </div>
+  );
+}
+
+export default function HavenInstructor() {
+  return (
+    <ToastProvider>
+    <ConfirmProvider>
+    <HavenApp />
     </ConfirmProvider>
     </ToastProvider>
   );
