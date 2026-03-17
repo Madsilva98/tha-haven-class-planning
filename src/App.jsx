@@ -1037,6 +1037,9 @@ const SeriesCard = ({ series, onEdit, onDelete, onUpdateSeries, aiStyle, modalit
               fontSize:11,color:series.status==="approved"?"#1a4a7a":"#8a7f78",fontWeight:700
             }}>{series.status==="approved"?"✓":"…"}</span>
             {series.visibility==='studio'&&<span style={{fontSize:10,fontWeight:700,letterSpacing:"0.05em",padding:"2px 8px",borderRadius:20,background:"#e8f0fe",color:"#1a56db",border:"1px solid #c3d3f8"}}>STUDIO</span>}
+            {series.visibility==='personal'&&series.studioComment&&onPublish&&(
+              <span onClick={e=>{e.stopPropagation();onPublish(series);}} title="Rejeitado pelo studio — clica para submeter novamente" style={{fontSize:10,fontWeight:700,letterSpacing:"0.05em",padding:"2px 8px",borderRadius:20,background:"#fef2f2",color:"#b91c1c",border:"1px solid #fca5a5",cursor:"pointer"}}>✗ REJEITADO — submeter?</span>
+            )}
             {series.visibility==='pending_studio'&&(onUnpublish ? (
               <span onClick={e=>{e.stopPropagation();onUnpublish(series);}} title="Clica para retirar submissão" style={{fontSize:10,fontWeight:700,letterSpacing:"0.05em",padding:"2px 8px",borderRadius:20,background:"#fef9ec",color:"#b45309",border:"1px solid #fcd34d",cursor:"pointer"}}>⏳ EM REVISÃO ×</span>
             ) : (
@@ -2680,12 +2683,12 @@ const AulaView = ({ cls, allSeries, onBack, onDeleteClass, onUpdateSeries, onUpd
         {/* Row 1: navigation + actions */}
         <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12,flexWrap:"wrap"}}>
           <Btn variant="ghost" onClick={onBack}><Icon name="back" size={14}/> Voltar</Btn>
-          <Badge label={cls.type==="signature"?"✦ Signature":cls.type==="reformer"?"Reformer":"Barre"} color={cls.type==="signature"?"gold":cls.type==="reformer"?"teal":"coral"}/>
           <input value={editName} onChange={e=>{ setEditName(e.target.value); onUpdateClass({...currentCls, name:e.target.value}); }}
             style={{fontFamily:"'Clash Display',sans-serif",fontSize:22,fontWeight:500,color:C.ink,border:"none",borderBottom:`1px solid transparent`,background:"transparent",outline:"none",flex:1,minWidth:120,padding:"2px 4px",borderRadius:4,transition:"border-color 0.15s"}}
             onFocus={e=>e.target.style.borderBottomColor=C.stone}
             onBlur={e=>e.target.style.borderBottomColor="transparent"}
             placeholder="Nome da aula"/>
+          <Badge label={cls.type==="signature"?"✦ Signature":cls.type==="reformer"?"Reformer":"Barre"} color={cls.type==="signature"?"gold":cls.type==="reformer"?"teal":"coral"}/>
           <Btn small variant="ghost" onClick={()=>setShowFlowEditor(p=>!p)} style={{color:showFlowEditor?C.crimson:C.mist,borderColor:showFlowEditor?C.crimson:C.stone}}>
             <Icon name="edit" size={13}/> {showFlowEditor?"Fechar fluxo":"Editar fluxo"}
           </Btn>
@@ -3100,15 +3103,18 @@ const ClassBuilder = ({ allSeries, classes, onSave, onDeleteClass, onViewAula, s
                   <div style={{flex:1,minWidth:0}}>
                     <div style={{fontFamily:"'Clash Display', sans-serif",fontSize:18,fontWeight:500,color:C.ink}}>{c.name||"Sem nome"}</div>
                     <div style={{fontSize:12,color:C.mist,marginTop:2}}>{c.date} · {c.seriesIds.length} série{c.seriesIds.length!==1?"s":""}{c.level?` · ${c.level}`:""}</div>
-                    {c.studioComment&&<div style={{fontSize:11,color:"#b91c1c",marginTop:4,background:"#fef2f2",padding:"3px 8px",borderRadius:6,display:"inline-block"}}>Studio: {c.studioComment}</div>}
+                    {c.studioComment&&<div style={{fontSize:11,color:"#b91c1c",marginTop:4,background:"#fef2f2",padding:"3px 8px",borderRadius:6,display:"inline-block"}}>{c.studioComment}</div>}
                   </div>
                   <Badge label={c.type==="signature"?"✦ Signature":c.type} color={c.type==="signature"?"gold":c.type==="reformer"?"teal":"coral"}/>
+                  {c.visibility==='personal'&&c.studioComment&&onPublishClass&&(
+                    <span onClick={e=>{e.stopPropagation();onPublishClass(c);}} title="Rejeitado — clica para submeter novamente" style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:20,background:"#fef2f2",color:"#b91c1c",border:"1px solid #fca5a5",cursor:"pointer"}}>✗ Rejeitado — submeter?</span>
+                  )}
                   {c.visibility==='pending_studio'&&(onUnpublishClass ? (
                     <span onClick={e=>{e.stopPropagation();onUnpublishClass(c);}} title="Clica para retirar submissão" style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:20,background:"#fef9ec",color:"#b45309",border:"1px solid #fcd34d",cursor:"pointer"}}>⏳ Em revisão ×</span>
                   ) : (
                     <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:20,background:"#fef9ec",color:"#b45309",border:"1px solid #fcd34d"}}>⏳ Em revisão</span>
                   ))}
-                  {hasStudio&&c.visibility==='personal'&&onPublishClass&&<Btn small variant="ghost" onClick={e=>{e.stopPropagation();onPublishClass(c);}} title="Submeter para revisão do studio" style={{color:"#1a56db"}}>↑ Studio</Btn>}
+                  {hasStudio&&c.visibility==='personal'&&!c.studioComment&&onPublishClass&&<Btn small variant="ghost" onClick={e=>{e.stopPropagation();onPublishClass(c);}} title="Submeter para revisão do studio" style={{color:"#1a56db"}}>↑ Studio</Btn>}
                   {onToggleClassPublic&&c.visibility!=='pending_studio'&&<button onClick={e=>{e.stopPropagation();onToggleClassPublic(c);}} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"4px 10px",borderRadius:20,border:`1px solid ${c.visibility==='public'?C.crimson:C.stone}`,background:"transparent",color:c.visibility==='public'?C.crimson:C.mist,cursor:"pointer"}}>{c.visibility==='public'?'🌐 Pública':'🔒 Privada'}</button>}
                   {onSendClass&&<Btn small variant="ghost" onClick={e=>{e.stopPropagation();onSendClass({...c,_discoverType:'class'});}} style={{color:C.mist}}>Enviar →</Btn>}
                   <Btn small onClick={e=>{e.stopPropagation();onViewAula(c);}}><Icon name="eye" size={13}/> Ver Aula</Btn>
@@ -3563,11 +3569,14 @@ const ProfilePage = ({ profile, user, onProfileUpdate, studioSettings, aiStyle, 
   );
 };
 
-const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotification }) => {
+const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotification, onSaveSeries, onSaveClass, onDeleteSeries, onDeleteClass, onViewAula, allSeries=[] }) => {
   const [activeTab, setActiveTab] = useState('series');
   const [members, setMembers] = useState([]);
-  const [rejectingItem, setRejectingItem] = useState(null); // { item, itemType, comment }
+  const [rejectingItem, setRejectingItem] = useState(null);
   const [savingFeatured, setSavingFeatured] = useState(false);
+  const [expandedSeriesId, setExpandedSeriesId] = useState(null); // series id shown expanded in reviews/library
+  const [editingStudioSeriesId, setEditingStudioSeriesId] = useState(null); // series id being edited inline
+  const [newStudioClassType, setNewStudioClassType] = useState(null); // 'reformer'|'barre'|'signature' for creating
   const [loading, setLoading] = useState(true);
   const [studioSeries, setStudioSeries] = useState([]);
   const [studioClasses, setStudioClasses] = useState([]);
@@ -3830,103 +3839,110 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
       {/* ── Séries do Studio ── */}
       {activeTab==='series'&&(
         <div style={{display:'flex',flexDirection:'column',gap:24}}>
-          {/* Recently added */}
+          {/* Create new studio series */}
+          {isAdmin&&onSaveSeries&&(
+            <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+              {['reformer','barre','signature'].map(t=>(
+                <button key={t} onClick={async()=>{
+                  const newS = { id:`s-${Date.now()}`, name:'', type:t, movements:[], visibility:'studio', studio_id:profile.studio_id, created_by:user.id, updated_at:new Date().toISOString() };
+                  await onSaveSeries(newS);
+                  setEditingStudioSeriesId(newS.id);
+                  refreshContent();
+                }} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:'6px 14px',borderRadius:8,border:`1px solid ${t==='signature'?C.sig:t==='reformer'?C.reformer:'#c0507a'}`,background:'transparent',color:t==='signature'?'#7a4010':t==='reformer'?C.reformer:'#c0507a',cursor:'pointer'}}>
+                  + Nova série {t==='signature'?'Signature':t==='reformer'?'Reformer':'Barre'}
+                </button>
+              ))}
+            </div>
+          )}
+          {/* Recently added + all */}
           {studioSeries.length>0&&(
             <div>
-              <div style={{fontSize:12,fontWeight:700,color:C.mist,textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:10}}>Adicionadas recentemente</div>
-              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(240px,1fr))',gap:10}}>
-                {[...studioSeries].sort((a,b)=>(b.updated_at||b.created_at||'').localeCompare(a.updated_at||a.created_at||'')).slice(0,6).map(s=>{
+              <div style={{fontSize:12,fontWeight:700,color:C.mist,textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:10}}>Séries do Studio ({studioSeries.length})</div>
+              <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                {[...studioSeries].sort((a,b)=>(b.updated_at||b.created_at||'').localeCompare(a.updated_at||a.created_at||'')).map(s=>{
                   const featuredIds = studio?.settings?.featured_series||[];
                   const isFeat = featuredIds.includes(s.id);
+                  const isExpanded = expandedSeriesId===s.id;
+                  const sObj = seriesFromDB(s);
                   return (
-                    <div key={s.id} style={{background:C.white,borderRadius:12,border:`1px solid ${C.stone}`,padding:14,position:'relative'}}>
-                      <div style={{fontWeight:700,fontSize:13,color:C.ink,marginBottom:2,paddingRight:24}}>{s.name}</div>
-                      <div style={{fontSize:11,color:C.mist,marginBottom:6}}>{s.profiles?.name||'Instructor'}</div>
-                      <div style={{display:'flex',gap:5,flexWrap:'wrap',alignItems:'center'}}>
-                        {s.type&&<span style={{fontSize:10,fontWeight:700,color:typeColor(s.type),background:`${typeColor(s.type)}15`,border:`1px solid ${typeColor(s.type)}40`,borderRadius:20,padding:'2px 7px',textTransform:'uppercase'}}>{s.type}</span>}
-                        {onCopyToLibrary&&<button onClick={()=>onCopyToLibrary(s)} style={{fontSize:10,padding:'3px 9px',borderRadius:8,border:`1px solid ${C.stone}`,background:'transparent',color:C.ink,cursor:'pointer',fontFamily:"'Satoshi',sans-serif",fontWeight:600}}>Copiar</button>}
-                        {isAdmin&&<button onClick={()=>toggleFeatured(s.id,'series')} title={isFeat?'Remover destaque':'Destacar'} style={{fontSize:13,background:'none',border:'none',cursor:'pointer',color:isFeat?'#f59e0b':C.stone,padding:'2px',position:'absolute',top:10,right:10}}>★</button>}
+                    <div key={s.id} style={{background:C.white,borderRadius:12,border:`1px solid ${isExpanded?C.crimson:C.stone}`}}>
+                      <div style={{display:'flex',alignItems:'center',gap:10,padding:'10px 14px',cursor:'pointer'}} onClick={()=>setExpandedSeriesId(isExpanded?null:s.id)}>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontWeight:700,fontSize:13,color:C.ink,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{s.name||'(sem nome)'}</div>
+                          <div style={{fontSize:11,color:C.mist,marginTop:1}}>{s.profiles?.name||'Instructor'}</div>
+                        </div>
+                        {s.type&&<span style={{fontSize:10,fontWeight:700,color:typeColor(s.type),background:`${typeColor(s.type)}15`,border:`1px solid ${typeColor(s.type)}40`,borderRadius:20,padding:'2px 7px',textTransform:'uppercase',flexShrink:0}}>{s.type}</span>}
+                        {onCopyToLibrary&&<button onClick={e=>{e.stopPropagation();onCopyToLibrary(s);}} style={{fontSize:10,padding:'3px 9px',borderRadius:8,border:`1px solid ${C.stone}`,background:'transparent',color:C.ink,cursor:'pointer',fontFamily:"'Satoshi',sans-serif",fontWeight:600,flexShrink:0}}>Copiar</button>}
+                        {isAdmin&&<button onClick={e=>{e.stopPropagation();toggleFeatured(s.id,'series');}} title={isFeat?'Remover destaque':'Destacar'} style={{fontSize:13,background:'none',border:'none',cursor:'pointer',color:isFeat?'#f59e0b':C.stone,padding:'2px',flexShrink:0}}>★</button>}
+                        {isFeat&&<span style={{fontSize:10,color:'#b45309',flexShrink:0}}>Em destaque</span>}
+                        <span style={{color:C.mist,fontSize:12,flexShrink:0}}>{isExpanded?'▲':'▼'}</span>
                       </div>
+                      {isExpanded&&(
+                        <div style={{borderTop:`1px solid ${C.stone}`,padding:'0 8px 8px'}}>
+                          {editingStudioSeriesId===s.id ? (
+                            <SeriesEditor series={sObj} onSave={updated=>{onSaveSeries?.(updated);setEditingStudioSeriesId(null);refreshContent();}} onCancel={()=>setEditingStudioSeriesId(null)} aiStyle="" studioSettings={studio?.settings}/>
+                          ) : (
+                            <SeriesCard series={sObj} onEdit={isAdmin&&onSaveSeries?()=>setEditingStudioSeriesId(s.id):null} onDelete={isAdmin&&onDeleteSeries?()=>onDeleteSeries(s.id).then(refreshContent):null} onUpdateSeries={updated=>{onSaveSeries?.(updated);refreshContent();}} aiStyle="" hasStudio={false} currentUserId={user.id} compact={false}/>
+                          )}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
               </div>
             </div>
           )}
-          {/* Featured */}
-          {(studio?.settings?.featured_series||[]).length>0&&(
-            <div>
-              <div style={{fontSize:12,fontWeight:700,color:C.mist,textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:10}}>Em destaque</div>
-              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(240px,1fr))',gap:10}}>
-                {studioSeries.filter(s=>(studio?.settings?.featured_series||[]).includes(s.id)).map(s=>(
-                  <div key={s.id} style={{background:'#fffbf0',borderRadius:12,border:`2px solid #f59e0b40`,padding:14,position:'relative'}}>
-                    <span style={{position:'absolute',top:10,right:10,color:'#f59e0b',fontSize:14}}>★</span>
-                    <div style={{fontWeight:700,fontSize:13,color:C.ink,marginBottom:2,paddingRight:24}}>{s.name}</div>
-                    <div style={{fontSize:11,color:C.mist,marginBottom:6}}>{s.profiles?.name||'Instructor'}</div>
-                    <div style={{display:'flex',gap:5,flexWrap:'wrap'}}>
-                      {s.type&&<span style={{fontSize:10,fontWeight:700,color:typeColor(s.type),background:`${typeColor(s.type)}15`,border:`1px solid ${typeColor(s.type)}40`,borderRadius:20,padding:'2px 7px',textTransform:'uppercase'}}>{s.type}</span>}
-                      {onCopyToLibrary&&<button onClick={()=>onCopyToLibrary(s)} style={{fontSize:10,padding:'3px 9px',borderRadius:8,border:`1px solid ${C.stone}`,background:'transparent',color:C.ink,cursor:'pointer',fontFamily:"'Satoshi',sans-serif",fontWeight:600}}>Copiar</button>}
-                      {isAdmin&&<button onClick={()=>toggleFeatured(s.id,'series')} style={{fontSize:10,padding:'3px 9px',borderRadius:8,border:`1px solid #f59e0b`,background:'transparent',color:'#b45309',cursor:'pointer',fontFamily:"'Satoshi',sans-serif",fontWeight:600}}>- Tirar destaque</button>}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
           {loadingContent&&<div style={{color:C.mist,fontSize:13}}>A carregar…</div>}
-          {!loadingContent&&studioSeries.length===0&&<div style={{color:C.mist,fontSize:13,padding:'24px 0'}}>Ainda não há séries aprovadas no studio.</div>}
+          {!loadingContent&&studioSeries.length===0&&<div style={{color:C.mist,fontSize:13,padding:'24px 0'}}>Ainda não há séries no studio. {isAdmin&&onSaveSeries?'Cria a primeira série acima.':''}</div>}
         </div>
       )}
 
       {/* ── Aulas do Studio ── */}
       {activeTab==='classes'&&(
         <div style={{display:'flex',flexDirection:'column',gap:24}}>
-          {/* Recently added */}
+          {/* Create new studio class */}
+          {isAdmin&&onSaveClass&&onViewAula&&(
+            <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+              {['reformer','barre','signature'].map(t=>(
+                <button key={t} onClick={async()=>{
+                  const now=new Date().toISOString().split('T')[0];
+                  const newC = { id:`c-${Date.now()}`, name:'', type:t, seriesIds:[], date:now, visibility:'studio', studio_id:profile.studio_id, created_by:user.id };
+                  await onSaveClass(newC);
+                  onViewAula(newC);
+                }} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:'6px 14px',borderRadius:8,border:`1px solid ${t==='signature'?C.sig:t==='reformer'?C.reformer:'#c0507a'}`,background:'transparent',color:t==='signature'?'#7a4010':t==='reformer'?C.reformer:'#c0507a',cursor:'pointer'}}>
+                  + Nova aula {t==='signature'?'Signature':t==='reformer'?'Reformer':'Barre'}
+                </button>
+              ))}
+            </div>
+          )}
+          {/* All classes */}
           {studioClasses.length>0&&(
             <div>
-              <div style={{fontSize:12,fontWeight:700,color:C.mist,textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:10}}>Adicionadas recentemente</div>
+              <div style={{fontSize:12,fontWeight:700,color:C.mist,textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:10}}>Aulas do Studio ({studioClasses.length})</div>
               <div style={{display:'flex',flexDirection:'column',gap:8}}>
-                {[...studioClasses].sort((a,b)=>(b.updated_at||b.created_at||'').localeCompare(a.updated_at||a.created_at||'')).slice(0,6).map(c=>{
+                {[...studioClasses].sort((a,b)=>(b.updated_at||b.created_at||'').localeCompare(a.updated_at||a.created_at||'')).map(c=>{
                   const featuredIds = studio?.settings?.featured_classes||[];
                   const isFeat = featuredIds.includes(c.id);
                   return (
-                    <div key={c.id} style={{background:C.white,borderRadius:12,border:`1px solid ${C.stone}`,padding:'12px 16px',display:'flex',alignItems:'center',gap:12,position:'relative'}}>
-                      <div style={{flex:1}}>
+                    <div key={c.id} style={{background:isFeat?'#fffbf0':C.white,borderRadius:12,border:`1px solid ${isFeat?'#f59e0b40':C.stone}`,padding:'12px 16px',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+                      <div style={{flex:1,minWidth:0}}>
                         <div style={{fontWeight:700,fontSize:13,color:C.ink}}>{c.name||'(sem título)'}</div>
-                        <div style={{fontSize:11,color:C.mist,marginTop:2}}>{c.profiles?.name||'Instructor'}{c.date&&' · '+c.date}</div>
+                        <div style={{fontSize:11,color:C.mist,marginTop:1}}>{c.profiles?.name||'Instructor'}{c.date&&' · '+c.date}</div>
                       </div>
-                      {c.type&&<span style={{fontSize:10,fontWeight:700,color:typeColor(c.type),background:`${typeColor(c.type)}15`,border:`1px solid ${typeColor(c.type)}40`,borderRadius:20,padding:'2px 8px',textTransform:'uppercase'}}>{c.type}</span>}
-                      {c.level&&<span style={{fontSize:10,color:C.mist,background:C.stone,borderRadius:20,padding:'2px 8px'}}>{c.level}</span>}
-                      {onCopyToLibrary&&<button onClick={()=>onCopyToLibrary(c)} style={{fontSize:10,padding:'3px 9px',borderRadius:8,border:`1px solid ${C.stone}`,background:'transparent',color:C.ink,cursor:'pointer',fontFamily:"'Satoshi',sans-serif",fontWeight:600}}>Copiar</button>}
-                      {isAdmin&&<button onClick={()=>toggleFeatured(c.id,'class')} title={isFeat?'Remover destaque':'Destacar'} style={{fontSize:13,background:'none',border:'none',cursor:'pointer',color:isFeat?'#f59e0b':C.stone,padding:'2px'}}>★</button>}
+                      {c.type&&<span style={{fontSize:10,fontWeight:700,color:typeColor(c.type),background:`${typeColor(c.type)}15`,border:`1px solid ${typeColor(c.type)}40`,borderRadius:20,padding:'2px 8px',textTransform:'uppercase',flexShrink:0}}>{c.type}</span>}
+                      {c.level&&<span style={{fontSize:10,color:C.mist,background:C.stone,borderRadius:20,padding:'2px 8px',flexShrink:0}}>{c.level}</span>}
+                      {onCopyToLibrary&&<button onClick={()=>onCopyToLibrary(c)} style={{fontSize:10,padding:'3px 9px',borderRadius:8,border:`1px solid ${C.stone}`,background:'transparent',color:C.ink,cursor:'pointer',fontFamily:"'Satoshi',sans-serif",fontWeight:600,flexShrink:0}}>Copiar</button>}
+                      {onViewAula&&<button onClick={()=>onViewAula(classFromDB(c))} style={{fontSize:10,padding:'3px 9px',borderRadius:8,border:`1px solid ${C.neutral}`,background:'transparent',color:C.neutral,cursor:'pointer',fontFamily:"'Satoshi',sans-serif",fontWeight:600,flexShrink:0}}>Ver →</button>}
+                      {isAdmin&&<button onClick={()=>toggleFeatured(c.id,'class')} title={isFeat?'Remover destaque':'Destacar'} style={{fontSize:13,background:'none',border:'none',cursor:'pointer',color:isFeat?'#f59e0b':C.stone,padding:'2px',flexShrink:0}}>★</button>}
+                      {isFeat&&<span style={{fontSize:10,color:'#b45309',flexShrink:0}}>Em destaque</span>}
                     </div>
                   );
                 })}
               </div>
             </div>
           )}
-          {/* Featured classes */}
-          {(studio?.settings?.featured_classes||[]).length>0&&(
-            <div>
-              <div style={{fontSize:12,fontWeight:700,color:C.mist,textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:10}}>Em destaque</div>
-              <div style={{display:'flex',flexDirection:'column',gap:8}}>
-                {studioClasses.filter(c=>(studio?.settings?.featured_classes||[]).includes(c.id)).map(c=>(
-                  <div key={c.id} style={{background:'#fffbf0',borderRadius:12,border:`2px solid #f59e0b40`,padding:'12px 16px',display:'flex',alignItems:'center',gap:12}}>
-                    <span style={{color:'#f59e0b',fontSize:14,flexShrink:0}}>★</span>
-                    <div style={{flex:1}}>
-                      <div style={{fontWeight:700,fontSize:13,color:C.ink}}>{c.name||'(sem título)'}</div>
-                      <div style={{fontSize:11,color:C.mist}}>{c.profiles?.name||'Instructor'}{c.date&&' · '+c.date}</div>
-                    </div>
-                    {c.type&&<span style={{fontSize:10,fontWeight:700,color:typeColor(c.type),background:`${typeColor(c.type)}15`,border:`1px solid ${typeColor(c.type)}40`,borderRadius:20,padding:'2px 8px',textTransform:'uppercase'}}>{c.type}</span>}
-                    {onCopyToLibrary&&<button onClick={()=>onCopyToLibrary(c)} style={{fontSize:10,padding:'3px 9px',borderRadius:8,border:`1px solid ${C.stone}`,background:'transparent',color:C.ink,cursor:'pointer',fontFamily:"'Satoshi',sans-serif",fontWeight:600}}>Copiar</button>}
-                    {isAdmin&&<button onClick={()=>toggleFeatured(c.id,'class')} style={{fontSize:10,padding:'3px 9px',borderRadius:8,border:`1px solid #f59e0b`,background:'transparent',color:'#b45309',cursor:'pointer',fontFamily:"'Satoshi',sans-serif",fontWeight:600}}>- Tirar destaque</button>}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
           {loadingContent&&<div style={{color:C.mist,fontSize:13}}>A carregar…</div>}
-          {!loadingContent&&studioClasses.length===0&&<div style={{color:C.mist,fontSize:13,padding:'24px 0'}}>Ainda não há aulas aprovadas no studio.</div>}
+          {!loadingContent&&studioClasses.length===0&&<div style={{color:C.mist,fontSize:13,padding:'24px 0'}}>Ainda não há aulas no studio. {isAdmin&&onSaveClass?'Cria a primeira aula acima.':''}</div>}
         </div>
       )}
 
@@ -3970,13 +3986,15 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
                 <div style={{fontSize:12,fontWeight:700,color:C.mist,textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:12}}>Séries pendentes</div>
                 <div style={{display:'flex',flexDirection:'column',gap:8}}>
                   {pendingSeries.map(s=>(
-                    <div key={s.id} style={{background:C.white,borderRadius:12,border:`1px solid ${C.stone}`,padding:'12px 16px'}}>
-                      <div style={{display:'flex',alignItems:'center',gap:12}}>
+                    <div key={s.id} style={{background:C.white,borderRadius:12,border:`1px solid ${expandedSeriesId===s.id?C.crimson:C.stone}`}}>
+                      <div style={{display:'flex',alignItems:'center',gap:12,padding:'12px 16px'}}>
                         <div style={{flex:1}}>
                           <div style={{fontWeight:700,fontSize:14,color:C.ink}}>{s.name}</div>
                           <div style={{fontSize:11,color:C.mist,marginTop:2}}>{s.profiles?.name||'Instructor'}</div>
                         </div>
                         {s.type&&<span style={{fontSize:10,fontWeight:700,color:typeColor(s.type),background:`${typeColor(s.type)}15`,border:`1px solid ${typeColor(s.type)}40`,borderRadius:20,padding:'2px 8px',textTransform:'uppercase'}}>{s.type}</span>}
+                        <button onClick={()=>setExpandedSeriesId(expandedSeriesId===s.id?null:s.id)} style={{fontSize:12,padding:'5px 12px',borderRadius:8,border:`1px solid ${C.neutral}`,background:'transparent',color:C.neutral,cursor:'pointer',fontFamily:"'Satoshi',sans-serif",fontWeight:600}}>{expandedSeriesId===s.id?'Fechar':'Ver →'}</button>
+                        {isAdmin&&<button onClick={()=>toggleFeatured(s.id,'series')} title={(studio?.settings?.featured_series||[]).includes(s.id)?'Remover destaque':'Destacar'} style={{fontSize:13,background:'none',border:'none',cursor:'pointer',color:(studio?.settings?.featured_series||[]).includes(s.id)?'#f59e0b':C.stone,padding:'2px'}}>★</button>}
                         <button onClick={()=>approveSeries(s)} style={{fontSize:12,padding:'5px 12px',borderRadius:8,border:'none',background:'#ecfdf5',color:'#059669',fontWeight:700,cursor:'pointer',fontFamily:"'Satoshi',sans-serif"}}>✓ Aprovar</button>
                         {rejectingItem?.id===s.id ? (
                           <button onClick={()=>setRejectingItem(null)} style={{fontSize:12,padding:'5px 12px',borderRadius:8,border:`1px solid ${C.stone}`,background:'transparent',color:C.mist,cursor:'pointer',fontFamily:"'Satoshi',sans-serif"}}>Cancelar</button>
@@ -3984,6 +4002,11 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
                           <button onClick={()=>setRejectingItem({id:s.id,type:'series',item:s})} style={{fontSize:12,padding:'5px 12px',borderRadius:8,border:`1px solid ${C.stone}`,background:'transparent',color:'#b91c1c',fontWeight:700,cursor:'pointer',fontFamily:"'Satoshi',sans-serif"}}>✗ Rejeitar</button>
                         )}
                       </div>
+                      {expandedSeriesId===s.id&&(
+                        <div style={{borderTop:`1px solid ${C.stone}`,padding:'0 8px 8px'}}>
+                          <SeriesCard series={seriesFromDB(s)} onEdit={null} onDelete={null} onUpdateSeries={()=>{}} aiStyle="" hasStudio={false} currentUserId={user.id} compact={false}/>
+                        </div>
+                      )}
                       {rejectingItem?.id===s.id&&(
                         <div style={{marginTop:10,borderTop:`1px solid ${C.stone}`,paddingTop:10}}>
                           <div style={{fontSize:12,color:C.mist,marginBottom:6}}>Comentário para o Instructor (opcional):</div>
@@ -4013,6 +4036,8 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
                         </div>
                         {c.type&&<span style={{fontSize:10,fontWeight:700,color:typeColor(c.type),background:`${typeColor(c.type)}15`,border:`1px solid ${typeColor(c.type)}40`,borderRadius:20,padding:'2px 8px',textTransform:'uppercase'}}>{c.type}</span>}
                         {c.level&&<span style={{fontSize:10,color:C.mist,background:C.stone,borderRadius:20,padding:'2px 8px'}}>{c.level}</span>}
+                        {onViewAula&&<button onClick={()=>onViewAula(classFromDB(c))} style={{fontSize:12,padding:'5px 12px',borderRadius:8,border:`1px solid ${C.neutral}`,background:'transparent',color:C.neutral,cursor:'pointer',fontFamily:"'Satoshi',sans-serif",fontWeight:600}}>Ver →</button>}
+                        {isAdmin&&<button onClick={()=>toggleFeatured(c.id,'class')} title={(studio?.settings?.featured_classes||[]).includes(c.id)?'Remover destaque':'Destacar'} style={{fontSize:13,background:'none',border:'none',cursor:'pointer',color:(studio?.settings?.featured_classes||[]).includes(c.id)?'#f59e0b':C.stone,padding:'2px'}}>★</button>}
                         <button onClick={()=>approveClass(c)} style={{fontSize:12,padding:'5px 12px',borderRadius:8,border:'none',background:'#ecfdf5',color:'#059669',fontWeight:700,cursor:'pointer',fontFamily:"'Satoshi',sans-serif"}}>✓ Aprovar</button>
                         {rejectingItem?.id===c.id ? (
                           <button onClick={()=>setRejectingItem(null)} style={{fontSize:12,padding:'5px 12px',borderRadius:8,border:`1px solid ${C.stone}`,background:'transparent',color:C.mist,cursor:'pointer',fontFamily:"'Satoshi',sans-serif"}}>Cancelar</button>
@@ -4610,7 +4635,7 @@ const ContextAIPanel = ({ open, onToggle, screen, editingSeries, series, classes
 };
 
 // ─── HOME PAGE ─────────────────────────────────────────────────────────────────
-const HomePage = ({ series, classes, profile, onNewSeries, onNewClass, onViewSeries, onViewClass, onGoStudio, shares=[], onAcceptShare, onDismissShare, notifications=[], onDismissNotif, onMarkAllRead, studioHighlights=[] }) => {
+const HomePage = ({ series, classes, profile, onNewSeries, onNewClass, onViewSeries, onViewClass, onGoStudio, shares=[], onAcceptShare, onDismissShare, notifications=[], onDismissNotif, onMarkAllRead, studioHighlights=[], studioRecent=[], recentPublic=[], onGoDiscover }) => {
   const recentSeries = [...series].sort((a,b)=>(b.updatedAt||b.createdAt||"").localeCompare(a.updatedAt||a.createdAt||"")).slice(0,5);
   const recentClasses = [...classes].sort((a,b)=>(b.date||"").localeCompare(a.date||"")||0).slice(0,5);
   const pendingCount = series.filter(s=>s.visibility==='pending_studio').length + classes.filter(c=>c.visibility==='pending_studio').length;
@@ -4719,7 +4744,26 @@ const HomePage = ({ series, classes, profile, onNewSeries, onNewClass, onViewSer
         </div>
       )}
 
-      {/* Studio destaques */}
+      {/* Studio: recently added */}
+      {studioRecent.length > 0 && (
+        <div>
+          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+            <div style={{fontFamily:"'Clash Display',sans-serif",fontSize:14,fontWeight:600,color:C.ink,textTransform:"uppercase",letterSpacing:"0.06em",flex:1}}>Recentemente adicionadas ao Studio</div>
+            <button onClick={onGoStudio} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,color:C.mist,background:"none",border:"none",cursor:"pointer",textDecoration:"underline"}}>Ver studio →</button>
+          </div>
+          <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+            {studioRecent.map(item=>(
+              <div key={item.id} onClick={item._hType==='series'?()=>onViewSeries(item):()=>onViewClass(item)}
+                style={{background:C.white,border:`1px solid ${C.stone}`,borderRadius:10,padding:"10px 14px",cursor:"pointer",minWidth:160,flex:"0 0 auto",maxWidth:240}}>
+                <div style={{fontSize:12,fontWeight:700,color:C.ink,marginBottom:3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.name}</div>
+                <div style={{fontSize:10,color:C.mist}}>{item._hType==='series'?(item.type||'Série'):(item.type||'Aula')}{item._hType==='series'&&item.primaryZone?` · ${item.primaryZone}`:''}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Studio: featured / destaques */}
       {studioHighlights.length > 0 && (
         <div>
           <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
@@ -4731,7 +4775,26 @@ const HomePage = ({ series, classes, profile, onNewSeries, onNewClass, onViewSer
               <div key={item.id} onClick={item._hType==='series'?()=>onViewSeries(item):()=>onViewClass(item)}
                 style={{background:C.white,border:`1px solid ${C.stone}`,borderRadius:10,padding:"10px 14px",cursor:"pointer",minWidth:160,flex:"0 0 auto",maxWidth:240}}>
                 <div style={{fontSize:12,fontWeight:700,color:C.ink,marginBottom:3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.name}</div>
-                <div style={{fontSize:10,color:C.mist}}>{item._hType==='series'?(item.type||'Série'):(item.type||'Aula')} {item._hType==='series'&&item.primaryZone?`· ${item.primaryZone}`:''}</div>
+                <div style={{fontSize:10,color:C.mist}}>{item._hType==='series'?(item.type||'Série'):(item.type||'Aula')}{item._hType==='series'&&item.primaryZone?` · ${item.primaryZone}`:''}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Novo na plataforma */}
+      {recentPublic.length > 0 && (
+        <div>
+          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+            <div style={{fontFamily:"'Clash Display',sans-serif",fontSize:14,fontWeight:600,color:C.ink,textTransform:"uppercase",letterSpacing:"0.06em",flex:1}}>Novo na plataforma</div>
+            {onGoDiscover&&<button onClick={onGoDiscover} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,color:C.mist,background:"none",border:"none",cursor:"pointer",textDecoration:"underline"}}>Ver tudo →</button>}
+          </div>
+          <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+            {recentPublic.map(item=>(
+              <div key={item.id} onClick={onGoDiscover}
+                style={{background:C.white,border:`1px solid ${C.stone}`,borderRadius:10,padding:"10px 14px",cursor:"pointer",minWidth:160,flex:"0 0 auto",maxWidth:240}}>
+                <div style={{fontSize:12,fontWeight:700,color:C.ink,marginBottom:3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.name}</div>
+                <div style={{fontSize:10,color:C.mist}}>{item._hType==='series'?'Série':'Aula'}{item._author?.name?` · ${item._author.name}`:''}</div>
               </div>
             ))}
           </div>
@@ -4761,6 +4824,56 @@ const HomePage = ({ series, classes, profile, onNewSeries, onNewClass, onViewSer
           </div>
         </div>
       )}
+    </div>
+  );
+};
+
+// ─── NOTIFICATION PANEL (dropdown from bell) ──────────────────────────────────
+const NotifPanel = ({ notifications, onDismiss, onMarkAllRead, onViewAll, onClose }) => {
+  const ref = React.useRef(null);
+  const unseenCount = notifications.filter(n=>!n.read).length;
+
+  React.useEffect(()=>{
+    const handler = e => { if(ref.current && !ref.current.contains(e.target)) onClose(); };
+    document.addEventListener('mousedown', handler);
+    return ()=>document.removeEventListener('mousedown', handler);
+  }, [onClose]);
+
+  const typeIcon = type => {
+    if(type==='series_submitted'||type==='class_submitted') return '📬';
+    if(type==='series_approved'||type==='class_approved') return '✓';
+    if(type==='series_rejected'||type==='class_rejected') return '✗';
+    return '🔔';
+  };
+
+  return (
+    <div ref={ref} style={{position:"absolute",top:"calc(100% + 8px)",right:0,zIndex:400,width:320,background:C.white,border:`1px solid ${C.stone}`,borderRadius:12,boxShadow:"0 8px 32px rgba(0,0,0,0.14)",overflow:"hidden"}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 16px",borderBottom:`1px solid ${C.stone}`}}>
+        <div style={{fontFamily:"'Clash Display',sans-serif",fontWeight:600,fontSize:14,color:C.ink}}>Notificações</div>
+        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+          {unseenCount>0&&<button onClick={onMarkAllRead} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,color:C.mist,background:"none",border:"none",cursor:"pointer",textDecoration:"underline"}}>Marcar todas como lidas</button>}
+          <button onClick={onClose} style={{background:"none",border:"none",cursor:"pointer",color:C.mist,fontSize:16,lineHeight:1,padding:"0 2px"}}>×</button>
+        </div>
+      </div>
+      <div style={{maxHeight:360,overflowY:"auto"}}>
+        {notifications.length===0&&(
+          <div style={{padding:"20px 16px",color:C.mist,fontSize:13,textAlign:"center"}}>Sem notificações.</div>
+        )}
+        {notifications.slice(0,15).map(n=>(
+          <div key={n.id} style={{display:"flex",gap:10,alignItems:"flex-start",padding:"10px 16px",borderBottom:`1px solid ${C.stone}`,background:n.read?"transparent":`${C.crimson}06`}}>
+            <span style={{fontSize:16,flexShrink:0,marginTop:1}}>{typeIcon(n.type)}</span>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontWeight:n.read?500:700,fontSize:13,color:C.ink,lineHeight:1.3}}>{n.title}</div>
+              {n.body&&<div style={{fontSize:12,color:C.mist,marginTop:2,lineHeight:1.4}}>{n.body}</div>}
+              <div style={{fontSize:10,color:C.mist,marginTop:3}}>{new Date(n.created_at).toLocaleDateString('pt-PT',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</div>
+            </div>
+            <button onClick={()=>onDismiss(n.id)} style={{background:"none",border:"none",cursor:"pointer",color:C.mist,fontSize:14,flexShrink:0,padding:"0 2px",marginTop:1}}>×</button>
+          </div>
+        ))}
+      </div>
+      <div style={{padding:"10px 16px",borderTop:`1px solid ${C.stone}`}}>
+        <button onClick={onViewAll} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,color:C.mist,background:"none",border:"none",cursor:"pointer",width:"100%",textAlign:"center"}}>Ver todas no início →</button>
+      </div>
     </div>
   );
 };
@@ -4984,7 +5097,10 @@ function HavenApp() {
   const [shares, setShares] = useState([]);
   const [sendModalItem, setSendModalItem] = useState(null);
   const [notifications, setNotifications] = useState([]);
+  const [showNotifPanel, setShowNotifPanel] = useState(false);
   const [studioHighlights, setStudioHighlights] = useState([]);
+  const [studioRecent, setStudioRecent] = useState([]);
+  const [recentPublic, setRecentPublic] = useState([]);
 
   const navigate = (newScreen) => {
     const newStack = [...screenStack, screen];
@@ -5053,19 +5169,35 @@ function HavenApp() {
       // Load notifications
       const { data: notifData } = await supabase.from('notifications').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(50);
       setNotifications(notifData || []);
-      // Load studio highlights if member of a studio
-      if (p?.studio_id && p?.studios?.settings) {
-        const featSeriesIds = p.studios.settings.featured_series || [];
-        const featClassIds  = p.studios.settings.featured_classes || [];
-        const [sr, cr] = await Promise.all([
+      // Load studio highlights + recent if member of a studio
+      if (p?.studio_id) {
+        const settings = p?.studios?.settings || {};
+        const featSeriesIds = settings.featured_series || [];
+        const featClassIds  = settings.featured_classes || [];
+        const [sr, cr, rsr, rcr] = await Promise.all([
           featSeriesIds.length ? supabase.from('series').select('*').in('id', featSeriesIds) : Promise.resolve({ data: [] }),
           featClassIds.length  ? supabase.from('classes').select('*').in('id', featClassIds)  : Promise.resolve({ data: [] }),
+          supabase.from('series').select('*').eq('studio_id', p.studio_id).eq('visibility','studio').order('updated_at',{ascending:false}).limit(4),
+          supabase.from('classes').select('*').eq('studio_id', p.studio_id).eq('visibility','studio').order('updated_at',{ascending:false}).limit(4),
         ]);
         setStudioHighlights([
           ...(sr.data||[]).map(r=>({ ...seriesFromDB(r), _hType:'series' })),
           ...(cr.data||[]).map(r=>({ ...classFromDB(r),  _hType:'class'  })),
         ]);
+        setStudioRecent([
+          ...(rsr.data||[]).map(r=>({ ...seriesFromDB(r), _hType:'series' })),
+          ...(rcr.data||[]).map(r=>({ ...classFromDB(r),  _hType:'class'  })),
+        ]);
       }
+      // Load recent public content from other instructors
+      const [{ data: pubS }, { data: pubC }] = await Promise.all([
+        supabase.from('series').select('*, profiles!created_by(name,studios(name))').eq('visibility','public').neq('created_by', user.id).order('updated_at',{ascending:false}).limit(4),
+        supabase.from('classes').select('*, profiles!created_by(name,studios(name))').eq('visibility','public').neq('created_by', user.id).order('updated_at',{ascending:false}).limit(4),
+      ]);
+      setRecentPublic([
+        ...(pubS||[]).map(r=>({...seriesFromDB(r),_hType:'series',_author:r.profiles})),
+        ...(pubC||[]).map(r=>({...classFromDB(r),_hType:'class',_author:r.profiles})),
+      ]);
     })();
   }, [user]);
 
@@ -5275,6 +5407,12 @@ function HavenApp() {
     await supabase.from('notifications').update({ read: true }).eq('user_id', user.id);
   };
 
+  const loadNotifications = async () => {
+    if (!user) return;
+    const { data } = await supabase.from('notifications').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(50);
+    setNotifications(data || []);
+  };
+
   const isChoreoSeries = s => {
     const movs=[...(s.reformer?.movements||[]),...(s.barre?.movements||[])];
     return movs.some(m=>m.timing);
@@ -5366,10 +5504,21 @@ function HavenApp() {
                 </button>
               ))}
             </div>
-            <button onClick={()=>{ goTab("home"); markAllNotifsRead(); }} title="Notificações" style={{position:"relative",background:"transparent",border:`1px solid ${unseenNotifCount>0?C.cream:`${C.cream}40`}`,borderRadius:6,padding:"6px 10px",cursor:"pointer",color:unseenNotifCount>0?C.cream:`${C.cream}80`,fontSize:14,display:"inline-flex",alignItems:"center"}}>
-              🔔
-              {unseenNotifCount>0&&<span style={{position:"absolute",top:-4,right:-4,background:"#e74c3c",color:"#fff",borderRadius:"50%",fontSize:9,padding:"0 4px",fontWeight:700,lineHeight:"14px",minWidth:14,textAlign:"center"}}>{unseenNotifCount}</span>}
-            </button>
+            <div style={{position:"relative"}}>
+              <button onClick={()=>{ const next=!showNotifPanel; setShowNotifPanel(next); if(next) loadNotifications(); }} title="Notificações" style={{position:"relative",background:showNotifPanel?C.cream:"transparent",border:`1px solid ${unseenNotifCount>0||showNotifPanel?C.cream:`${C.cream}40`}`,borderRadius:6,padding:"6px 10px",cursor:"pointer",color:showNotifPanel?C.crimson:unseenNotifCount>0?C.cream:`${C.cream}80`,fontSize:14,display:"inline-flex",alignItems:"center"}}>
+                🔔
+                {unseenNotifCount>0&&<span style={{position:"absolute",top:-4,right:-4,background:"#e74c3c",color:"#fff",borderRadius:"50%",fontSize:9,padding:"0 4px",fontWeight:700,lineHeight:"14px",minWidth:14,textAlign:"center"}}>{unseenNotifCount}</span>}
+              </button>
+              {showNotifPanel&&(
+                <NotifPanel
+                  notifications={notifications}
+                  onDismiss={dismissNotif}
+                  onMarkAllRead={markAllNotifsRead}
+                  onViewAll={()=>{ setShowNotifPanel(false); goTab("home"); }}
+                  onClose={()=>setShowNotifPanel(false)}
+                />
+              )}
+            </div>
             <button onClick={()=>supabase.auth.signOut()} style={{fontFamily:"'Satoshi',sans-serif",fontWeight:600,fontSize:12,padding:"6px 14px",borderRadius:6,border:`1px solid ${C.cream}40`,background:"transparent",color:`${C.cream}80`,cursor:"pointer"}} title="Sair">Sair</button>
           </div>
         </div>
@@ -5398,6 +5547,9 @@ function HavenApp() {
             onDismissNotif={dismissNotif}
             onMarkAllRead={markAllNotifsRead}
             studioHighlights={studioHighlights}
+            studioRecent={studioRecent}
+            recentPublic={recentPublic}
+            onGoDiscover={()=>{ goTab("discover"); loadDiscover(); }}
           />
         )}
 
@@ -5503,7 +5655,14 @@ function HavenApp() {
 
         {/* ── STUDIO ── */}
         {screen.mode==="studio"&&(
-          <StudioPage profile={profile} user={user} onProfileUpdate={p=>setProfile(p)} onCopyToLibrary={copyToLibrary} sendNotification={sendNotification}/>
+          <StudioPage
+            profile={profile} user={user} onProfileUpdate={p=>setProfile(p)}
+            onCopyToLibrary={copyToLibrary} sendNotification={sendNotification}
+            onSaveSeries={saveSeries} onSaveClass={saveClass}
+            onDeleteSeries={id=>deleteSeries(id)} onDeleteClass={deleteClass}
+            onViewAula={c=>navigate({mode:"aula",cls:c,fromLibrary:false})}
+            allSeries={series}
+          />
         )}
 
         {/* ── PERFIL ── */}
