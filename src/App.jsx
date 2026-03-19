@@ -3503,9 +3503,12 @@ const ClassBuilder = ({ allSeries, classes, onSave, onDeleteClass, onPermanentDe
       {showTypePicker&&(
         <div style={{display:"flex",gap:8,marginBottom:16,padding:"12px 16px",background:C.white,borderRadius:10,border:`1px solid ${C.stone}`,flexWrap:"wrap",alignItems:"center"}}>
           <span style={{fontSize:12,fontWeight:700,color:C.mist,fontFamily:"'Satoshi',sans-serif",marginRight:4}}>Tipo:</span>
-          {[["reformer","Reformer"],["barre","Barre"],["signature","✦ Signature"]].map(([type,label])=>(
-            <button key={type} onClick={()=>{startCreate(type);setShowTypePicker(false);}} style={{padding:"7px 18px",borderRadius:20,border:`1px solid ${type==="signature"?C.sig:C.stone}`,background:"transparent",color:type==="signature"?"#7a4010":C.ink,fontWeight:600,fontSize:13,cursor:"pointer",fontFamily:"'Satoshi',sans-serif"}}>{label}</button>
+          {(studioSettings?.class_types?.length ? studioSettings.class_types : []).map(type=>(
+            <button key={type} onClick={()=>{startCreate(type);setShowTypePicker(false);}} style={{padding:"7px 18px",borderRadius:20,border:`1px solid ${C.stone}`,background:"transparent",color:C.ink,fontWeight:600,fontSize:13,cursor:"pointer",fontFamily:"'Satoshi',sans-serif"}}>{type}</button>
           ))}
+          {!(studioSettings?.class_types?.length) && (
+            <span style={{fontSize:12,color:C.mist,fontFamily:"'Satoshi',sans-serif"}}>Configura os tipos de aula no perfil primeiro.</span>
+          )}
           <button onClick={()=>setShowTypePicker(false)} style={{marginLeft:"auto",background:"none",border:"none",cursor:"pointer",color:C.mist,fontSize:16,padding:"0 4px"}}>×</button>
         </div>
       )}
@@ -4173,7 +4176,7 @@ const ProfilePage = ({ profile, user, onProfileUpdate, studioSettings, aiStyle, 
             if (!confirmed2) return;
             await supabase.from('profiles').delete().eq('id', user.id);
             await supabase.auth.signOut();
-          }} style={{ alignSelf: 'flex-start', marginTop: 4, padding: '9px 24px', borderRadius: 8, border: `1px solid #fca5a5`, background: 'transparent', color: '#b91c1c', fontWeight: 600, fontSize: 13, cursor: 'pointer', fontFamily: "'Satoshi',sans-serif" }}>
+          }} style={{ alignSelf: 'flex-start', marginTop: 8, background: 'none', border: 'none', color: '#b91c1c', fontWeight: 500, fontSize: 12, cursor: 'pointer', fontFamily: "'Satoshi',sans-serif", padding: 0, textDecoration: 'underline' }}>
             Apagar conta
           </button>
         </div>
@@ -4182,7 +4185,7 @@ const ProfilePage = ({ profile, user, onProfileUpdate, studioSettings, aiStyle, 
   );
 };
 
-const buildTourSlides = (isInst, isStud) => {
+const buildTourSlides = (isInst, isStud, isOwner) => {
   const s = [];
   if (isInst) {
     s.push(
@@ -4194,7 +4197,7 @@ const buildTourSlides = (isInst, isStud) => {
     );
   }
   s.push({ tab:'studio', studioTab:'series', title:'Biblioteca do estúdio', body:'Séries e aulas aprovadas pelo studio, disponíveis para toda a equipa.' });
-  if (isStud) {
+  if (isStud && isOwner) {
     s.push(
       { tab:'studio', studioTab:'members',  title:'Membros do studio',  body:'Gere os instrutores da equipa — aprova pedidos de entrada e atribui papéis.' },
       { tab:'studio', studioTab:'reviews',  title:'Revisões',           body:'Aprova ou rejeita séries e aulas com comentários. O instrutor recebe notificação imediata.' },
@@ -6909,7 +6912,8 @@ function HavenApp() {
       if (newAiStyle) setAiStyle(newAiStyle);
       const isInst = roles?.isInstructor ?? true;
       const isStud = roles?.isStudio ?? false;
-      const slides = buildTourSlides(isInst, isStud);
+      const isOwner = roles?.isOwner ?? false;
+      const slides = buildTourSlides(isInst, isStud, isOwner);
       if (slides.length > 0) {
         setTourSlides(slides);
         setTourIdx(0);
@@ -6979,7 +6983,8 @@ function HavenApp() {
             <button onClick={()=>{
               const isInst = profile?.role !== 'studio_only';
               const isStud = !!(profile?.studio_id || profile?.studioMemberships?.length);
-              const slides=buildTourSlides(isInst,isStud);
+              const isOwner = ['studio_owner','super_admin','backoffice_admin','owner'].includes(profile?.role) || (profile?.studioMemberships?.find(m=>m.studio_id===profile?.studio_id)?.role==='owner');
+              const slides=buildTourSlides(isInst,isStud,isOwner);
               if(slides.length){setTourSlides(slides);setTourIdx(0);goTab(slides[0].tab);if(slides[0].studioTab)setStudioActiveTab(slides[0].studioTab);}
             }} style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"8px 12px",borderRadius:8,border:"none",cursor:"pointer",background:"transparent",color:`${C.cream}80`,fontFamily:"'Satoshi',sans-serif",fontSize:13,fontWeight:500,textAlign:"left"}}>
               <span style={{fontSize:15}}>❓</span><span>Tour</span>
