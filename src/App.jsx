@@ -3382,7 +3382,7 @@ Only use IDs from the available list. Return only the JSON array, no explanation
 };
 
 // ─── CLASS BUILDER ────────────────────────────────────────────────────────────
-const ClassBuilder = ({ allSeries, classes, onSave, onDeleteClass, onPermanentDeleteClass, onViewAula, studioSettings, onPublishClass, onUnpublishClass, hasStudio, onToggleClassPublic, onSendClass, onUpdateClass }) => {
+const ClassBuilder = ({ allSeries, classes, onSave, onDeleteClass, onPermanentDeleteClass, onViewAula, studioSettings, profileClassTypes, onPublishClass, onUnpublishClass, hasStudio, onToggleClassPublic, onSendClass, onUpdateClass }) => {
   const [creating, setCreating] = useState(false);
   const [newCls, setNewCls] = useState(null);
   const [classSearch, setClassSearch] = useState("");
@@ -3503,10 +3503,10 @@ const ClassBuilder = ({ allSeries, classes, onSave, onDeleteClass, onPermanentDe
       {showTypePicker&&(
         <div style={{display:"flex",gap:8,marginBottom:16,padding:"12px 16px",background:C.white,borderRadius:10,border:`1px solid ${C.stone}`,flexWrap:"wrap",alignItems:"center"}}>
           <span style={{fontSize:12,fontWeight:700,color:C.mist,fontFamily:"'Satoshi',sans-serif",marginRight:4}}>Tipo:</span>
-          {(studioSettings?.class_types?.length ? studioSettings.class_types : []).map(type=>(
+          {(profileClassTypes?.length ? profileClassTypes : []).map(type=>(
             <button key={type} onClick={()=>{startCreate(type);setShowTypePicker(false);}} style={{padding:"7px 18px",borderRadius:20,border:`1px solid ${C.stone}`,background:"transparent",color:C.ink,fontWeight:600,fontSize:13,cursor:"pointer",fontFamily:"'Satoshi',sans-serif"}}>{type}</button>
           ))}
-          {!(studioSettings?.class_types?.length) && (
+          {!(profileClassTypes?.length) && (
             <span style={{fontSize:12,color:C.mist,fontFamily:"'Satoshi',sans-serif"}}>Configura os tipos de aula no perfil primeiro.</span>
           )}
           <button onClick={()=>setShowTypePicker(false)} style={{marginLeft:"auto",background:"none",border:"none",cursor:"pointer",color:C.mist,fontSize:16,padding:"0 4px"}}>×</button>
@@ -3949,7 +3949,7 @@ const CollapsibleSection = ({ title, defaultOpen = true, children, badge }) => {
 };
 
 // ─── PROFILE PAGE ─────────────────────────────────────────────────────────────
-const ProfilePage = ({ profile, user, onProfileUpdate, studioSettings, aiStyle, onAiStyleChange, series=[], onSaveSeries }) => {
+const ProfilePage = ({ profile, user, onProfileUpdate, studioSettings, aiStyle, onAiStyleChange, series=[], onSaveSeries, onDirtyChange }) => {
   const [editName, setEditName] = useState(profile?.name || '');
   const [editPrefZones, setEditPrefZones] = useState(
     profile?.settings?.preferred_zones?.length ? profile.settings.preferred_zones : DEFAULT_STUDIO_ZONES
@@ -4007,7 +4007,9 @@ const ProfilePage = ({ profile, user, onProfileUpdate, studioSettings, aiStyle, 
     setEditPrefLevels(profile?.settings?.preferred_levels || []);
     setEditSeriesTypes(profile?.settings?.series_types?.length ? profile.settings.series_types : DEFAULT_STUDIO_SERIES_TYPES);
     setAiProfile(profile?.settings?.ai_profile || BLANK_AI);
-  }, [profile]);
+  // Only reset form when the profile id changes (different user), not on every content update
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile?.id]);
 
   const save = async (opts={}) => {
     setSaving(true);
@@ -4022,6 +4024,7 @@ const ProfilePage = ({ profile, user, onProfileUpdate, studioSettings, aiStyle, 
     }).eq('id', profile.id);
     setSaving(false);
     if (!error) {
+      onDirtyChange?.(false);
       if (!opts.silent) toast_?.('Perfil guardado');
       const updated = await api.loadProfile(user.id);
       onProfileUpdate(updated);
@@ -4035,6 +4038,7 @@ const ProfilePage = ({ profile, user, onProfileUpdate, studioSettings, aiStyle, 
   useEffect(() => {
     if (!profileMounted.current) { profileMounted.current = true; return; }
     if (!profile?.id) return;
+    onDirtyChange?.(true);
     clearTimeout(autoSaveTimer.current);
     autoSaveTimer.current = setTimeout(() => saveRef.current?.({silent:true}), 1500);
     return () => clearTimeout(autoSaveTimer.current);
@@ -4176,7 +4180,7 @@ const ProfilePage = ({ profile, user, onProfileUpdate, studioSettings, aiStyle, 
             if (!confirmed2) return;
             await supabase.from('profiles').delete().eq('id', user.id);
             await supabase.auth.signOut();
-          }} style={{ alignSelf: 'flex-start', marginTop: 8, background: 'none', border: 'none', color: '#b91c1c', fontWeight: 500, fontSize: 12, cursor: 'pointer', fontFamily: "'Satoshi',sans-serif", padding: 0, textDecoration: 'underline' }}>
+          }} style={{ alignSelf: 'flex-start', marginTop: 8, background: 'none', border: 'none', color: C.mist, fontWeight: 500, fontSize: 12, cursor: 'pointer', fontFamily: "'Satoshi',sans-serif", padding: 0, textDecoration: 'underline' }}>
             Apagar conta
           </button>
         </div>
@@ -4205,7 +4209,10 @@ const buildTourSlides = (isInst, isStud, isOwner) => {
     );
   }
   if (isInst) {
-    s.push({ tab:'discover', title:'Descobrir', body:'Explora séries públicas de outros instrutores e recebe partilhas directas para a tua biblioteca.' });
+    s.push(
+      { tab:'library', action:'openAiPanel', title:'Assistente AI', body:'O assistente está sempre disponível no lado direito. Gera cues de transição, notas de instrução e warm-up/cool-down com base no teu estilo pessoal.' },
+      { tab:'discover', title:'Descobrir', body:'Explora séries públicas de outros instrutores e recebe partilhas directas para a tua biblioteca.' },
+    );
   }
   return s;
 };
@@ -4624,15 +4631,16 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
               {showSeriesTypePicker&&(
                 <div style={{display:'flex',gap:8,flexWrap:'wrap',padding:'10px 14px',background:C.white,borderRadius:10,border:`1px solid ${C.stone}`,alignItems:'center'}}>
                   <span style={{fontSize:12,fontWeight:700,color:C.mist,fontFamily:"'Satoshi',sans-serif"}}>Tipo:</span>
-                  {[['reformer','Reformer'],['barre','Barre'],['signature','✦ Signature']].map(([t,lbl])=>(
+                  {(studio?.settings?.class_types?.length ? studio.settings.class_types : []).map(t=>(
                     <button key={t} onClick={async()=>{
                       const newS = { id:`s-${Date.now()}`, name:'', type:t, movements:[], visibility:'studio', studioId:profile.studio_id, createdBy:user.id, updated_at:new Date().toISOString() };
                       await onSaveStudioSeries(newS);
                       setEditingStudioSeriesId(newS.id);
                       setShowSeriesTypePicker(false);
                       refreshContent();
-                    }} style={{padding:'6px 16px',borderRadius:20,border:`1px solid ${t==='signature'?C.sig:C.stone}`,background:'transparent',color:t==='signature'?'#7a4010':C.ink,fontWeight:600,fontSize:13,cursor:'pointer',fontFamily:"'Satoshi',sans-serif"}}>{lbl}</button>
+                    }} style={{padding:'6px 16px',borderRadius:20,border:`1px solid ${C.stone}`,background:'transparent',color:C.ink,fontWeight:600,fontSize:13,cursor:'pointer',fontFamily:"'Satoshi',sans-serif"}}>{t}</button>
                   ))}
+                  {!(studio?.settings?.class_types?.length) && <span style={{fontSize:12,color:C.mist,fontFamily:"'Satoshi',sans-serif"}}>Configura os tipos nas Definições do studio.</span>}
                   <button onClick={()=>setShowSeriesTypePicker(false)} style={{marginLeft:'auto',background:'none',border:'none',cursor:'pointer',color:C.mist,fontSize:16,padding:'0 4px'}}>×</button>
                 </div>
               )}
@@ -4665,7 +4673,7 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
                       {isExpanded&&(
                         <div style={{borderTop:`1px solid ${C.stone}`,padding:'0 8px 8px'}}>
                           {editingStudioSeriesId===s.id ? (
-                            <SeriesEditor series={sObj} onSave={updated=>{onSaveStudioSeries?.(updated);setEditingStudioSeriesId(null);refreshContent();}} onCancel={()=>setEditingStudioSeriesId(null)} aiStyle="" studioSettings={studio?.settings}/>
+                            <SeriesEditor series={sObj} onSave={updated=>{onSaveStudioSeries?.(updated);setEditingStudioSeriesId(null);refreshContent();}} onCancel={()=>setEditingStudioSeriesId(null)} aiStyle="" studioSettings={studio?.settings} availableClassTypes={studio?.settings?.class_types?.length?studio.settings.class_types:undefined}/>
                           ) : (
                             <SeriesCard series={sObj} onEdit={isAdmin&&onSaveStudioSeries?()=>setEditingStudioSeriesId(s.id):null} onDelete={isAdmin&&onDeleteSeries?()=>onDeleteSeries(s.id).then(refreshContent):null} onUpdateSeries={updated=>{onSaveStudioSeries?.(updated);refreshContent();}} aiStyle="" hasStudio={false} currentUserId={user.id} compact={false}/>
                           )}
@@ -4694,15 +4702,16 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
               {showClassTypePicker&&(
                 <div style={{display:'flex',gap:8,flexWrap:'wrap',padding:'10px 14px',background:C.white,borderRadius:10,border:`1px solid ${C.stone}`,alignItems:'center'}}>
                   <span style={{fontSize:12,fontWeight:700,color:C.mist,fontFamily:"'Satoshi',sans-serif"}}>Tipo:</span>
-                  {[['reformer','Reformer'],['barre','Barre'],['signature','✦ Signature']].map(([t,lbl])=>(
+                  {(studio?.settings?.class_types?.length ? studio.settings.class_types : []).map(t=>(
                     <button key={t} onClick={async()=>{
                       const now=new Date().toISOString().split('T')[0];
                       const newC = { id:`c-${Date.now()}`, name:'', type:t, seriesIds:[], date:now, visibility:'studio', studio_id:profile.studio_id, created_by:user.id };
                       await onSaveStudioClass(newC);
                       onViewAula(newC);
                       setShowClassTypePicker(false);
-                    }} style={{padding:'6px 16px',borderRadius:20,border:`1px solid ${t==='signature'?C.sig:C.stone}`,background:'transparent',color:t==='signature'?'#7a4010':C.ink,fontWeight:600,fontSize:13,cursor:'pointer',fontFamily:"'Satoshi',sans-serif"}}>{lbl}</button>
+                    }} style={{padding:'6px 16px',borderRadius:20,border:`1px solid ${C.stone}`,background:'transparent',color:C.ink,fontWeight:600,fontSize:13,cursor:'pointer',fontFamily:"'Satoshi',sans-serif"}}>{t}</button>
                   ))}
+                  {!(studio?.settings?.class_types?.length) && <span style={{fontSize:12,color:C.mist,fontFamily:"'Satoshi',sans-serif"}}>Configura os tipos nas Definições do studio.</span>}
                   <button onClick={()=>setShowClassTypePicker(false)} style={{marginLeft:'auto',background:'none',border:'none',cursor:'pointer',color:C.mist,fontSize:16,padding:'0 4px'}}>×</button>
                 </div>
               )}
@@ -6368,6 +6377,8 @@ const SendModal = ({ item, currentUserId, onSend, onClose }) => {
 function HavenApp() {
   const [user,    setUser]    = useState(null);
   const [profile, setProfile] = useState(null);
+  const profileDirtyRef = React.useRef(false);
+  const confirm_app = useConfirm();
   const [authLoading, setAuthLoading] = useState(true);
   const [series,  setSeries]  = useState([]);
   const [classes, setClasses] = useState([]);
@@ -6865,11 +6876,19 @@ function HavenApp() {
     return sortOrder==="asc" ? cmp : -cmp;
   });
 
-  const goTab = id => {
+  const goTabImmediate = id => {
     const newScreen = {mode:id,cls:null,fromLibrary:false};
     setScreen(newScreen); setEditingSeries(null); setAddingSeries(false); setScreenStack([]); setAulaTeachingMode(false); setAulaEditingSeries(null);
     window.scrollTo(0, 0);
     window.history.replaceState({ screen: newScreen, screenStack: [] }, '');
+  };
+  const goTab = async id => {
+    if (screen.mode === 'perfil' && profileDirtyRef.current) {
+      const leave = await confirm_app('Tens alterações por guardar no perfil. Sair mesmo assim?', { confirmLabel: 'Sair sem guardar', cancelLabel: 'Ficar' });
+      if (!leave) return;
+      profileDirtyRef.current = false;
+    }
+    goTabImmediate(id);
   };
   const isAulaMode = screen.mode==="aula" && aulaTeachingMode;
 
@@ -7211,7 +7230,8 @@ function HavenApp() {
           <ProfilePage profile={profile} user={user} onProfileUpdate={p=>setProfile(p)}
             studioSettings={profile?.studios?.settings}
             aiStyle={aiStyle} onAiStyleChange={v=>{setAiStyle(v); api.save('aistyle',{value:v});}}
-            series={series} onSaveSeries={saveSeries}/>
+            series={series} onSaveSeries={saveSeries}
+            onDirtyChange={v=>{ profileDirtyRef.current = v; }}/>
         )}
 
         {/* ── MOVEMENTS ── */}
@@ -7228,6 +7248,7 @@ function HavenApp() {
             onPermanentDeleteClass={permanentDeleteClass}
             onViewAula={c=>navigate({mode:"aula",cls:c,fromLibrary:false})}
             studioSettings={profile?.studios?.settings}
+            profileClassTypes={profile?.settings?.class_types}
             onPublishClass={publishClassToStudio}
             onUnpublishClass={unpublishClassFromStudio}
             hasStudio={!!profile?.studio_id}
@@ -7348,6 +7369,8 @@ function HavenApp() {
             const blankCls = { id: `tour-${Date.now()}`, name: 'Nova aula (tour)', type: 'Reformer', seriesIds: [], date: null, createdBy: user?.id };
             setScreen({ mode: 'aula', cls: blankCls, fromLibrary: false });
           }
+        } else if (s?.action === 'openAiPanel') {
+          setAiPanelOpen(true);
         }
       };
       const advance = () => {
