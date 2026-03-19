@@ -251,9 +251,11 @@ export default function Onboarding({ user, profile, onComplete }) {
     setSaving(true);
     setSaveError('');
     try {
-      // 1. Profile update
-      await supabase.from('profiles').update({
-        name: name.trim() || profile?.name,
+      // 1. Profile upsert (handles both new accounts and existing rows)
+      const { error: profileErr } = await supabase.from('profiles').upsert({
+        id: user.id,
+        email: user.email,
+        name: name.trim() || profile?.name || null,
         onboarded: true,
         bio: bio.trim() || null,
         settings: {
@@ -262,16 +264,17 @@ export default function Onboarding({ user, profile, onComplete }) {
           series_types: ['Warm-Up', 'Cardio', 'Mobility', 'Flexibility', 'Balance', 'Flow', 'Força', 'Cool-down'],
           ai_profile: iAi,
         },
-      }).eq('id', user.id);
+      }, { onConflict: 'id' });
+      if (profileErr) throw profileErr;
 
-      // 2. Instructor AI style
+      // 2. Instructor AI style (best-effort — table may not exist on all envs)
       const aiStr = aiToString(iAi);
       savedAiRef.current = aiStr;
       if (aiStr) {
         await supabase.from('ai_styles').upsert(
           { user_id: user.id, value: aiStr, updated_at: new Date().toISOString() },
           { onConflict: 'user_id' }
-        );
+        ).then(() => {}).catch(() => {});
       }
 
       // 3. Create studio
@@ -296,19 +299,20 @@ export default function Onboarding({ user, profile, onComplete }) {
           .single();
         if (studioErr) throw studioErr;
 
-        await supabase.from('studio_memberships').insert({
-          user_id: user.id, studio_id: newStudio.id, role: 'owner', status: 'active',
-        });
+        await supabase.from('studio_memberships').upsert(
+          { user_id: user.id, studio_id: newStudio.id, role: 'owner', status: 'active' },
+          { onConflict: 'user_id,studio_id' }
+        );
         await supabase.from('profiles').update({ studio_id: newStudio.id }).eq('id', user.id);
       }
 
       // 4a. Instructor joining existing studio via code
       if (!isStudio && typeof joinStatus === 'object' && joinStatus?.id) {
-        await supabase.from('studio_memberships').insert({
-          user_id: user.id, studio_id: joinStatus.id, role: 'member', status: 'pending',
-        });
+        await supabase.from('studio_memberships').upsert(
+          { user_id: user.id, studio_id: joinStatus.id, role: 'instructor', status: 'pending' },
+          { onConflict: 'user_id,studio_id' }
+        );
         await supabase.from('profiles').update({ studio_id: joinStatus.id }).eq('id', user.id);
-        // Notify studio owners/admins
         const { data: owners4a } = await supabase.from('studio_memberships').select('user_id').eq('studio_id', joinStatus.id).eq('status', 'active').in('role', ['owner', 'admin']);
         for (const o of owners4a || []) {
           if (o.user_id !== user.id) {
@@ -318,18 +322,18 @@ export default function Onboarding({ user, profile, onComplete }) {
               body: `${name.trim() || 'Alguém'} pediu para entrar no studio.`,
               item_type: 'studio', item_id: joinStatus.id,
               created_at: new Date().toISOString(),
-            });
+            }).then(() => {}).catch(() => {});
           }
         }
       }
 
       // 4b. Studio manager joining existing studio via code
       if (isStudio && studioAction === 'join' && typeof sJoinStatus === 'object' && sJoinStatus?.id) {
-        await supabase.from('studio_memberships').insert({
-          user_id: user.id, studio_id: sJoinStatus.id, role: 'member', status: 'pending',
-        });
+        await supabase.from('studio_memberships').upsert(
+          { user_id: user.id, studio_id: sJoinStatus.id, role: 'instructor', status: 'pending' },
+          { onConflict: 'user_id,studio_id' }
+        );
         await supabase.from('profiles').update({ studio_id: sJoinStatus.id }).eq('id', user.id);
-        // Notify studio owners/admins
         const { data: owners4b } = await supabase.from('studio_memberships').select('user_id').eq('studio_id', sJoinStatus.id).eq('status', 'active').in('role', ['owner', 'admin']);
         for (const o of owners4b || []) {
           if (o.user_id !== user.id) {
@@ -339,13 +343,14 @@ export default function Onboarding({ user, profile, onComplete }) {
               body: `${name.trim() || 'Alguém'} pediu para entrar no studio.`,
               item_type: 'studio', item_id: sJoinStatus.id,
               created_at: new Date().toISOString(),
-            });
+            }).then(() => {}).catch(() => {});
           }
         }
       }
 
       onComplete(savedAiRef.current || null, { isInstructor, isStudio });
     } catch (e) {
+      console.error('Onboarding save error:', e);
       setSaveError(e.message || 'Erro ao guardar. Tenta novamente.');
     } finally {
       setSaving(false);

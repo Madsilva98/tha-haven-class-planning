@@ -6702,12 +6702,6 @@ function HavenApp() {
       if (st && typeof st.value === 'string')    setAiStyle(st.value);
       let p = await api.loadProfile(user.id);
 
-      // If no profile exists yet (new account), create a stub and reload
-      if (!p) {
-        await supabase.from('profiles').insert({ id: user.id, email: user.email, onboarded: false });
-        p = await api.loadProfile(user.id);
-      }
-
       // Handle pending invite code
       const inviteCode = localStorage.getItem('pending_invite');
       if (inviteCode && p && !p.studio_id) {
