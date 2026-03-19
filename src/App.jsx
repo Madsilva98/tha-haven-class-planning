@@ -4043,7 +4043,7 @@ const ProfilePage = ({ profile, user, onProfileUpdate, studioSettings, aiStyle, 
   useEffect(() => {
     setEditName(profile?.name || '');
     setEditPrefZones(profile?.settings?.preferred_zones?.length ? profile.settings.preferred_zones : DEFAULT_STUDIO_ZONES);
-    setEditPrefClassTypes(profile?.settings?.class_types || []);
+    setEditPrefClassTypes((profile?.settings?.class_types || []).map(normalizeClassType));
     setEditPrefLevels(profile?.settings?.preferred_levels || []);
     setEditSeriesTypes(profile?.settings?.series_types?.length ? profile.settings.series_types : DEFAULT_STUDIO_SERIES_TYPES);
     setAiProfile(profile?.settings?.ai_profile || BLANK_AI);
@@ -4331,9 +4331,11 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
   const confirm_ = useConfirm();
 
   const studio = profile?.studios;
-  const isAdmin = ['admin', 'studio_owner', 'super_admin', 'backoffice_admin'].includes(profile?.role);
+  const memberRole = profile?.studioMemberships?.find(m => (m.studio_id || m.studios?.id) === profile?.studio_id)?.role;
+  const isAdmin = ['admin', 'studio_owner', 'super_admin', 'backoffice_admin'].includes(profile?.role)
+    || ['admin', 'owner', 'studio_owner'].includes(memberRole);
   const isOwner = ['studio_owner', 'super_admin', 'backoffice_admin', 'owner'].includes(profile?.role)
-    || (profile?.studioMemberships?.find(m => m.studio_id === profile?.studio_id)?.role === 'owner');
+    || ['owner', 'studio_owner'].includes(memberRole);
 
   useEffect(() => {
     if (studio?.settings) {
@@ -7275,7 +7277,14 @@ function HavenApp() {
             onJoinStudio={async studioId => {
               if (!user) return;
               await supabase.from('studio_memberships').upsert({ user_id: user.id, studio_id: studioId, role: 'instructor', status: 'pending' }, { onConflict: 'user_id,studio_id' });
-              toast('Pedido enviado. Aguarda aprovação do studio.', 3000);
+              // Notify studio admins/owners
+              const { data: owners } = await supabase.from('studio_memberships').select('user_id').eq('studio_id', studioId).eq('status', 'active').in('role', ['owner', 'admin', 'studio_owner']);
+              for (const o of (owners || [])) {
+                if (o.user_id !== user.id) {
+                  await supabase.from('notifications').insert({ user_id: o.user_id, type: 'join_request', read: false, title: 'Novo pedido de entrada', body: `${profile?.name || 'Alguém'} pediu para entrar no studio.`, item_type: 'studio', item_id: studioId, created_at: new Date().toISOString() }).then(()=>{}).catch(()=>{});
+                }
+              }
+              toast('Pedido enviado. Aguarda aprovação do studio.', 'info');
             }}
           />
         )}
