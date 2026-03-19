@@ -4394,6 +4394,12 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
   }, [profile?.studio_id, isAdmin]);
 
   useEffect(() => {
+    if (activeTab !== 'members' || !isAdmin || !profile?.studio_id) return;
+    supabase.from('studio_memberships').select('*, profiles(id, name)').eq('studio_id', profile.studio_id).eq('status', 'pending')
+      .then(({ data }) => setPendingMembers(data || []));
+  }, [activeTab]);
+
+  useEffect(() => {
     if (!profile?.studio_id) return;
     setLoadingContent(true);
     Promise.all([
@@ -4659,7 +4665,7 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
   const tabs = [
     { key: 'series', label: 'Séries do Studio' },
     { key: 'classes', label: 'Aulas do Studio' },
-    { key: 'members', label: 'Membros' },
+    { key: 'members', label: `Membros${pendingMembers.length > 0 ? ` (${pendingMembers.length})` : ''}` },
     { key: 'notices', label: 'Avisos' },
     ...(isAdmin ? [{ key: 'reviews', label: `Revisões${pendingSeries.length+pendingClasses.length+pendingDeletion.length>0?' ('+(pendingSeries.length+pendingClasses.length+pendingDeletion.length)+')':''}` }] : []),
     ...(isOwner ? [{ key: 'settings', label: 'Definições' }] : []),
