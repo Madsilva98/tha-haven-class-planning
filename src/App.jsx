@@ -4141,6 +4141,18 @@ const ProfilePage = ({ profile, user, onProfileUpdate, studioSettings, aiStyle, 
               <div style={{ fontSize: 12, fontWeight: 700, color: C.mist, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Email</div>
               <div style={{ fontSize: 14, color: C.mist, padding: '8px 0' }}>{user?.email}</div>
             </div>
+            {/* Cor da app */}
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: C.mist, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Cor da app</div>
+              <div style={{display:'flex',alignItems:'center',gap:12}}>
+                <input type="color" value={editPrimaryColor} onChange={e=>setEditPrimaryColor(e.target.value)} style={{width:36,height:36,borderRadius:8,border:`1px solid ${C.stone}`,cursor:'pointer',padding:2}} />
+                <div>
+                  <div style={{fontSize:12,fontWeight:600,color:C.ink,fontFamily:"'Satoshi',sans-serif"}}>{editPrimaryColor}</div>
+                  {!contrastOk(editPrimaryColor) && <div style={{fontSize:11,color:'#b45309',marginTop:2,fontFamily:"'Satoshi',sans-serif"}}>⚠️ Cor com pouco contraste</div>}
+                </div>
+                {editPrimaryColor !== C.crimson && <button onClick={()=>setEditPrimaryColor(C.crimson)} style={{fontSize:11,padding:'4px 10px',borderRadius:6,border:`1px solid ${C.stone}`,background:'transparent',color:C.mist,cursor:'pointer',fontFamily:"'Satoshi',sans-serif"}}>Repor</button>}
+              </div>
+            </div>
           </div>
         </CollapsibleSection>
 
@@ -4207,19 +4219,6 @@ const ProfilePage = ({ profile, user, onProfileUpdate, studioSettings, aiStyle, 
             onAdd={() => { const v = newPrefZone.trim(); if (v && !editPrefZones.map(x => x.toLowerCase()).includes(v.toLowerCase())) { setEditPrefZones(p => [...p, v]); setNewPrefZone(''); } }} />
         </CollapsibleSection>
 
-        {/* 7. Cor da app */}
-        <CollapsibleSection title="Cor da app" defaultOpen={false}>
-          <p style={{margin:'0 0 12px',fontSize:12,color:C.mist,fontFamily:"'Satoshi',sans-serif"}}>Substitui o bordeaux em toda a app (exceto dentro da tab Studio).</p>
-          <div style={{display:'flex',alignItems:'center',gap:12}}>
-            <input type="color" value={editPrimaryColor} onChange={e=>setEditPrimaryColor(e.target.value)} style={{width:40,height:40,borderRadius:8,border:`1px solid ${C.stone}`,cursor:'pointer',padding:2}} />
-            <div>
-              <div style={{fontSize:13,fontWeight:600,color:C.ink,fontFamily:"'Satoshi',sans-serif"}}>{editPrimaryColor}</div>
-              {!contrastOk(editPrimaryColor) && <div style={{fontSize:11,color:'#b45309',marginTop:2,fontFamily:"'Satoshi',sans-serif"}}>⚠️ É melhor escolheres uma cor com mais contraste</div>}
-            </div>
-            {editPrimaryColor !== C.crimson && <button onClick={()=>setEditPrimaryColor(C.crimson)} style={{fontSize:11,padding:'4px 10px',borderRadius:6,border:`1px solid ${C.stone}`,background:'transparent',color:C.mist,cursor:'pointer',fontFamily:"'Satoshi',sans-serif"}}>Repor default</button>}
-          </div>
-        </CollapsibleSection>
-
         {/* 8. IA — Estilo de instrução */}
         <CollapsibleSection title="IA — Estilo de instrução" defaultOpen={false}>
           <AiForm ai={aiProfile} setAi={setAiProfile} />
@@ -4281,7 +4280,8 @@ const buildTourSlides = (isInst, isStud, isOwner) => {
   return s;
 };
 
-const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotification, onSaveSeries, onSaveClass, onSaveStudioSeries, onSaveStudioClass, onDeleteSeries, onDeleteClass, onViewAula, allSeries=[], allClasses=[], onPublishSeries, onPublishClass, activeTab='series', onTabChange }) => {
+const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotification, onSaveSeries, onSaveClass, onSaveStudioSeries, onSaveStudioClass, onDeleteSeries, onDeleteClass, onViewAula, allSeries=[], allClasses=[], onPublishSeries, onPublishClass, activeTab='series', onTabChange, brandColor }) => {
+  const bc = brandColor ?? bc;
   const setActiveTab = onTabChange || (() => {});
   const [submitModal, setSubmitModal] = useState(false); // picker modal
   const [submitTab, setSubmitTab] = useState('series'); // 'series' | 'classes'
@@ -4343,7 +4343,7 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
       setEditSeriesTypes(studio.settings.series_types || DEFAULT_STUDIO_SERIES_TYPES);
       setEditGuidelines(studio.settings.guidelines || '');
       setEditStudioAiProfile(studio.settings.ai_profile || BLANK_AI);
-      setEditStudioPrimaryColor(studio.settings.primary_color || C.crimson);
+      setEditStudioPrimaryColor(studio.settings.primary_color || bc);
     } else {
       setEditClassTypes(DEFAULT_STUDIO_CLASS_TYPES);
       setEditZones(DEFAULT_STUDIO_ZONES);
@@ -4632,14 +4632,14 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
 
   if (!profile?.studio_id) return (
     <div style={{ maxWidth: 500, margin: '40px auto' }}>
-      <h2 style={{ fontFamily:"'Clash Display',sans-serif", fontSize: 26, fontWeight: 500, color: C.crimson, marginBottom: 4 }}>Studio</h2>
+      <h2 style={{ fontFamily:"'Clash Display',sans-serif", fontSize: 26, fontWeight: 500, color: bc, marginBottom: 4 }}>Studio</h2>
       <p style={{ color: C.mist, fontSize: 13, marginBottom: 24 }}>Ainda não fazes parte de um studio. Cria um novo ou junta-te a um existente.</p>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         <div style={{ background: C.white, borderRadius: 12, border: `1px solid ${C.stone}`, padding: 20 }}>
           <div style={{ fontWeight: 700, fontSize: 14, color: C.ink, marginBottom: 10 }}>Criar novo studio</div>
           <form onSubmit={handleCreate} style={{ display: 'flex', gap: 8 }}>
             <input value={joinSlug} onChange={e => setJoinSlug(e.target.value)} placeholder="Nome do studio" required style={{ flex: 1, padding: '8px 12px', borderRadius: 8, border: `1px solid ${C.stone}`, fontFamily: "'Satoshi',sans-serif", fontSize: 13, outline: 'none' }}/>
-            <button type="submit" disabled={joining} style={{ padding: '8px 18px', borderRadius: 8, border: 'none', background: C.crimson, color: C.cream, fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: "'Satoshi',sans-serif" }}>Criar</button>
+            <button type="submit" disabled={joining} style={{ padding: '8px 18px', borderRadius: 8, border: 'none', background: bc, color: C.cream, fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: "'Satoshi',sans-serif" }}>Criar</button>
           </form>
         </div>
         <div style={{ background: C.white, borderRadius: 12, border: `1px solid ${C.stone}`, padding: 20 }}>
@@ -4666,8 +4666,8 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
   const TabBtn = ({ tabKey, label }) => (
     <button onClick={() => setActiveTab(tabKey)} style={{
       fontFamily:"'Satoshi',sans-serif", fontSize: 13, fontWeight: activeTab===tabKey ? 700 : 500,
-      color: activeTab===tabKey ? C.crimson : C.mist, background: 'none', border: 'none',
-      borderBottom: `2px solid ${activeTab===tabKey ? C.crimson : 'transparent'}`,
+      color: activeTab===tabKey ? bc : C.mist, background: 'none', border: 'none',
+      borderBottom: `2px solid ${activeTab===tabKey ? bc : 'transparent'}`,
       padding: '8px 2px', cursor: 'pointer', whiteSpace: 'nowrap',
     }}>{label}</button>
   );
@@ -4679,21 +4679,21 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
         <div style={{ flex: 1 }}>
-          <h2 style={{ fontFamily:"'Clash Display',sans-serif", fontSize: 26, fontWeight: 500, color: C.crimson, margin: 0 }}>{studio?.name || 'Studio'}</h2>
+          <h2 style={{ fontFamily:"'Clash Display',sans-serif", fontSize: 26, fontWeight: 500, color: bc, margin: 0 }}>{studio?.name || 'Studio'}</h2>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
             <span style={{ fontSize: 12, color: C.mist }}>Código:</span>
             <code style={{ fontSize: 13, background: C.stone, padding: '3px 10px', borderRadius: 6, color: C.ink, fontWeight: 700, letterSpacing: '0.1em' }}>{studio?.studio_code || studio?.slug || '—'}</code>
-            <button onClick={copySlug} style={{ background: 'none', border: 'none', color: C.crimson, fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>Copiar</button>
+            <button onClick={copySlug} style={{ background: 'none', border: 'none', color: bc, fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>Copiar</button>
           </div>
         </div>
         <div style={{display:'flex',gap:8}}>
           {!isAdmin&&(onPublishSeries||onPublishClass)&&(
-            <button onClick={()=>setSubmitModal(true)} style={{ padding: '8px 16px', borderRadius: 8, border: `1px solid ${C.crimson}`, background: 'transparent', color: C.crimson, fontWeight: 700, fontSize: 12, cursor: 'pointer', fontFamily: "'Satoshi',sans-serif", whiteSpace: 'nowrap' }}>
+            <button onClick={()=>setSubmitModal(true)} style={{ padding: '8px 16px', borderRadius: 8, border: `1px solid ${bc}`, background: 'transparent', color: bc, fontWeight: 700, fontSize: 12, cursor: 'pointer', fontFamily: "'Satoshi',sans-serif", whiteSpace: 'nowrap' }}>
               ↑ Submeter
             </button>
           )}
           {(isAdmin || profile?.role === 'studio_owner') && (
-            <button onClick={generateInvite} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: C.crimson, color: C.cream, fontWeight: 700, fontSize: 12, cursor: 'pointer', fontFamily: "'Satoshi',sans-serif", whiteSpace: 'nowrap' }}>
+            <button onClick={generateInvite} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: bc, color: C.cream, fontWeight: 700, fontSize: 12, cursor: 'pointer', fontFamily: "'Satoshi',sans-serif", whiteSpace: 'nowrap' }}>
               + Convidar
             </button>
           )}
@@ -4711,7 +4711,7 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
           {/* Create new studio series */}
           {isAdmin&&onSaveStudioSeries&&(
             <div style={{display:'flex',flexDirection:'column',gap:8}}>
-              <button onClick={()=>setShowSeriesTypePicker(p=>!p)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:13,fontWeight:700,padding:'7px 16px',borderRadius:8,border:'none',background:C.crimson,color:C.cream,cursor:'pointer',display:'inline-flex',alignItems:'center',gap:6,alignSelf:'flex-start'}}>
+              <button onClick={()=>setShowSeriesTypePicker(p=>!p)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:13,fontWeight:700,padding:'7px 16px',borderRadius:8,border:'none',background:bc,color:C.cream,cursor:'pointer',display:'inline-flex',alignItems:'center',gap:6,alignSelf:'flex-start'}}>
                 + Nova Série
               </button>
               {showSeriesTypePicker&&(
@@ -4743,7 +4743,7 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
                   const isExpanded = expandedSeriesId===s.id;
                   const sObj = seriesFromDB(s);
                   return (
-                    <div key={s.id} style={{background:C.white,borderRadius:12,border:`1px solid ${isExpanded?C.crimson:C.stone}`}}>
+                    <div key={s.id} style={{background:C.white,borderRadius:12,border:`1px solid ${isExpanded?bc:C.stone}`}}>
                       <div style={{display:'flex',alignItems:'center',gap:10,padding:'10px 14px',cursor:'pointer'}} onClick={()=>setExpandedSeriesId(isExpanded?null:s.id)}>
                         <div style={{flex:1,minWidth:0}}>
                           <div style={{fontWeight:700,fontSize:13,color:C.ink,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{s.name||'(sem nome)'}</div>
@@ -4782,7 +4782,7 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
           {/* Create new studio class */}
           {isAdmin&&onSaveStudioClass&&onViewAula&&(
             <div style={{display:'flex',flexDirection:'column',gap:8}}>
-              <button onClick={()=>setShowClassTypePicker(p=>!p)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:13,fontWeight:700,padding:'7px 16px',borderRadius:8,border:'none',background:C.crimson,color:C.cream,cursor:'pointer',display:'inline-flex',alignItems:'center',gap:6,alignSelf:'flex-start'}}>
+              <button onClick={()=>setShowClassTypePicker(p=>!p)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:13,fontWeight:700,padding:'7px 16px',borderRadius:8,border:'none',background:bc,color:C.cream,cursor:'pointer',display:'inline-flex',alignItems:'center',gap:6,alignSelf:'flex-start'}}>
                 + Nova Aula
               </button>
               {showClassTypePicker&&(
@@ -4878,8 +4878,8 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
                 {(()=>{
                   const isOwnerRole = m.role==='studio_owner'||m.role==='owner';
                   const roleLabel = isOwnerRole?'Owner':m.role==='admin'?'Admin':'Instructor';
-                  const roleBg = isOwnerRole?C.crimson:m.role==='admin'?`${C.crimson}18`:C.stone;
-                  const roleColor = isOwnerRole?C.cream:m.role==='admin'?C.crimson:C.mist;
+                  const roleBg = isOwnerRole?bc:m.role==='admin'?`${bc}18`:C.stone;
+                  const roleColor = isOwnerRole?C.cream:m.role==='admin'?bc:C.mist;
                   return <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 10px', borderRadius: 20, background: roleBg, color: roleColor }}>{roleLabel}</span>;
                 })()}
                 {isOwner && m.id !== user.id && (
@@ -4917,7 +4917,7 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
                 rows={3}
                 style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: `1px solid ${C.stone}`, fontFamily: "'Satoshi',sans-serif", fontSize: 13, outline: 'none', resize: 'vertical', boxSizing: 'border-box', marginBottom: 12 }}
               />
-              <button onClick={postNotice} disabled={postingNotice || !newNoticeTitle.trim()} style={{ padding: '9px 22px', borderRadius: 8, border: 'none', background: postingNotice || !newNoticeTitle.trim() ? C.stone : C.crimson, color: C.cream, fontWeight: 700, fontSize: 13, cursor: postingNotice || !newNoticeTitle.trim() ? 'not-allowed' : 'pointer', fontFamily: "'Satoshi',sans-serif" }}>
+              <button onClick={postNotice} disabled={postingNotice || !newNoticeTitle.trim()} style={{ padding: '9px 22px', borderRadius: 8, border: 'none', background: postingNotice || !newNoticeTitle.trim() ? C.stone : bc, color: C.cream, fontWeight: 700, fontSize: 13, cursor: postingNotice || !newNoticeTitle.trim() ? 'not-allowed' : 'pointer', fontFamily: "'Satoshi',sans-serif" }}>
                 {postingNotice ? 'A publicar…' : 'Publicar aviso'}
               </button>
             </div>
@@ -4957,7 +4957,7 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
                 <div style={{fontSize:12,fontWeight:700,color:C.mist,textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:12}}>Séries pendentes</div>
                 <div style={{display:'flex',flexDirection:'column',gap:8}}>
                   {pendingSeries.map(s=>(
-                    <div key={s.id} style={{background:C.white,borderRadius:12,border:`1px solid ${expandedSeriesId===s.id?C.crimson:C.stone}`}}>
+                    <div key={s.id} style={{background:C.white,borderRadius:12,border:`1px solid ${expandedSeriesId===s.id?bc:C.stone}`}}>
                       <div style={{display:'flex',alignItems:'center',gap:12,padding:'12px 16px'}}>
                         <div style={{flex:1}}>
                           <div style={{fontWeight:700,fontSize:14,color:C.ink}}>{s.name}</div>
@@ -5111,6 +5111,18 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
                 ))}
               </div>
             </div>
+            {/* Cor do Studio */}
+            <div>
+              <div style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:6}}>Cor do Studio</div>
+              <div style={{display:'flex',alignItems:'center',gap:12}}>
+                <input type="color" value={editStudioPrimaryColor} onChange={e=>setEditStudioPrimaryColor(e.target.value)} style={{width:36,height:36,borderRadius:8,border:`1px solid ${C.stone}`,cursor:'pointer',padding:2}} />
+                <div>
+                  <div style={{fontSize:12,fontWeight:600,color:C.ink,fontFamily:"'Satoshi',sans-serif"}}>{editStudioPrimaryColor}</div>
+                  {!contrastOk(editStudioPrimaryColor) && <div style={{fontSize:11,color:'#b45309',marginTop:2,fontFamily:"'Satoshi',sans-serif"}}>⚠️ Cor com pouco contraste</div>}
+                </div>
+                {editStudioPrimaryColor !== C.crimson && <button onClick={()=>setEditStudioPrimaryColor(C.crimson)} style={{fontSize:11,padding:'4px 10px',borderRadius:6,border:`1px solid ${C.stone}`,background:'transparent',color:C.mist,cursor:'pointer',fontFamily:"'Satoshi',sans-serif"}}>Repor</button>}
+              </div>
+            </div>
           </CollapsibleSection>
           {/* Public toggle */}
           <div style={{display:'flex',alignItems:'center',gap:12,padding:'12px 0',borderTop:`1px solid ${C.stone}`,marginTop:4}}>
@@ -5125,7 +5137,7 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
           <CollapsibleSection title="Código de convite" defaultOpen={false}>
             <div style={{fontSize:12,color:C.mist,marginBottom:10}}>Partilha este código com instrutores para entrarem no studio. Podes alterá-lo manualmente (só letras e números, máx. 8 caracteres).</div>
             <div style={{display:'flex',gap:8,alignItems:'center'}}>
-              <input value={editStudioCode} onChange={e=>setEditStudioCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,8))} placeholder="ex. HVN4KR" style={{flex:1,padding:'8px 14px',borderRadius:8,border:`1px solid ${C.stone}`,fontFamily:"'Satoshi',sans-serif",fontSize:15,fontWeight:700,letterSpacing:'0.12em',outline:'none',background:C.cream,color:C.crimson}}/>
+              <input value={editStudioCode} onChange={e=>setEditStudioCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,8))} placeholder="ex. HVN4KR" style={{flex:1,padding:'8px 14px',borderRadius:8,border:`1px solid ${C.stone}`,fontFamily:"'Satoshi',sans-serif",fontSize:15,fontWeight:700,letterSpacing:'0.12em',outline:'none',background:C.cream,color:bc}}/>
               <span style={{fontSize:12,color:C.mist}}>{editStudioCode.length}/8</span>
             </div>
           </CollapsibleSection>
@@ -5205,18 +5217,7 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
                 style={{ padding: '7px 14px', borderRadius: 8, border: `1px solid ${C.stone}`, background: 'transparent', color: C.ink, fontWeight: 600, fontSize: 13, cursor: 'pointer', fontFamily: "'Satoshi',sans-serif" }}>+ Adicionar</button>
             </div>
           </CollapsibleSection>
-          {/* 7. Cor do Studio */}
-          <CollapsibleSection title="Cor do Studio" defaultOpen={false}>
-            <p style={{margin:'0 0 12px',fontSize:12,color:C.mist,fontFamily:"'Satoshi',sans-serif"}}>Substitui o bordeaux dentro da tab Studio para todos os membros.</p>
-            <div style={{display:'flex',alignItems:'center',gap:12}}>
-              <input type="color" value={editStudioPrimaryColor} onChange={e=>setEditStudioPrimaryColor(e.target.value)} style={{width:40,height:40,borderRadius:8,border:`1px solid ${C.stone}`,cursor:'pointer',padding:2}} />
-              <div>
-                <div style={{fontSize:13,fontWeight:600,color:C.ink,fontFamily:"'Satoshi',sans-serif"}}>{editStudioPrimaryColor}</div>
-                {!contrastOk(editStudioPrimaryColor) && <div style={{fontSize:11,color:'#b45309',marginTop:2,fontFamily:"'Satoshi',sans-serif"}}>⚠️ É melhor escolheres uma cor com mais contraste</div>}
-              </div>
-              {editStudioPrimaryColor !== C.crimson && <button onClick={()=>setEditStudioPrimaryColor(C.crimson)} style={{fontSize:11,padding:'4px 10px',borderRadius:6,border:`1px solid ${C.stone}`,background:'transparent',color:C.mist,cursor:'pointer',fontFamily:"'Satoshi',sans-serif"}}>Repor default</button>}
-            </div>
-          </CollapsibleSection>
+
 
           {/* 8. IA do Studio */}
           <CollapsibleSection title="IA do Studio" defaultOpen={false}>
@@ -5239,7 +5240,7 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
             </div>
           </CollapsibleSection>
           <div style={{ paddingTop: 8 }}>
-            <button onClick={saveSettings} disabled={savingSettings} style={{ padding: '9px 24px', borderRadius: 8, border: 'none', background: savingSettings ? C.stone : C.crimson, color: C.cream, fontWeight: 700, fontSize: 13, cursor: savingSettings ? 'not-allowed' : 'pointer', fontFamily: "'Satoshi',sans-serif" }}>
+            <button onClick={saveSettings} disabled={savingSettings} style={{ padding: '9px 24px', borderRadius: 8, border: 'none', background: savingSettings ? C.stone : bc, color: C.cream, fontWeight: 700, fontSize: 13, cursor: savingSettings ? 'not-allowed' : 'pointer', fontFamily: "'Satoshi',sans-serif" }}>
               {savingSettings ? 'A guardar…' : 'Guardar definições'}
             </button>
           </div>
@@ -5256,7 +5257,7 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
             </div>
             <div style={{display:'flex',gap:16,borderBottom:`1px solid ${C.stone}`,marginBottom:16}}>
               {['series','classes'].map(t=>(
-                <button key={t} onClick={()=>setSubmitTab(t)} style={{background:'none',border:'none',fontFamily:"'Satoshi',sans-serif",fontWeight:submitTab===t?700:500,fontSize:13,color:submitTab===t?C.crimson:C.mist,borderBottom:`2px solid ${submitTab===t?C.crimson:'transparent'}`,padding:'6px 2px',cursor:'pointer'}}>
+                <button key={t} onClick={()=>setSubmitTab(t)} style={{background:'none',border:'none',fontFamily:"'Satoshi',sans-serif",fontWeight:submitTab===t?700:500,fontSize:13,color:submitTab===t?bc:C.mist,borderBottom:`2px solid ${submitTab===t?bc:'transparent'}`,padding:'6px 2px',cursor:'pointer'}}>
                   {t==='series'?'Séries':'Aulas'}
                 </button>
               ))}
@@ -5271,7 +5272,7 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
                       <div style={{fontFamily:"'Satoshi',sans-serif",fontWeight:600,fontSize:14,color:C.ink}}>{s.name||'(sem nome)'}</div>
                       <div style={{fontSize:12,color:C.mist,marginTop:2}}>{s.type}{s.primaryZone?` · ${s.primaryZone}`:''}</div>
                     </div>
-                    <span style={{fontSize:12,color:C.crimson,fontWeight:700,whiteSpace:'nowrap'}}>Submeter ↑</span>
+                    <span style={{fontSize:12,color:bc,fontWeight:700,whiteSpace:'nowrap'}}>Submeter ↑</span>
                   </div>
                 ));
               })()}
@@ -5284,7 +5285,7 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
                       <div style={{fontFamily:"'Satoshi',sans-serif",fontWeight:600,fontSize:14,color:C.ink}}>{c.name||'(sem nome)'}</div>
                       <div style={{fontSize:12,color:C.mist,marginTop:2}}>{c.type}{c.level?` · ${c.level}`:''}</div>
                     </div>
-                    <span style={{fontSize:12,color:C.crimson,fontWeight:700,whiteSpace:'nowrap'}}>Submeter ↑</span>
+                    <span style={{fontSize:12,color:bc,fontWeight:700,whiteSpace:'nowrap'}}>Submeter ↑</span>
                   </div>
                 ));
               })()}
@@ -6271,12 +6272,20 @@ const InstructorProfileView = ({ profileId, onBack, onCopy, onSend }) => {
 };
 
 // ─── DISCOVER PAGE ────────────────────────────────────────────────────────────
-const DiscoverPage = ({ items, loading, onRefresh, onCopy, onSend, profile, instructors=[], studios=[], onViewInstructor }) => {
+const DiscoverPage = ({ items, loading, onRefresh, onCopy, onSend, profile, instructors=[], studios=[], onViewInstructor, onJoinStudio, user }) => {
   const [search, setSearch] = React.useState('');
   const [typeFilter, setTypeFilter] = React.useState('all'); // 'all','series','class','instructors','studios'
   const [zoneFilter, setZoneFilter] = React.useState('');
   const [expandedStudioId, setExpandedStudioId] = React.useState(null);
   const [expandedInstructorId, setExpandedInstructorId] = React.useState(null);
+  const [joinedStudioIds, setJoinedStudioIds] = React.useState(new Set()); // local optimistic state
+
+  const memberStudioIds = React.useMemo(() => {
+    const ids = new Set();
+    (profile?.studioMemberships || []).forEach(m => ids.add(m.studio_id || m.studios?.id));
+    (profile?.pendingMemberships || []).forEach(m => ids.add(m.studio_id || m.studios?.id));
+    return ids;
+  }, [profile]);
 
   const zones = React.useMemo(() => {
     const zs = new Set();
@@ -6468,16 +6477,30 @@ const DiscoverPage = ({ items, loading, onRefresh, onCopy, onSend, profile, inst
                         </div>
                         <span style={{color:C.mist,transition:"transform 0.2s",transform:isExp?"rotate(180deg)":"rotate(0deg)"}}>⌄</span>
                       </div>
-                      {isExp&&(
-                        <div style={{borderTop:`1px solid ${C.stone}`,padding:"12px 16px",display:"flex",flexDirection:"column",gap:8}}>
-                          {s.description&&<div style={{fontSize:12,color:C.ink,lineHeight:1.5}}>{s.description}</div>}
-                          {s.settings?.class_types?.length>0&&<div style={{display:"flex",gap:4,flexWrap:"wrap"}}>{s.settings.class_types.map(t=><span key={classTypeName(t)} style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:20,background:`${classTypeColor(t,C.stone)}20`,border:`1px solid ${classTypeColor(t,C.stone)}`,color:C.ink}}>{classTypeName(t)}</span>)}</div>}
-                          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-                            {s.contact?.email&&<span style={{fontSize:11,color:C.mist}}>✉ {s.contact.email}</span>}
-                            {s.contact?.website&&<span style={{fontSize:11,color:C.mist}}>🌐 {s.contact.website}</span>}
+                      {isExp&&(()=>{
+                        const alreadyMember = memberStudioIds.has(s.id);
+                        const alreadyPending = (profile?.pendingMemberships||[]).some(m=>(m.studio_id||m.studios?.id)===s.id);
+                        const justJoined = joinedStudioIds.has(s.id);
+                        const isPending = alreadyPending || justJoined;
+                        const isMember = alreadyMember && !alreadyPending;
+                        const isOwn = profile?.studio_id === s.id;
+                        return (
+                          <div style={{borderTop:`1px solid ${C.stone}`,padding:"12px 16px",display:"flex",flexDirection:"column",gap:8}}>
+                            {s.description&&<div style={{fontSize:12,color:C.ink,lineHeight:1.5}}>{s.description}</div>}
+                            {s.settings?.class_types?.length>0&&<div style={{display:"flex",gap:4,flexWrap:"wrap"}}>{s.settings.class_types.map(t=><span key={classTypeName(t)} style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:20,background:`${classTypeColor(t,C.stone)}20`,border:`1px solid ${classTypeColor(t,C.stone)}`,color:C.ink}}>{classTypeName(t)}</span>)}</div>}
+                            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                              {s.contact?.email&&<span style={{fontSize:11,color:C.mist}}>✉ {s.contact.email}</span>}
+                              {s.contact?.website&&<span style={{fontSize:11,color:C.mist}}>🌐 {s.contact.website}</span>}
+                            </div>
+                            {!isOwn && user && (
+                              isOwn ? null :
+                              isMember ? <span style={{fontSize:11,color:'#16a34a',fontWeight:600}}>✓ Já és membro</span> :
+                              isPending ? <span style={{fontSize:11,color:'#d97706',fontWeight:600}}>⏳ Pedido enviado</span> :
+                              onJoinStudio && <button onClick={async()=>{ await onJoinStudio(s.id); setJoinedStudioIds(p=>new Set([...p,s.id])); }} style={{alignSelf:'flex-start',fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:700,padding:'5px 14px',borderRadius:8,border:`1px solid ${C.crimson}`,background:'transparent',color:C.crimson,cursor:'pointer'}}>Pedir para entrar</button>
+                            )}
                           </div>
-                        </div>
-                      )}
+                        );
+                      })()}
                     </div>
                   );
                 })}
@@ -6678,6 +6701,12 @@ function HavenApp() {
       if (cl && Array.isArray(cl))               setClasses(cl);
       if (st && typeof st.value === 'string')    setAiStyle(st.value);
       let p = await api.loadProfile(user.id);
+
+      // If no profile exists yet (new account), create a stub and reload
+      if (!p) {
+        await supabase.from('profiles').insert({ id: user.id, email: user.email, onboarded: false });
+        p = await api.loadProfile(user.id);
+      }
 
       // Handle pending invite code
       const inviteCode = localStorage.getItem('pending_invite');
@@ -7121,7 +7150,7 @@ function HavenApp() {
   if (shareTokenParam) return <ShareView token={shareTokenParam} />;
   if (!user) return <Auth />;
   if (dataLoaded && profile?.role === 'client') return <ClientPortal user={user} profile={profile} />;
-  if (dataLoaded && profile && !profile.onboarded) return (
+  if (dataLoaded && (!profile || !profile.onboarded)) return (
     <Onboarding user={user} profile={profile} onComplete={async (newAiStyle, roles) => {
       const p = await api.loadProfile(user.id);
       setProfile(p);
@@ -7148,7 +7177,7 @@ function HavenApp() {
 
           {/* Logo */}
           <div style={{padding:"24px 20px 20px",borderBottom:`1px solid rgba(0,0,0,0.2)`}}>
-            <div style={{fontFamily:"'Clash Display',sans-serif",fontSize:9,fontWeight:500,letterSpacing:"0.3em",textTransform:"uppercase",color:`${C.cream}70`,marginBottom:4}}>The Haven</div>
+            <div style={{fontFamily:"'Clash Display',sans-serif",fontSize:9,fontWeight:500,letterSpacing:"0.3em",textTransform:"uppercase",color:`${C.cream}70`,marginBottom:4}}>ClassDeck</div>
             <div style={{fontFamily:"'Clash Display',sans-serif",fontSize:16,fontWeight:600,color:C.cream}}>Instructor Studio</div>
           </div>
 
@@ -7249,9 +7278,15 @@ function HavenApp() {
             onCopy={copyDiscoverItem}
             onSend={item=>setSendModalItem(item)}
             profile={profile}
+            user={user}
             instructors={publicProfiles}
             studios={discoverStudios}
             onViewInstructor={p=>navigate({mode:'instructor',profileId:p.id})}
+            onJoinStudio={async studioId => {
+              if (!user) return;
+              await supabase.from('studio_memberships').upsert({ user_id: user.id, studio_id: studioId, role: 'instructor', status: 'pending' }, { onConflict: 'user_id,studio_id' });
+              toast('Pedido enviado. Aguarda aprovação do studio.', 3000);
+            }}
           />
         )}
 
@@ -7420,6 +7455,7 @@ function HavenApp() {
             allSeries={series} allClasses={classes}
             onPublishSeries={publishToStudio} onPublishClass={publishClassToStudio}
             activeTab={studioActiveTab} onTabChange={setStudioActiveTab}
+            brandColor={activeBrandColor}
           />
         )}
 
