@@ -45,9 +45,11 @@ const btnStyle = {
 };
 
 export default function Auth() {
-  const [mode, setMode] = useState('login'); // 'login' | 'signup'
+  const [mode, setMode] = useState('login'); // 'login' | 'signup' | 'forgot'
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [name, setName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -66,19 +68,30 @@ export default function Auth() {
     e.preventDefault();
     setError(''); setInfo('');
     if (!name.trim()) { setError('Por favor insere o teu nome.'); return; }
+    if (password !== confirmPassword) { setError('As passwords não coincidem.'); return; }
     setLoading(true);
-
     const { data, error } = await supabase.auth.signUp({ email, password });
     if (error) { setError(error.message); setLoading(false); return; }
-
     const userId = data.user?.id;
     if (userId) {
       await supabase.from('profiles').insert({ id: userId, name: name.trim(), role: 'instructor' });
     }
-
     setInfo('Conta criada! Verifica o teu email para confirmar.');
     setLoading(false);
   };
+
+  const handleForgot = async e => {
+    e.preventDefault();
+    setError(''); setInfo('');
+    if (!email.trim()) { setError('Insere o teu email primeiro.'); return; }
+    setLoading(true);
+    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin });
+    if (error) setError(error.message);
+    else setInfo('Email enviado! Verifica a tua caixa de correio.');
+    setLoading(false);
+  };
+
+  const switchMode = m => { setMode(m); setError(''); setInfo(''); setPassword(''); setConfirmPassword(''); };
 
   React.useEffect(() => {
     const id = 'haven-fonts';
@@ -90,6 +103,15 @@ export default function Auth() {
     }
   }, []);
 
+  const EyeIcon = () => (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      {showPassword
+        ? <><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></>
+        : <><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></>
+      }
+    </svg>
+  );
+
   return (
     <div style={{ minHeight: '100vh', background: C.cream, fontFamily: "'Satoshi', sans-serif", display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
       <div style={{ width: '100%', maxWidth: 380 }}>
@@ -100,23 +122,19 @@ export default function Auth() {
             <HavenLogo size={34} color={C.cream} />
           </div>
           <div style={{ fontFamily: "'Clash Display', sans-serif", fontSize: 9, fontWeight: 500, letterSpacing: '0.3em', textTransform: 'uppercase', color: C.mist, marginBottom: 4 }}>The Haven</div>
-          <div style={{ fontFamily: "'Clash Display', sans-serif", fontSize: 22, fontWeight: 600, color: C.crimson }}>Instructor Studio</div>
+          <div style={{ fontFamily: "'Clash Display', sans-serif", fontSize: 22, fontWeight: 600, color: C.crimson }}>ClassDeck</div>
         </div>
 
         {/* Card */}
         <div style={{ background: C.white, borderRadius: 14, border: `1px solid ${C.stone}`, padding: '28px 28px 24px' }}>
           <h2 style={{ fontFamily: "'Clash Display', sans-serif", fontSize: 18, fontWeight: 600, color: C.ink, margin: '0 0 20px', textAlign: 'center' }}>
-            {mode === 'login' ? 'Entrar' : 'Criar conta'}
+            {mode === 'login' ? 'Entrar' : mode === 'signup' ? 'Criar conta' : 'Recuperar password'}
           </h2>
 
-          {error && (
-            <div style={{ background: '#FEE2E2', color: '#991B1B', borderRadius: 8, padding: '10px 14px', fontSize: 13, marginBottom: 16 }}>{error}</div>
-          )}
-          {info && (
-            <div style={{ background: '#D1FAE5', color: '#065F46', borderRadius: 8, padding: '10px 14px', fontSize: 13, marginBottom: 16 }}>{info}</div>
-          )}
+          {error && <div style={{ background: '#FEE2E2', color: '#991B1B', borderRadius: 8, padding: '10px 14px', fontSize: 13, marginBottom: 16 }}>{error}</div>}
+          {info  && <div style={{ background: '#D1FAE5', color: '#065F46', borderRadius: 8, padding: '10px 14px', fontSize: 13, marginBottom: 16 }}>{info}</div>}
 
-          <form onSubmit={mode === 'login' ? handleLogin : handleSignup}>
+          <form onSubmit={mode === 'login' ? handleLogin : mode === 'signup' ? handleSignup : handleForgot}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
 
               {mode === 'signup' && (
@@ -131,15 +149,48 @@ export default function Auth() {
                 <input style={inputStyle} type="email" placeholder="email@exemplo.com" value={email} onChange={e => setEmail(e.target.value)} required />
               </div>
 
-              <div>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: C.mist, marginBottom: 5, letterSpacing: '0.04em', textTransform: 'uppercase' }}>Password</label>
-                <input style={inputStyle} type="password" placeholder="••••••••" value={password} onChange={e => setPassword(e.target.value)} required minLength={6} />
-              </div>
+              {mode !== 'forgot' && (
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: C.mist, marginBottom: 5, letterSpacing: '0.04em', textTransform: 'uppercase' }}>Password</label>
+                  <div style={{ position: 'relative' }}>
+                    <input style={{ ...inputStyle, paddingRight: 42 }} type={showPassword ? 'text' : 'password'} placeholder="••••••••" value={password} onChange={e => setPassword(e.target.value)} required minLength={6} />
+                    <button type="button" onClick={() => setShowPassword(p => !p)} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: C.mist, padding: 2, display: 'flex', alignItems: 'center' }}>
+                      <EyeIcon />
+                    </button>
+                  </div>
+                </div>
+              )}
 
+              {mode === 'signup' && (
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: C.mist, marginBottom: 5, letterSpacing: '0.04em', textTransform: 'uppercase' }}>Confirmar password</label>
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      style={{ ...inputStyle, paddingRight: 42, borderColor: confirmPassword && password !== confirmPassword ? '#b91c1c' : C.stone }}
+                      type={showPassword ? 'text' : 'password'}
+                      placeholder="••••••••"
+                      value={confirmPassword}
+                      onChange={e => setConfirmPassword(e.target.value)}
+                      required minLength={6}
+                    />
+                    {confirmPassword && (
+                      <span style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', fontSize: 14, color: password === confirmPassword ? '#16a34a' : '#b91c1c' }}>
+                        {password === confirmPassword ? '✓' : '✗'}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
 
               <button type="submit" style={{ ...btnStyle, marginTop: 4, opacity: loading ? 0.7 : 1 }} disabled={loading}>
-                {loading ? 'A processar…' : mode === 'login' ? 'Entrar' : 'Criar conta'}
+                {loading ? 'A processar…' : mode === 'login' ? 'Entrar' : mode === 'signup' ? 'Criar conta' : 'Enviar email'}
               </button>
+
+              {mode === 'login' && (
+                <button type="button" onClick={() => switchMode('forgot')} style={{ background: 'none', border: 'none', color: C.mist, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'center', marginTop: -4 }}>
+                  Esqueci-me da password
+                </button>
+              )}
             </div>
           </form>
         </div>
@@ -148,12 +199,10 @@ export default function Auth() {
         <div style={{ textAlign: 'center', marginTop: 18, fontSize: 13, color: C.mist }}>
           {mode === 'login' ? (
             <>Ainda não tens conta?{' '}
-              <button onClick={() => { setMode('signup'); setError(''); setInfo(''); }} style={{ background: 'none', border: 'none', color: C.crimson, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', fontSize: 13 }}>Criar conta</button>
+              <button onClick={() => switchMode('signup')} style={{ background: 'none', border: 'none', color: C.crimson, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', fontSize: 13 }}>Criar conta</button>
             </>
           ) : (
-            <>Já tens conta?{' '}
-              <button onClick={() => { setMode('login'); setError(''); setInfo(''); }} style={{ background: 'none', border: 'none', color: C.crimson, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', fontSize: 13 }}>Entrar</button>
-            </>
+            <button onClick={() => switchMode('login')} style={{ background: 'none', border: 'none', color: C.crimson, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', fontSize: 13 }}>← Voltar ao login</button>
           )}
         </div>
       </div>

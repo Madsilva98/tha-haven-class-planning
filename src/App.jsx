@@ -3047,7 +3047,7 @@ const AulaView = ({ cls, allSeries, onBack, onDeleteClass, onUpdateSeries, onUpd
             <div style={{width:170,flexShrink:0,display:"flex",flexDirection:"column",gap:0}}>
               {/* Tipo de aula — always visible */}
               <div style={{padding:"0 0 10px"}}>
-                <Badge label={cls.type==="signature"?"✦ Signature":cls.type==="reformer"?"Reformer":"Barre"} color={cls.type==="signature"?"gold":cls.type==="reformer"?"teal":"coral"}/>
+                <Badge label={cls.type==="signature"?"✦":(cls.type||'?').slice(0,2).toUpperCase()} color={cls.type==="signature"?"gold":cls.type==="reformer"?"teal":"coral"}/>
               </div>
 
 
@@ -3142,10 +3142,10 @@ const AulaView = ({ cls, allSeries, onBack, onDeleteClass, onUpdateSeries, onUpd
                 {readOnly ? (
                   <div style={{fontFamily:"'Clash Display',sans-serif",fontSize:22,fontWeight:500,color:C.ink,padding:"2px 4px",marginBottom:4}}>{editName||cls.name||'(sem título)'}</div>
                 ) : (
-                  <input value={editName} onChange={e=>{ setEditName(e.target.value); onUpdateClass({...currentCls, name:e.target.value}); }}
+                  <input value={editName} onChange={e=>setEditName(e.target.value)}
                     style={{fontFamily:"'Clash Display',sans-serif",fontSize:22,fontWeight:500,color:C.ink,border:"none",borderBottom:`1px solid transparent`,background:"transparent",outline:"none",width:"100%",display:"block",padding:"2px 4px",borderRadius:4,transition:"border-color 0.15s",boxSizing:"border-box"}}
                     onFocus={e=>e.target.style.borderBottomColor=C.stone}
-                    onBlur={e=>e.target.style.borderBottomColor="transparent"}
+                    onBlur={e=>{ e.target.style.borderBottomColor="transparent"; if(editName!==cls.name) onUpdateClass({...currentCls, name:editName}); }}
                     placeholder="Nome da aula"/>
                 )}
                 {cls.studioComment&&(
@@ -3412,6 +3412,7 @@ const ClassBuilder = ({ allSeries, classes, onSave, onDeleteClass, onPermanentDe
   const [newCls, setNewCls] = useState(null);
   const [classSearch, setClassSearch] = useState("");
   const [classLevelFilter, setClassLevelFilter] = useState("");
+  const [classTypeFilter, setClassTypeFilter] = useState("");
   const [showTypePicker, setShowTypePicker] = React.useState(false);
   const [confirmRemoveClassId, setConfirmRemoveClassId] = useState(null);
   const [flowSearch, setFlowSearch] = useState("");
@@ -3509,6 +3510,7 @@ const ClassBuilder = ({ allSeries, classes, onSave, onDeleteClass, onPermanentDe
     if (c.isArchived) return false;
     if(classSearch && !c.name.toLowerCase().includes(classSearch.toLowerCase())) return false;
     if(classLevelFilter && c.level!==classLevelFilter) return false;
+    if(classTypeFilter && c.type!==classTypeFilter) return false;
     return true;
   }).sort((a,b)=>{
     let va, vb;
@@ -3544,6 +3546,14 @@ const ClassBuilder = ({ allSeries, classes, onSave, onDeleteClass, onPermanentDe
       <div style={{display:"flex",gap:20,alignItems:"flex-start"}}>
         {/* Left column: filters */}
         <div style={{width:170,flexShrink:0}}>
+          {(profileClassTypes?.length>0) && (
+            <CollapsibleSection title="Tipo de Aula" defaultOpen={true}>
+              <div style={{display:"flex",flexDirection:"column",gap:4,paddingBottom:8}}>
+                <button onClick={()=>setClassTypeFilter("")} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 12px",borderRadius:8,border:`1px solid ${!classTypeFilter?C.neutral:C.stone}`,background:!classTypeFilter?C.neutral:"transparent",color:!classTypeFilter?C.white:C.ink,cursor:"pointer",textAlign:"left"}}>Todas</button>
+                {profileClassTypes.map(t=>{const n=typeof t==='string'?t:t.name; return(<button key={n} onClick={()=>setClassTypeFilter(p=>p===n?"":n)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 12px",borderRadius:8,border:`1px solid ${classTypeFilter===n?C.neutral:C.stone}`,background:classTypeFilter===n?C.neutral:"transparent",color:classTypeFilter===n?C.white:C.ink,cursor:"pointer",textAlign:"left"}}>{n[0].toUpperCase()+n.slice(1)}</button>);})}
+              </div>
+            </CollapsibleSection>
+          )}
           <CollapsibleSection title="Nível" defaultOpen={true}>
             <div style={{display:"flex",flexDirection:"column",gap:4,paddingBottom:8}}>
               <button onClick={()=>{setClassLevelFilter("");setShowArchive(false);}} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 12px",borderRadius:8,border:`1px solid ${!classLevelFilter&&!showArchive?C.neutral:C.stone}`,background:!classLevelFilter&&!showArchive?C.neutral:"transparent",color:!classLevelFilter&&!showArchive?C.white:C.ink,cursor:"pointer",textAlign:"left"}}>Todos</button>
@@ -3562,13 +3572,14 @@ const ClassBuilder = ({ allSeries, classes, onSave, onDeleteClass, onPermanentDe
           </CollapsibleSection>
 
           <div style={{borderTop:`1px solid ${C.stone}`,paddingTop:8,marginTop:4}}>
-            <button onClick={()=>{setShowArchive(p=>!p);setClassLevelFilter("");}} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,color:showArchive?C.crimson:C.mist,background:"none",border:"none",cursor:"pointer",padding:"4px 0",textAlign:"left",textDecoration:"underline"}}>📦 Arquivo</button>
+            <button onClick={()=>{setShowArchive(p=>!p);setClassLevelFilter("");setClassTypeFilter("");}} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,color:showArchive?C.crimson:C.mist,background:"none",border:"none",cursor:"pointer",padding:"4px 0",textAlign:"left",textDecoration:"underline"}}>📦 Arquivo</button>
           </div>
         </div>
         {/* Right column: class list */}
         <div style={{flex:1,minWidth:0}}>
           {showArchive ? (
             <div>
+              <button onClick={()=>setShowArchive(false)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,color:C.mist,background:"none",border:"none",cursor:"pointer",padding:"0 0 12px",display:"flex",alignItems:"center",gap:4}}>← Planeamento de Aulas</button>
               {filteredClasses.length === 0 && <div style={{textAlign:"center",color:C.mist,padding:40,fontSize:14}}>Arquivo vazio.</div>}
               <div style={{display:"flex",flexDirection:"column",gap:8}}>
                 {filteredClasses.map(c=>(
@@ -4629,6 +4640,7 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
     const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + user.id.slice(0, 6);
     const { data: studio_, error } = await supabase.from('studios').insert({ name, slug }).select().single();
     if (error) { setJoinError(error.message); setJoining(false); return; }
+    await supabase.from('studio_memberships').upsert({ user_id: user.id, studio_id: studio_.id, role: 'owner', status: 'active' }, { onConflict: 'user_id,studio_id' });
     await api.upsertProfile({ id: user.id, studio_id: studio_.id, role: 'admin' });
     const updated = await api.loadProfile(user.id);
     onProfileUpdate(updated);
@@ -7076,10 +7088,8 @@ function HavenApp() {
     if(filterType==="archive") return !!s.isArchived;
     if(s.isArchived) return false;
     if(seriesSearch && !s.name.toLowerCase().includes(seriesSearch.toLowerCase())) return false;
-    // Type filter
-    if(filterType==="reformer" && !(s.type==="reformer"||s.type==="signature")) return false;
-    if(filterType==="barre"    && !(s.type==="barre"||s.type==="signature"))    return false;
-    if(filterType==="signature" && s.type!=="signature")                        return false;
+    // Type filter — matches series type exactly (signature always included)
+    if(filterType!=="all" && filterType!=="archive" && s.type!==filterType && s.type!=="signature") return false;
     // Status filter
     if(filterStatus==="approved" && s.status!=="Pronta")  return false;
     if(filterStatus==="wip"      && s.status==="Pronta")   return false;
@@ -7334,8 +7344,8 @@ function HavenApp() {
                   <div style={{width:170,flexShrink:0,display:"flex",flexDirection:"column",gap:0}}>
                     <CollapsibleSection title="Tipo de Aula" defaultOpen={true}>
                       <div style={{display:"flex",flexDirection:"column",gap:4,paddingBottom:8}}>
-                        {[["all","Todas"],["reformer","Reformer"],["barre","Barre"],["signature","Paralelo"]].map(([val,lbl])=>(
-                          <button key={val} onClick={()=>setFilterType(val)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 12px",borderRadius:8,border:`1px solid ${filterType===val&&['all','reformer','barre','signature'].includes(val)?C.neutral:C.stone}`,background:filterType===val&&['all','reformer','barre','signature'].includes(val)?C.neutral:"transparent",color:filterType===val&&['all','reformer','barre','signature'].includes(val)?C.white:C.ink,cursor:"pointer",textAlign:"left"}}>{lbl}</button>
+                        {[["all","Todas"],...(profile?.settings?.class_types||[]).map(t=>{const n=typeof t==='string'?t:t.name;return[n,n[0].toUpperCase()+n.slice(1)];})].map(([val,lbl])=>(
+                          <button key={val} onClick={()=>setFilterType(val==='all'?'all':val)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 12px",borderRadius:8,border:`1px solid ${filterType===val?C.neutral:C.stone}`,background:filterType===val?C.neutral:"transparent",color:filterType===val?C.white:C.ink,cursor:"pointer",textAlign:"left"}}>{lbl}</button>
                         ))}
                       </div>
                     </CollapsibleSection>
@@ -7391,6 +7401,7 @@ function HavenApp() {
                         };
                         return (
                           <div>
+                            <button onClick={()=>setFilterType('all')} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,color:C.mist,background:"none",border:"none",cursor:"pointer",padding:"0 0 12px",display:"flex",alignItems:"center",gap:4}}>← Biblioteca de Séries</button>
                             <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12,flexWrap:"wrap"}}>
                               <span style={{fontSize:13,color:C.mist}}>{archivedSeries.length} séries arquivadas</span>
                               {selectedArchive.length > 0 && (
