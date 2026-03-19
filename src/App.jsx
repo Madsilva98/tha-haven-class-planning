@@ -51,6 +51,12 @@ const contrastOk = (fg, bg='#FFFAF7') => {
 const normalizeClassType = t => typeof t === 'string' ? { name: t, color: null } : (t || { name: '', color: null });
 const classTypeName = t => normalizeClassType(t).name;
 const classTypeColor = (t, fallback = C.stone) => normalizeClassType(t).color || fallback;
+// Look up hex color for a type name from profile's class_types array
+const resolveTypeHex = (typeName, classTypes) => {
+  if (!typeName || !classTypes?.length) return null;
+  const found = classTypes.find(t => (typeof t === 'string' ? t : t?.name) === typeName);
+  return (found && typeof found !== 'string' && found.color) ? found.color : null;
+};
 
 // ─── PLATFORM CONTEXT FOR AI ─────────────────────────────────────────────────
 const PLATFORM_CONTEXT = `The Haven Instructor Studio — platform reference:
@@ -651,7 +657,11 @@ const Icon = ({ name, size=16 }) => (
 );
 
 // ─── ATOMS ───────────────────────────────────────────────────────────────────
-const Badge = ({ label, color }) => {
+const Badge = ({ label, color, hexColor }) => {
+  if (hexColor) {
+    return <span style={{ fontSize:11, fontWeight:600, letterSpacing:"0.06em", textTransform:"uppercase",
+      padding:"2px 9px", borderRadius:20, background:`${hexColor}25`, color:hexColor, border:`1px solid ${hexColor}60` }}>{label}</span>;
+  }
   const styles = {
     teal:  { background:`${C.reformer}15`, color:C.reformer, border:`1px solid ${C.reformer}40` },  // Reformer
     coral: { background:`${C.barre}40`,    color:"#8a3060",  border:`1px solid ${C.barre}` },        // Barre
@@ -2394,7 +2404,7 @@ const AulaSeriesCard = ({
   showSetup, showCues, showInstrNotes,
   showTiming, showLyric,
   aiStyle, onEdit, onUpdateSeries, setSeriesList, MovTable,
-  teachingMode=false, readOnly=false
+  teachingMode=false, readOnly=false, classTypes
 }) => {
   const [collapsed, setCollapsed] = React.useState(false);
   const isExpanded = !collapsed || teachingMode;
@@ -2558,7 +2568,7 @@ const WarmCoolGhostRow = ({ label, value, onChange, generating, readOnly }) => {
 };
 
 // ─── AULA VIEW (merged Ver + Modo Aula) ───────────────────────────────────────
-const AulaView = ({ cls, allSeries, onBack, onDeleteClass, onUpdateSeries, onUpdateClass, aiStyle, allClasses=[], onSaveFork, teachingMode, onTeachingModeChange, onSeriesEditChange, studioSettings, readOnly=false, onPublishClass, onUnpublishClass, onDuplicateClass, onSaveSeriesAsNew }) => {
+const AulaView = ({ cls, allSeries, onBack, onDeleteClass, onUpdateSeries, onUpdateClass, aiStyle, allClasses=[], onSaveFork, teachingMode, onTeachingModeChange, onSeriesEditChange, studioSettings, readOnly=false, onPublishClass, onUnpublishClass, onDuplicateClass, onSaveSeriesAsNew, profileClassTypes }) => {
   const [seriesList, setSeriesList] = useState(()=>cls.seriesIds.map(id=>allSeries.find(s=>s.id===id)).filter(Boolean));
   const [editingId, setEditingId] = useState(null);
   const [notes, setNotes] = useState(cls.notes||"");
@@ -3047,7 +3057,7 @@ const AulaView = ({ cls, allSeries, onBack, onDeleteClass, onUpdateSeries, onUpd
             <div style={{width:170,flexShrink:0,display:"flex",flexDirection:"column",gap:0}}>
               {/* Tipo de aula — always visible */}
               <div style={{padding:"0 0 10px"}}>
-                <Badge label={cls.type==="signature"?"✦":(cls.type||'?').slice(0,2).toUpperCase()} color={cls.type==="signature"?"gold":cls.type==="reformer"?"teal":"coral"}/>
+                <Badge label={cls.type==="signature"?"✦":(cls.type||'?').slice(0,2).toUpperCase()} color={cls.type==="signature"?"gold":cls.type==="reformer"?"teal":"coral"} hexColor={cls.type!=="signature"?resolveTypeHex(cls.type,profileClassTypes):null}/>
               </div>
 
 
@@ -3199,7 +3209,7 @@ const AulaView = ({ cls, allSeries, onBack, onDeleteClass, onUpdateSeries, onUpd
                     <span style={{color:C.stone,fontSize:12,userSelect:"none"}}>⠿</span>
                     <span style={{fontSize:11,fontWeight:700,color:C.mist,minWidth:18}}>{i+1}</span>
                     <span style={{flex:1,fontSize:13,color:C.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ser.name}</span>
-                    <Badge label={ser.type==="signature"?"✦":ser.type?.slice(0,2)?.toUpperCase()||"?"} color={ser.type==="signature"?"gold":ser.type?.toLowerCase()==="reformer"?"teal":ser.type?.toLowerCase()==="barre"?"coral":"neutral"}/>
+                    <Badge label={ser.type==="signature"?"✦":ser.type?.slice(0,2)?.toUpperCase()||"?"} color={ser.type==="signature"?"gold":ser.type?.toLowerCase()==="reformer"?"teal":ser.type?.toLowerCase()==="barre"?"coral":"neutral"} hexColor={ser.type!=="signature"?resolveTypeHex(ser.type,profileClassTypes):null}/>
                     <button onClick={()=>removeFromFlow(ser.id)} style={{background:"none",border:"none",cursor:"pointer",color:C.coral,padding:"2px 4px",flexShrink:0}}><Icon name="x" size={13}/></button>
                   </div>
                 ))}
@@ -3219,7 +3229,7 @@ const AulaView = ({ cls, allSeries, onBack, onDeleteClass, onUpdateSeries, onUpd
                 {availableFlowFiltered.map(ser=>(
                   <div key={ser.id} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",background:C.cream,borderRadius:8,border:`1px solid ${C.stone}`,marginBottom:5}}>
                     <span style={{flex:1,fontSize:13,color:C.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ser.name}</span>
-                    <Badge label={ser.type==="signature"?"✦":ser.type?.slice(0,2)?.toUpperCase()||"?"} color={ser.type==="signature"?"gold":ser.type?.toLowerCase()==="reformer"?"teal":ser.type?.toLowerCase()==="barre"?"coral":"neutral"}/>
+                    <Badge label={ser.type==="signature"?"✦":ser.type?.slice(0,2)?.toUpperCase()||"?"} color={ser.type==="signature"?"gold":ser.type?.toLowerCase()==="reformer"?"teal":ser.type?.toLowerCase()==="barre"?"coral":"neutral"} hexColor={ser.type!=="signature"?resolveTypeHex(ser.type,profileClassTypes):null}/>
                     <Btn small variant="ghost" onClick={()=>addToFlow(ser.id)}><Icon name="plus" size={12}/></Btn>
                   </div>
                 ))}
@@ -3258,6 +3268,7 @@ const AulaView = ({ cls, allSeries, onBack, onDeleteClass, onUpdateSeries, onUpd
                 MovTable={MovTable}
                 teachingMode={teachingMode}
                 readOnly={readOnly}
+                classTypes={profileClassTypes}
               />
 
             )}
@@ -3493,7 +3504,7 @@ const ClassBuilder = ({ allSeries, classes, onSave, onDeleteClass, onPermanentDe
                 onMouseEnter={e=>e.currentTarget.style.borderColor=C.neutral}
                 onMouseLeave={e=>e.currentTarget.style.borderColor=C.stone}>
                 <span style={{flex:1,color:C.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.name}</span>
-                <Badge label={s.type==="signature"?"✦":s.type==="reformer"?"R":"B"} color={s.type==="signature"?"gold":s.type==="reformer"?"teal":"coral"}/>
+                <Badge label={s.type==="signature"?"✦":s.type==="reformer"?"R":"B"} color={s.type==="signature"?"gold":s.type==="reformer"?"teal":"coral"} hexColor={s.type!=="signature"?resolveTypeHex(s.type,profileClassTypes):null}/>
                 <span style={{color:C.crimson,fontWeight:700,fontSize:14,lineHeight:1}}>+</span>
               </div>
             ))}
@@ -3550,7 +3561,7 @@ const ClassBuilder = ({ allSeries, classes, onSave, onDeleteClass, onPermanentDe
             <CollapsibleSection title="Tipo de Aula" defaultOpen={true}>
               <div style={{display:"flex",flexDirection:"column",gap:4,paddingBottom:8}}>
                 <button onClick={()=>setClassTypeFilter("")} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 12px",borderRadius:8,border:`1px solid ${!classTypeFilter?C.neutral:C.stone}`,background:!classTypeFilter?C.neutral:"transparent",color:!classTypeFilter?C.white:C.ink,cursor:"pointer",textAlign:"left"}}>Todas</button>
-                {profileClassTypes.map(t=>{const n=typeof t==='string'?t:t.name; return(<button key={n} onClick={()=>setClassTypeFilter(p=>p===n?"":n)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 12px",borderRadius:8,border:`1px solid ${classTypeFilter===n?C.neutral:C.stone}`,background:classTypeFilter===n?C.neutral:"transparent",color:classTypeFilter===n?C.white:C.ink,cursor:"pointer",textAlign:"left"}}>{n[0].toUpperCase()+n.slice(1)}</button>);})}
+                {profileClassTypes.map(t=>{const n=(typeof t==='string'?t:t?.name)||''; if(!n) return null; return(<button key={n} onClick={()=>setClassTypeFilter(p=>p===n?"":n)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 12px",borderRadius:8,border:`1px solid ${classTypeFilter===n?C.neutral:C.stone}`,background:classTypeFilter===n?C.neutral:"transparent",color:classTypeFilter===n?C.white:C.ink,cursor:"pointer",textAlign:"left"}}>{n[0].toUpperCase()+n.slice(1)}</button>);})}
               </div>
             </CollapsibleSection>
           )}
@@ -4701,7 +4712,7 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
     }}>{label}</button>
   );
 
-  const typeColor = t => t==='reformer'?C.reformer:t==='barre'?'#c0507a':C.sig;
+  const typeColor = t => resolveTypeHex(t, profile?.settings?.class_types) || (t==='reformer'?C.reformer:t==='barre'?'#c0507a':C.sig);
 
   return (
     <div style={{ maxWidth: 780 }}>
@@ -4788,7 +4799,7 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
                       {isExpanded&&(
                         <div style={{borderTop:`1px solid ${C.stone}`,padding:'0 8px 8px'}}>
                           {editingStudioSeriesId===s.id ? (
-                            <SeriesEditor series={sObj} onSave={updated=>{onSaveStudioSeries?.(updated);setEditingStudioSeriesId(null);refreshContent();}} onCancel={()=>setEditingStudioSeriesId(null)} aiStyle="" studioSettings={studio?.settings} availableClassTypes={studio?.settings?.class_types?.length?studio.settings.class_types:undefined}/>
+                            <SeriesEditor series={sObj} onSave={updated=>{onSaveStudioSeries?.(updated);setEditingStudioSeriesId(null);refreshContent();}} onCancel={()=>setEditingStudioSeriesId(null)} aiStyle="" studioSettings={studio?.settings} availableClassTypes={studio?.settings?.class_types?.length?studio.settings.class_types.map(t=>typeof t==='string'?t:t?.name).filter(Boolean):undefined}/>
                           ) : (
                             <SeriesCard series={sObj} onEdit={isAdmin&&onSaveStudioSeries?()=>setEditingStudioSeriesId(s.id):null} onDelete={isAdmin&&onDeleteSeries?()=>onDeleteSeries(s.id).then(refreshContent):null} onUpdateSeries={updated=>{onSaveStudioSeries?.(updated);refreshContent();}} aiStyle="" hasStudio={false} currentUserId={user.id} compact={false}/>
                           )}
@@ -5089,12 +5100,12 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
               ) : (
                 <div style={{display:"flex",flexDirection:"column",gap:8}}>
                   {rejectionLog.map(entry=>{
-                    const typeColors = { reformer: C.reformer, barre: C.barre, signature: '#7a4010' };
+                    const entryTypeHex = resolveTypeHex(entry.item_type_value, profile?.settings?.class_types) || { reformer: C.reformer, barre: C.barre, signature: '#7a4010' }[entry.item_type_value] || C.mist;
                     return (
                       <div key={entry.id} style={{background:C.white,border:`1px solid ${C.stone}`,borderRadius:10,padding:"12px 16px",display:"flex",gap:12,alignItems:"flex-start"}}>
                         <div style={{flex:1,minWidth:0}}>
                           <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:4}}>
-                            {entry.item_type_value&&<span style={{fontSize:10,fontWeight:700,color:C.white,background:typeColors[entry.item_type_value]||C.mist,borderRadius:20,padding:"1px 8px"}}>{entry.item_type_value}</span>}
+                            {entry.item_type_value&&<span style={{fontSize:10,fontWeight:700,color:C.white,background:entryTypeHex,borderRadius:20,padding:"1px 8px"}}>{entry.item_type_value}</span>}
                             <span style={{fontFamily:"'Clash Display',sans-serif",fontSize:14,fontWeight:600,color:C.ink}}>{entry.item_name}</span>
                             {entry.zones&&<span style={{fontSize:11,color:C.mist}}>{entry.zones}</span>}
                             {entry.level&&<span style={{fontSize:11,color:C.mist}}>{entry.level}</span>}
@@ -6031,7 +6042,7 @@ const HomePage = ({ series, classes, profile, onNewSeries, onNewClass, onViewSer
                   <div style={{fontSize:13,fontWeight:600,color:C.ink,fontFamily:"'Clash Display',sans-serif",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name||"Sem nome"}</div>
                   <div style={{fontSize:11,color:C.mist,marginTop:1}}>{c.date||"Sem data"}{c.type?` · ${c.type}`:""}{c.level?` · ${c.level}`:""}</div>
                 </div>
-                <Badge label={c.type==="signature"?"✦":c.type==="reformer"?"R":"B"} color={c.type==="signature"?"gold":c.type==="reformer"?"teal":"coral"}/>
+                <Badge label={c.type==="signature"?"✦":c.type==="reformer"?"R":"B"} color={c.type==="signature"?"gold":c.type==="reformer"?"teal":"coral"} hexColor={c.type!=="signature"?resolveTypeHex(c.type,profile?.settings?.class_types):null}/>
               </div>
             ))}
           </div>
@@ -6235,7 +6246,7 @@ const InstructorProfileView = ({ profileId, onBack, onCopy, onSend }) => {
   if(loading) return <div style={{padding:40,color:C.mist,textAlign:'center'}}>A carregar…</div>;
   if(!prof) return <div style={{padding:40,color:C.mist}}>Perfil não encontrado.</div>;
 
-  const typeColors = { reformer: C.reformer, barre: C.barre, signature: '#7a4010' };
+  const typeColorFor = t => resolveTypeHex(t, prof?.settings?.class_types) || { reformer: C.reformer, barre: C.barre, signature: '#7a4010' }[t] || C.mist;
 
   return (
     <div style={{maxWidth:720}}>
@@ -6259,7 +6270,7 @@ const InstructorProfileView = ({ profileId, onBack, onCopy, onSend }) => {
                 <div style={{flex:1,minWidth:0}}>
                   <div style={{fontFamily:"'Clash Display',sans-serif",fontSize:15,fontWeight:600,color:C.ink,marginBottom:3}}>{item.name}</div>
                   <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
-                    {item.type&&<span style={{fontSize:10,fontWeight:700,color:C.white,background:typeColors[item.type]||C.mist,borderRadius:20,padding:"1px 7px"}}>{item.type}</span>}
+                    {item.type&&<span style={{fontSize:10,fontWeight:700,color:C.white,background:typeColorFor(item.type),borderRadius:20,padding:"1px 7px"}}>{item.type}</span>}
                     {item.primaryZone&&<span style={{fontSize:10,color:C.mist,background:C.stone,borderRadius:20,padding:"1px 7px"}}>{item.primaryZone}</span>}
                   </div>
                 </div>
@@ -6282,7 +6293,7 @@ const InstructorProfileView = ({ profileId, onBack, onCopy, onSend }) => {
                 <div style={{flex:1,minWidth:0}}>
                   <div style={{fontFamily:"'Clash Display',sans-serif",fontSize:15,fontWeight:600,color:C.ink,marginBottom:3}}>{item.name||'(sem título)'}</div>
                   <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
-                    {item.type&&<span style={{fontSize:10,fontWeight:700,color:C.white,background:typeColors[item.type]||C.mist,borderRadius:20,padding:"1px 7px"}}>{item.type}</span>}
+                    {item.type&&<span style={{fontSize:10,fontWeight:700,color:C.white,background:typeColorFor(item.type),borderRadius:20,padding:"1px 7px"}}>{item.type}</span>}
                     {item.date&&<span style={{fontSize:10,color:C.mist}}>{item.date}</span>}
                   </div>
                 </div>
@@ -6339,7 +6350,7 @@ const DiscoverPage = ({ items, loading, onRefresh, onCopy, onSend, profile, inst
     return studio ? `${name} · ${studio}` : name;
   };
 
-  const typeColors = { reformer: C.reformer, barre: C.barre, signature: '#7a4010' };
+  const discoverTypeColor = t => resolveTypeHex(t, profile?.settings?.class_types) || { reformer: C.reformer, barre: C.barre, signature: '#7a4010' }[t] || C.mist;
 
   return (
     <div>
@@ -6410,7 +6421,7 @@ const DiscoverPage = ({ items, loading, onRefresh, onCopy, onSend, profile, inst
                     <div style={{flex:1,minWidth:0}}>
                       <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:4}}>
                         <span style={{fontFamily:"'Clash Display',sans-serif",fontSize:16,fontWeight:600,color:C.ink}}>{item.name}</span>
-                        {item.type&&<span style={{fontSize:11,fontWeight:700,color:C.white,background:typeColors[item.type]||C.mist,borderRadius:20,padding:"2px 8px"}}>{item.type}</span>}
+                        {item.type&&<span style={{fontSize:11,fontWeight:700,color:C.white,background:discoverTypeColor(item.type),borderRadius:20,padding:"2px 8px"}}>{item.type}</span>}
                         {item.primaryZone&&<span style={{fontSize:11,color:C.mist,background:C.stone,borderRadius:20,padding:"2px 8px"}}>{item.primaryZone}</span>}
                         {item.seriesType&&<span style={{fontSize:11,fontWeight:600,color:"#5a2a00",background:`${C.sig}50`,border:`1px solid ${C.sig}`,borderRadius:20,padding:"2px 8px"}}>{item.seriesType}</span>}
                       </div>
@@ -6436,7 +6447,7 @@ const DiscoverPage = ({ items, loading, onRefresh, onCopy, onSend, profile, inst
                     <div style={{flex:1,minWidth:0}}>
                       <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:4}}>
                         <span style={{fontFamily:"'Clash Display',sans-serif",fontSize:16,fontWeight:600,color:C.ink}}>{item.name}</span>
-                        {item.type&&<span style={{fontSize:11,fontWeight:700,color:C.white,background:typeColors[item.type]||C.mist,borderRadius:20,padding:"2px 8px"}}>{item.type}</span>}
+                        {item.type&&<span style={{fontSize:11,fontWeight:700,color:C.white,background:discoverTypeColor(item.type),borderRadius:20,padding:"2px 8px"}}>{item.type}</span>}
                         {item.level&&<span style={{fontSize:11,color:C.mist,background:C.stone,borderRadius:20,padding:"2px 8px"}}>{item.level}</span>}
                         {item.date&&<span style={{fontSize:11,color:C.mist}}>{item.date}</span>}
                       </div>
@@ -7330,7 +7341,7 @@ function HavenApp() {
         {/* ── LIBRARY ── */}
         {screen.mode==="library"&&(
           editingSeries||addingSeries
-            ? <SeriesEditor series={editingSeries} onSave={saveSeries} onSaveAsNew={s=>{saveSeries(s);}} onCancel={()=>{setEditingSeries(null);setAddingSeries(false);}} onDelete={id=>{deleteSeries(id);setEditingSeries(null);setAddingSeries(false);}} aiStyle={effectiveAiStyle} studioSettings={profile?.studios?.settings} availableZones={profile?.settings?.preferred_zones?.length?profile.settings.preferred_zones:undefined} availableSeriesTypes={profile?.settings?.series_types?.length?profile.settings.series_types:undefined} availableClassTypes={profile?.settings?.class_types?.length?profile.settings.class_types:undefined} onPublish={profile?.studio_id?publishToStudio:undefined}/>
+            ? <SeriesEditor series={editingSeries} onSave={saveSeries} onSaveAsNew={s=>{saveSeries(s);}} onCancel={()=>{setEditingSeries(null);setAddingSeries(false);}} onDelete={id=>{deleteSeries(id);setEditingSeries(null);setAddingSeries(false);}} aiStyle={effectiveAiStyle} studioSettings={profile?.studios?.settings} availableZones={profile?.settings?.preferred_zones?.length?profile.settings.preferred_zones:undefined} availableSeriesTypes={profile?.settings?.series_types?.length?profile.settings.series_types:undefined} availableClassTypes={profile?.settings?.class_types?.length?profile.settings.class_types.map(t=>typeof t==='string'?t:t?.name).filter(Boolean):undefined} onPublish={profile?.studio_id?publishToStudio:undefined}/>
             : <>
                 {/* Top bar: title + search + new */}
                 <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16,flexWrap:"wrap"}}>
@@ -7344,7 +7355,7 @@ function HavenApp() {
                   <div style={{width:170,flexShrink:0,display:"flex",flexDirection:"column",gap:0}}>
                     <CollapsibleSection title="Tipo de Aula" defaultOpen={true}>
                       <div style={{display:"flex",flexDirection:"column",gap:4,paddingBottom:8}}>
-                        {[["all","Todas"],...(profile?.settings?.class_types||[]).map(t=>{const n=typeof t==='string'?t:t.name;return[n,n[0].toUpperCase()+n.slice(1)];})].map(([val,lbl])=>(
+                        {[["all","Todas"],...(profile?.settings?.class_types||[]).map(t=>{const n=(typeof t==='string'?t:t?.name)||'';if(!n)return null;return[n,n[0].toUpperCase()+n.slice(1)];}).filter(Boolean)].map(([val,lbl])=>(
                           <button key={val} onClick={()=>setFilterType(val==='all'?'all':val)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 12px",borderRadius:8,border:`1px solid ${filterType===val?C.neutral:C.stone}`,background:filterType===val?C.neutral:"transparent",color:filterType===val?C.white:C.ink,cursor:"pointer",textAlign:"left"}}>{lbl}</button>
                         ))}
                       </div>
@@ -7538,6 +7549,7 @@ function HavenApp() {
             onSeriesEditChange={setAulaEditingSeries}
             studioSettings={profile?.studios?.settings}
             readOnly={!!screen.readOnly}
+            profileClassTypes={profile?.settings?.class_types}
             onPublishClass={profile?.studio_id?publishClassToStudio:undefined}
             onUnpublishClass={profile?.studio_id?unpublishClassFromStudio:undefined}
             onDuplicateClass={!screen.readOnly?duplicateClass:undefined}
