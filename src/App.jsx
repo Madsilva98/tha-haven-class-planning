@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { supabase } from './supabase.js';
 import Auth from './Auth.jsx';
 import Onboarding from './Onboarding.jsx';
+import { AiForm, aiToString, BLANK_AI } from './AiFormShared.jsx';
 
 // Capture invite code from URL and store it for use after login
 const urlParams = new URLSearchParams(window.location.search);
@@ -35,6 +36,40 @@ const C = {
 };
 
 
+// ─── PLATFORM CONTEXT FOR AI ─────────────────────────────────────────────────
+const PLATFORM_CONTEXT = `The Haven Instructor Studio — platform reference:
+
+SÉRIES: A série is a movement block (exercise sequence). Each série has:
+- Nome (name), Tipo de aula (class type: Reformer, Barre, or Paralelo), Zona target (body zone/s targeted)
+- Tipo de série (movement quality: Warm-Up, Força, Cardio, Flow, Mobilidade, Cool-down, etc.)
+- Movimentos: ordered list of movements, each with timing, lyric/cue, transition cue, breath note
+- Springs / Props / Posição inicial (reformer-specific setup)
+- Coreografada (choreographed): a série linked to music where each movement has a fixed timing/count; used for dance-fitness or music-driven reformer classes
+- Estado: WIP (work in progress) or Pronta (ready to use in classes)
+
+TIPOS DE AULA (class types):
+- Reformer: exercises on the Pilates reformer machine with springs and sliding carriage
+- Barre: standing or mat-based work, often at a barre or freestanding
+- Paralelo (also called Signature): two columns simultaneously — reformer side and barre side. Used for mixed-equipment small group classes where some clients are on reformer and others at barre
+
+AULAS: A class (aula) combines multiple séries into a full session. Has a date, level, type, and ordered list of séries.
+
+STUDIO WORKFLOW: Instructors can submit séries/aulas to their studio for review. Studio admins approve or reject (with comment). Rejected items can be resubmitted. Approved items appear in the studio library for all members.
+
+ZONAS TARGET: Body zones targeted (Glutes, Core, Back, Arms, etc.). Each série can have one primary zone and multiple secondary zones.
+
+NÍVEIS: Class difficulty levels (Foundations, Intermediate, Advanced, Flow, Dynamic, etc.), customisable per studio/instructor.
+
+AI FEATURES in the platform:
+- Intro cue generation: writes a spoken verbal setup for a série
+- Transition cue generation: writes movement-by-movement transition announcements
+- Instructor notes: coaching notes and common corrections for a série
+- AI class builder: suggests a séries sequence for a class based on a goal
+- Studio compatibility check: evaluates if a série/aula fits the studio's style guidelines
+- Movement analysis chat: free-form coaching advice on a série
+
+The app is in Portuguese (European). Users are Pilates instructors and studio managers.`;
+
 // ─── AUTO-RESIZE TEXTAREA HOOK ───────────────────────────────────────────────
 const useAutoResize = (value) => {
   const ref = React.useRef(null);
@@ -48,7 +83,7 @@ const useAutoResize = (value) => {
 };
 
 // AutoTextarea — textarea that grows with its content
-const AutoTextarea = ({ value, onChange, placeholder, style={}, onClick, minRows=1 }) => {
+const AutoTextarea = ({ value, onChange, placeholder, style={}, onClick, onKeyDown, minRows=1 }) => {
   const ref = useAutoResize(value);
   const baseStyle = {
     display:'block', width:'100%', fontFamily:"'Satoshi', sans-serif",
@@ -59,7 +94,7 @@ const AutoTextarea = ({ value, onChange, placeholder, style={}, onClick, minRows
     ...style,
   };
   return <textarea ref={ref} value={value||''} onChange={onChange}
-    onClick={onClick} placeholder={placeholder} rows={minRows} style={baseStyle}/>;
+    onClick={onClick} onKeyDown={onKeyDown} placeholder={placeholder} rows={minRows} style={baseStyle}/>;
 };
 
 
@@ -337,7 +372,7 @@ const SIGNATURE_SERIES = [
 ];
 
 const EMPTY_SERIES = { introCue:"",
-  id:"", name:"", type:"reformer", status:"testing",
+  id:"", name:"", type:"reformer", status:"WIP",
   reformer:{ springs:"", props:"", startPosition:"", movements:[{ timing:"", lyric:"", movement:"", breath:"", transitionCue:"", timeReps:"" }] },
   barre:{ props:"", startPosition:"", movements:[{ timing:"", lyric:"", movement:"", breath:"", transitionCue:"", timeReps:"" }] },
   muscles:[], cues:"", song:"", videoUrl:"", targetZone:"", primaryZone:"", seriesType:"", openCue:"", closeCue:"", createdAt:"", duration: null,
@@ -361,9 +396,12 @@ const seriesToDB = (s, userId) => ({
   duration: s.duration ?? null,
   attribution: s.attribution || null,
   studio_comment: s.studioComment || null,
+  is_public: s.isPublic || false,
+  deleted_by_instructor: s.deletedByInstructor || false,
+  is_archived: s.isArchived || false,
 });
 const seriesFromDB = row => ({
-  id: row.id, name: row.name, type: row.type, status: row.status || 'testing',
+  id: row.id, name: row.name, type: row.type, status: row.status==='approved'?'Pronta':row.status==='testing'?'WIP':row.status||'WIP',
   song: row.song || '', introCue: row.intro_cue || '', openCue: row.open_cue || '',
   closeCue: row.close_cue || '', modifications: row.modifications || '',
   muscles: row.muscles || [], cues: row.cues || '',
@@ -375,6 +413,9 @@ const seriesFromDB = row => ({
   duration: row.duration ?? null,
   attribution: row.attribution || null,
   studioComment: row.studio_comment || null,
+  isPublic: row.is_public || row.visibility === 'public' || false,
+  deletedByInstructor: row.deleted_by_instructor || false,
+  isArchived: row.is_archived || false,
 });
 const classToDB = (c, userId) => ({
   id: c.id, name: c.name, type: c.type, date: c.date || null,
@@ -385,6 +426,9 @@ const classToDB = (c, userId) => ({
   warmup_notes: c.warmupNotes || null, cooldown_notes: c.cooldownNotes || null,
   attribution: c.attribution || null,
   studio_comment: c.studioComment || null,
+  is_public: c.isPublic || false,
+  deleted_by_instructor: c.deletedByInstructor || false,
+  is_archived: c.isArchived || false,
 });
 const classFromDB = row => ({
   id: row.id, name: row.name, type: row.type, date: row.date || '',
@@ -396,6 +440,9 @@ const classFromDB = row => ({
   warmupNotes: row.warmup_notes || '', cooldownNotes: row.cooldown_notes || '',
   attribution: row.attribution || null,
   studioComment: row.studio_comment || null,
+  isPublic: row.is_public || row.visibility === 'public' || false,
+  deletedByInstructor: row.deleted_by_instructor || false,
+  isArchived: row.is_archived || false,
 });
 
 // ─── PERSIST (Supabase) ──────────────────────────────────────────────────────
@@ -405,11 +452,11 @@ const api = {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return fallback;
       if (key === 'series') {
-        const { data, error } = await supabase.from('series').select('*').order('created_at', { ascending: true });
+        const { data, error } = await supabase.from('series').select('*').eq('created_by', user.id).order('created_at', { ascending: true });
         return (!error && data) ? data.map(seriesFromDB) : fallback;
       }
       if (key === 'classes') {
-        const { data, error } = await supabase.from('classes').select('*').order('created_at', { ascending: true });
+        const { data, error } = await supabase.from('classes').select('*').eq('created_by', user.id).order('created_at', { ascending: true });
         return (!error && data) ? data.map(classFromDB) : fallback;
       }
       if (key === 'aistyle') {
@@ -449,8 +496,25 @@ const api = {
     catch(e) { console.error(e); }
   },
   async loadProfile(userId) {
-    const { data } = await supabase.from('profiles').select('*, studios(id, name, slug, settings)').eq('id', userId).maybeSingle();
-    return data;
+    const { data, error } = await supabase.from('profiles').select(
+      '*, studios(*), studio_memberships(id, role, status, joined_at, studios(id, name, settings, logo_url, contact, description, studio_code))'
+    ).eq('id', userId).maybeSingle();
+    if (error) console.error('[loadProfile error]', error);
+    if (!data) return data;
+    const activeMemberships = (data.studio_memberships || []).filter(m => m.status === 'active');
+    const pendingMemberships = (data.studio_memberships || []).filter(m => m.status === 'pending');
+    // Ensure profile.studio_id is set from primary membership if not already
+    const primaryStudio = data.studio_id
+      ? (activeMemberships.find(m => m.studios?.id === data.studio_id)?.studios || data.studios)
+      : activeMemberships[0]?.studios || null;
+    const primaryStudioId = data.studio_id || activeMemberships[0]?.studio_id || null;
+    return {
+      ...data,
+      studio_id: primaryStudioId,
+      studios: primaryStudio,
+      studioMemberships: activeMemberships,
+      pendingMemberships,
+    };
   },
   async upsertProfile(profile) {
     const { error } = await supabase.from('profiles').upsert(profile, { onConflict: 'id' });
@@ -584,6 +648,15 @@ const Badge = ({ label, color }) => {
     padding:"2px 9px", borderRadius:20, ...s }}>{label}</span>;
 };
 
+const MiniToggle = ({ on, onToggle, disabled, onColor }) => (
+  <div onClick={e=>{ e.stopPropagation(); if(!disabled) onToggle(); }}
+    style={{ width:30, height:17, borderRadius:9, background:on?(onColor||C.crimson):C.stone,
+      position:"relative", cursor:disabled?"default":"pointer", transition:"background 0.2s", flexShrink:0 }}>
+    <div style={{ position:"absolute", top:2.5, left:on?14:2.5, width:12, height:12, borderRadius:"50%",
+      background:C.white, transition:"left 0.2s", boxShadow:"0 1px 3px rgba(0,0,0,0.2)" }}/>
+  </div>
+);
+
 const Btn = ({ children, onClick, variant="primary", small, disabled, style:sx={} }) => {
   const base = { display:"inline-flex", alignItems:"center", gap:6, fontFamily:"'Satoshi', sans-serif",
     fontWeight:600, fontSize:small?12:13, cursor:disabled?"not-allowed":"pointer", border:"none",
@@ -597,16 +670,19 @@ const Btn = ({ children, onClick, variant="primary", small, disabled, style:sx={
   return <button style={{...base,...(vars[variant]||vars.primary)}} onClick={onClick} disabled={disabled}>{children}</button>;
 };
 
-const Toggle = ({ label, active, onClick, color=C.neutral }) => (
-  <button onClick={onClick} style={{ display:"inline-flex", alignItems:"center", gap:6,
-    fontFamily:"'Satoshi', sans-serif", fontSize:11, fontWeight:600, padding:"4px 12px",
-    borderRadius:20, border:`1px solid ${active?color:C.stone}`,
-    background:active?`${color}18`:"transparent", color:active?color:C.mist,
-    cursor:"pointer", transition:"all 0.15s" }}>
-    <span style={{ width:8, height:8, borderRadius:"50%", background:active?color:C.stone, flexShrink:0 }} />
-    {label}
-  </button>
-);
+const Toggle = ({ label, labelOff, labelOn, active, onClick, color=C.crimson }) => {
+  const lo = labelOff ?? label ?? '';
+  const la = labelOn ?? label ?? '';
+  return (
+    <div onClick={onClick} style={{display:"inline-flex",alignItems:"center",gap:6,cursor:"pointer",userSelect:"none",padding:"2px 0"}}>
+      {lo&&<span style={{fontSize:11,fontFamily:"'Satoshi',sans-serif",color:active?C.mist:C.ink,fontWeight:active?400:600,transition:"color 0.2s",whiteSpace:"nowrap"}}>{lo}</span>}
+      <div style={{width:32,height:18,borderRadius:9,background:active?color:`${C.stone}80`,position:"relative",transition:"background 0.2s",flexShrink:0}}>
+        <div style={{width:14,height:14,borderRadius:7,background:"#fff",position:"absolute",top:2,left:active?16:2,transition:"left 0.2s",boxShadow:"0 1px 3px rgba(0,0,0,0.3)"}}/>
+      </div>
+      {la!==lo&&la&&<span style={{fontSize:11,fontFamily:"'Satoshi',sans-serif",color:active?C.ink:C.mist,fontWeight:active?600:400,transition:"color 0.2s",whiteSpace:"nowrap"}}>{la}</span>}
+    </div>
+  );
+};
 
 const MuscleTag = ({ label }) => (
   <span style={{ fontSize:11, background:C.stone, color:C.neutral, border:`1px solid ${C.stone}`,
@@ -684,7 +760,7 @@ const IntroCue = ({ series, onChange, aiStyle, stopProp, readOnly }) => {
         : (series.type==="barre"?series.barre:series.reformer)?.movements?.map((m,i)=>`${m.timing||i+1}: ${m.movement}`).join(", ")||"-";
       const muscleList = series.muscles?.join(", ")||"";
       const prompt = isChoreo
-        ? `You are a STOTT Pilates instructor writing a spoken intro cue for a CHOREOGRAPHED series set to music.${styleCtx}
+        ? `You are a Pilates instructor writing a spoken intro cue for a CHOREOGRAPHED series set to music.${styleCtx}
 
 Series: "${series.name}"
 Setup: ${setup}
@@ -698,7 +774,7 @@ STRICT RULES — follow exactly:
 
 Return ONLY the spoken cue text. No titles, no formatting.`
 
-        : `You are a STOTT Pilates instructor writing a spoken intro cue for a NON-CHOREOGRAPHED series.${styleCtx}
+        : `You are a Pilates instructor writing a spoken intro cue for a NON-CHOREOGRAPHED series.${styleCtx}
 
 Series: "${series.name}"
 Setup: ${setup}
@@ -753,7 +829,7 @@ const CardInstrNotesAI = ({ series, aiStyle, onUpdate }) => {
       const examples = await examplesStore.getRelevant('instructor');
       const styleCtx = (aiStyle ? `\nInstructor style: ${aiStyle}` : "") + examplesStore.formatExamples(examples);
       const movList = (series.type==="barre"?series.barre:series.reformer)?.movements?.map(m=>m.movement).filter(Boolean).join(", ")||"-";
-      const prompt = `STOTT Pilates instructor. Write concise instructor notes for this series.${styleCtx}\nSeries: "${series.name}"\nMuscles: ${series.muscles?.join(", ")||"-"}\nMovements: ${movList}\nFocus on key technique cues, common mistakes, and modifications. Return ONLY the notes text.`;
+      const prompt = `Pilates instructor. Write concise instructor notes for this series.${styleCtx}\nSeries: "${series.name}"\nMuscles: ${series.muscles?.join(", ")||"-"}\nMovements: ${movList}\nFocus on key technique cues, common mistakes, and modifications. Return ONLY the notes text.`;
       const text = (await aiCall(prompt)).trim().replace(/^["']|["']$/g,"");
       onUpdate(text);
     } catch(e) { console.error(e); toast_?.('Erro ao gerar com IA', 'error'); }
@@ -806,7 +882,7 @@ const CardCueGen = ({ series, rowIndex, rows, aiStyle, onUpdate, nonsig, getCurr
         const prev = movs[rowIndex - 1]?.movement || "-";
         const curr = movs[rowIndex]?.movement || "-";
         context = `${prev} → ${curr}`;
-        prompt = `STOTT Pilates ${series.type} class. Write ONE short transition cue (max 10 words) to announce this movement.${styleCtx}\nPrevious: ${prev}\nComing: ${curr}\nReturn ONLY the cue text.`;
+        prompt = `Pilates ${series.type} class. Write ONE short transition cue (max 10 words) to announce this movement.${styleCtx}\nPrevious: ${prev}\nComing: ${curr}\nReturn ONLY the cue text.`;
         newCue = (await aiCall(prompt)).trim().replace(/^["']|["']$/g, "");
         const newM = [...movs];
         newM[rowIndex] = { ...newM[rowIndex], transitionCue: newCue };
@@ -816,7 +892,7 @@ const CardCueGen = ({ series, rowIndex, rows, aiStyle, onUpdate, nonsig, getCurr
         const row = rows[rowIndex];
         const prevRow = rows[rowIndex - 1];
         context = `R:${prevRow?.r?.movement||"-"}/B:${prevRow?.b?.movement||"-"} → R:${row?.r?.movement||"-"}/B:${row?.b?.movement||"-"}`;
-        prompt = `STOTT Pilates Signature class (reformer + barre simultaneously). Write ONE short transition cue (max 10 words).${styleCtx}\nPrevious: reformer:${prevRow?.r?.movement || "-"} / barre:${prevRow?.b?.movement || "-"}\nComing: reformer:${row?.r?.movement || "-"} / barre:${row?.b?.movement || "-"}\nReturn ONLY the cue text.`;
+        prompt = `Pilates Signature class (reformer + barre simultaneously). Write ONE short transition cue (max 10 words).${styleCtx}\nPrevious: reformer:${prevRow?.r?.movement || "-"} / barre:${prevRow?.b?.movement || "-"}\nComing: reformer:${row?.r?.movement || "-"} / barre:${row?.b?.movement || "-"}\nReturn ONLY the cue text.`;
         newCue = (await aiCall(prompt)).trim().replace(/^["']|["']$/g, "");
         const newR = [...rMovs];
         const idx = newR.findIndex(m => m.timing === row.timing);
@@ -848,8 +924,9 @@ const SeriesCard = ({ series, onEdit, onDelete, onUpdateSeries, aiStyle, modalit
   const [showB, setShowB] = useState(modalityFilter !== "reformer");
   // localSeries: in-card live copy so edits are reflected immediately
   const [localSeries, setLocalSeries] = useState(series);
+  const [dismissedComment, setDismissedComment] = useState(false);
   // sync when parent saves (e.g. after full edit)
-  React.useEffect(()=>setLocalSeries(series), [series]);
+  React.useEffect(()=>{ setLocalSeries(series); setDismissedComment(false); }, [series]);
 
   const confirm_ = useConfirm();
   const [hovCell, setHovCell] = React.useState(null);
@@ -1021,75 +1098,73 @@ const SeriesCard = ({ series, onEdit, onDelete, onUpdateSeries, aiStyle, modalit
       boxShadow:expanded?"0 4px 24px rgba(0,0,0,0.09)":"none" }}>
 
       {/* Collapsed header */}
-      <div style={{ padding:compact?"8px 16px":"14px 20px", display:"flex", alignItems:"center", gap:compact?8:12, cursor:"pointer" }}
+      <div style={{ padding:"8px 14px", display:"flex", alignItems:"center", gap:10, cursor:"pointer" }}
         onClick={()=>setExpanded(p=>!p)}>
+        {/* Left: circular type badge */}
+        <div style={{ width:36, height:36, borderRadius:"50%", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center",
+          background: isSig ? `${C.sig}40` : series.type==="reformer" ? `${C.reformer}20` : `${C.barre}30`,
+          border: `1.5px solid ${isSig ? C.sig : series.type==="reformer" ? `${C.reformer}50` : `${C.barre}60`}`,
+        }}>
+          <span style={{ fontSize:14, fontWeight:700, color: isSig ? "#7a4010" : series.type==="reformer" ? C.reformer : "#c0507a", lineHeight:1 }}>
+            {isSig ? "✦" : series.type==="reformer" ? "R" : "B"}
+          </span>
+        </div>
+        {/* Middle: name + subtitle */}
         <div style={{ flex:1, minWidth:0 }}>
-          <div style={{ fontFamily:"'Clash Display', sans-serif", fontSize:compact?15:18, fontWeight:500, color:C.ink, marginBottom:compact?2:4 }}>{series.name}</div>
-          <div style={{ display:"flex", gap:6, flexWrap:"wrap", alignItems:"center" }}>
-            {isSig  && <Badge label="Signature" color="gold"/>}
-            {!isSig && <Badge label={series.type==="reformer"?"Reformer":"Barre"} color={series.type==="reformer"?"teal":"coral"}/>}
-            {(()=>{ const dur = parseDuration(series) ?? series.duration ?? null; const label = formatDuration(dur); return label ? <span style={{fontSize:10,fontWeight:600,color:C.mist,background:C.stone,borderRadius:20,padding:'2px 8px'}}>{label}</span> : null; })()}
-            <span title={series.status==="approved"?"Aprovada":"Em teste"} style={{
-              display:"inline-flex",alignItems:"center",justifyContent:"center",
-              width:20,height:20,borderRadius:"50%",flexShrink:0,
-              background:series.status==="approved"?"#dbeeff":"#e8e4e0",
-              border:`1.5px solid ${series.status==="approved"?"#3a6a9a":"#b8b0aa"}`,
-              fontSize:11,color:series.status==="approved"?"#1a4a7a":"#8a7f78",fontWeight:700
-            }}>{series.status==="approved"?"✓":"…"}</span>
-            {series.visibility==='studio'&&<span style={{fontSize:10,fontWeight:700,letterSpacing:"0.05em",padding:"2px 8px",borderRadius:20,background:"#e8f0fe",color:"#1a56db",border:"1px solid #c3d3f8"}}>STUDIO</span>}
-            {series.visibility==='personal'&&series.studioComment&&onPublish&&(
-              <span onClick={e=>{e.stopPropagation();onPublish(series);}} title="Rejeitado pelo studio — clica para submeter novamente" style={{fontSize:10,fontWeight:700,letterSpacing:"0.05em",padding:"2px 8px",borderRadius:20,background:"#fef2f2",color:"#b91c1c",border:"1px solid #fca5a5",cursor:"pointer"}}>✗ REJEITADO — submeter?</span>
-            )}
-            {series.visibility==='pending_studio'&&(onUnpublish ? (
-              <span onClick={e=>{e.stopPropagation();onUnpublish(series);}} title="Clica para retirar submissão" style={{fontSize:10,fontWeight:700,letterSpacing:"0.05em",padding:"2px 8px",borderRadius:20,background:"#fef9ec",color:"#b45309",border:"1px solid #fcd34d",cursor:"pointer"}}>⏳ EM REVISÃO ×</span>
-            ) : (
-              <span style={{fontSize:10,fontWeight:700,letterSpacing:"0.05em",padding:"2px 8px",borderRadius:20,background:"#fef9ec",color:"#b45309",border:"1px solid #fcd34d"}}>⏳ EM REVISÃO</span>
-            ))}
-            {series.visibility==='public'&&<span style={{fontSize:10,fontWeight:700,letterSpacing:"0.05em",padding:"2px 8px",borderRadius:20,background:"#ecfdf5",color:"#059669",border:"1px solid #a7f3d0"}}>PÚBLICO</span>}
-            {series.song&&<span style={{fontSize:12,color:C.mist,display:"inline-flex",alignItems:"center",gap:4}}><Icon name="music" size={11}/>{series.song}</span>}
-            {(()=>{
-              const zones = (series.targetZone||"").split(",").map(x=>x.trim()).filter(Boolean);
-              if(!zones.length) return null;
-              const primary = series.primaryZone || zones[0];
-              // Primary first, then rest
-              const sorted = [primary, ...zones.filter(z=>z!==primary)];
-              return <div style={{display:"flex",gap:4,flexWrap:"wrap",alignItems:"center"}}>
-                {sorted.map((z,i)=>(
-                  <span key={z} style={{
-                    fontSize:11, fontWeight: i===0?700:500,
-                    color: i===0?"#0a1a4a":"#3a5a8a",
-                    background: i===0?"#1a3a6a22":`${C.blue}20`,
-                    border:`1px solid ${i===0?"#1a3a6a55":C.blue+"40"}`,
-                    borderRadius:20, padding: i===0?"2px 10px":"2px 8px",
-                    display:"inline-flex",alignItems:"center",gap:3
-                  }}>{i===0&&<span style={{fontSize:8,opacity:0.7}}>★</span>}{z}</span>
-                ))}
-              </div>;
-            })()}
-            {series.seriesType&&<span style={{fontSize:11,fontWeight:600,color:"#5a2a00",background:`${C.sig}50`,border:`1px solid ${C.sig}`,borderRadius:20,padding:"2px 9px",flexShrink:0}}>{series.seriesType}</span>}
-          </div>
+          <div style={{ fontFamily:"'Clash Display', sans-serif", fontSize:15, fontWeight:500, color:C.ink, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{series.name}</div>
+          {(()=>{
+            const zone = series.primaryZone || (series.targetZone||"").split(",")[0]?.trim() || "";
+            const song = series.song || "";
+            if (!zone && !song) return null;
+            return <div style={{ fontSize:11, color:C.mist, display:"flex", alignItems:"center", gap:5, marginTop:1 }}>
+              {zone && <span>{zone}</span>}
+              {zone && song && <span style={{color:C.stone}}>·</span>}
+              {song && <span style={{display:"flex",alignItems:"center",gap:3}}><Icon name="music" size={11}/>{song}</span>}
+            </div>;
+          })()}
         </div>
-        <div style={{display:"flex",gap:6,flexShrink:0,alignItems:"center"}} onClick={e=>e.stopPropagation()}>
-          {expanded&&(<>
-            {isOwner&&<Btn small variant="ghost" onClick={e=>{e.stopPropagation();onEdit(series);}}><Icon name="edit" size={13}/> Editar</Btn>}
-            {!isOwner&&onCopy&&<Btn small variant="ghost" onClick={e=>{e.stopPropagation();onCopy(series);}}><Icon name="copy" size={13}/> Copiar</Btn>}
-          </>)}
-        </div>
-        <span style={{ color:C.mist, display:"inline-flex", transition:"transform 0.2s",
-          transform:expanded?"rotate(180deg)":"rotate(0deg)", flexShrink:0 }}>
+        {/* Chevron */}
+        <span style={{ color:C.mist, display:"inline-flex", transition:"transform 0.2s", transform:expanded?"rotate(180deg)":"rotate(0deg)", flexShrink:0 }}>
           <Icon name="chevron" size={16}/>
         </span>
       </div>
 
       {/* Expanded body */}
       {expanded&&(
-        <div style={{ borderTop:`1px solid ${C.stone}`, padding:"16px 20px", display:"flex", flexDirection:"column", gap:14 }}>
-
-          {isOwner&&hasStudio&&(series.visibility==='personal'||series.visibility==='studio')&&(
-            <div style={{fontSize:10,color:C.mist,marginTop:-6}}>
-              Studio — partilha com os teus colegas · Público — visível a todos os Instructors do The Haven
+        <>
+          {/* Controls row — right-aligned, above the divider */}
+          {isOwner && (hasStudio&&(onPublish||onUnpublish) || onTogglePublic || onSend || onEdit || onCopy) && (
+            <div style={{padding:"6px 14px 8px",display:"flex",gap:6,alignItems:"center",justifyContent:"flex-end",flexWrap:"wrap"}} onClick={e=>e.stopPropagation()}>
+              {hasStudio && (onPublish||onUnpublish) && (()=>{
+                const studioOn = series.visibility==='studio'||series.visibility==='pending_studio';
+                const studioColor = series.visibility==='studio' ? '#16a34a' : series.visibility==='pending_studio' ? '#d97706' : (series.studioComment ? '#dc2626' : C.crimson);
+                return <>
+                  <span style={{fontSize:11,color:C.mist,whiteSpace:"nowrap"}}>Pessoal</span>
+                  <MiniToggle on={studioOn} onColor={studioColor}
+                    onToggle={()=>{ if(studioOn) { onUnpublish&&onUnpublish(series); } else { onPublish&&onPublish(series); } }}
+                    disabled={!onPublish&&!onUnpublish}
+                  />
+                  <span style={{fontSize:11,color:C.mist,whiteSpace:"nowrap"}}>Studio</span>
+                </>;
+              })()}
+              {onTogglePublic && <>
+                <span style={{fontSize:11,color:C.mist,whiteSpace:"nowrap"}}>🔒 Privada</span>
+                <MiniToggle on={!!series.isPublic} onToggle={()=>onTogglePublic(series)}/>
+                <span style={{fontSize:11,color:C.mist,whiteSpace:"nowrap"}}>🌐 Pública</span>
+              </>}
+              {onSend && <button onClick={()=>onSend(series)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"3px 10px",borderRadius:20,border:`1px solid ${C.stone}`,background:"transparent",color:C.mist,cursor:"pointer",whiteSpace:"nowrap"}}>Enviar →</button>}
+              {onEdit && <Btn small variant="ghost" onClick={e=>{e.stopPropagation();onEdit(series);}}><Icon name="edit" size={13}/> Editar</Btn>}
+              {!isOwner && onCopy && <Btn small variant="ghost" onClick={e=>{e.stopPropagation();onCopy(series);}}><Icon name="copy" size={13}/> Copiar</Btn>}
             </div>
           )}
+          {!isOwner && onCopy && (
+            <div style={{padding:"6px 14px 8px",display:"flex",gap:6,alignItems:"center",justifyContent:"flex-end"}} onClick={e=>e.stopPropagation()}>
+              <Btn small variant="ghost" onClick={e=>{e.stopPropagation();onCopy(series);}}><Icon name="copy" size={13}/> Copiar</Btn>
+            </div>
+          )}
+          <div style={{ borderTop:`1px solid ${C.stone}`, padding:"16px 20px", display:"flex", flexDirection:"column", gap:14 }}>
+
+
           {series.attribution&&(
             <div style={{fontSize:11,color:C.mist,fontStyle:"italic"}}>
               {series.attribution.author_name ? `Partilhado por ${series.attribution.author_name}${series.attribution.studio_name?` · ${series.attribution.studio_name}`:''}` : 'Copiado de outro Instructor'}
@@ -1134,7 +1209,7 @@ const SeriesCard = ({ series, onEdit, onDelete, onUpdateSeries, aiStyle, modalit
 
           {/* Instructor notes — always shown, editable inline */}
           <div style={{padding:"10px 14px",background:C.white,border:`1px solid ${C.stone}`,borderRadius:8}}>
-            <CardInstrNotesAI series={localSeries} aiStyle={aiStyle} onUpdate={v=>setSeries_({...localSeries,cues:v})}/>
+            <div style={{fontSize:12,fontWeight:600,color:C.neutral,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:6}}>Instructor Notes</div>
             <AutoTextarea
               value={localSeries.cues||""}
               placeholder="Notas de Instructor…"
@@ -1161,37 +1236,18 @@ const SeriesCard = ({ series, onEdit, onDelete, onUpdateSeries, aiStyle, modalit
           )}
 
           {/* Studio comment (shown when rejected) */}
-          {series.studioComment&&(
-            <div style={{padding:"8px 12px",background:"#fef2f2",border:"1px solid #fca5a5",borderRadius:8}}>
-              <div style={{fontSize:10,fontWeight:700,color:"#b91c1c",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:3}}>Comentário do Studio</div>
-              <div style={{fontSize:12,color:"#7f1d1d"}}>{series.studioComment}</div>
+          {series.studioComment&&!dismissedComment&&(
+            <div style={{padding:"10px 14px",background:"#fef2f2",border:"1px solid #fca5a5",borderRadius:8}}>
+              <div style={{fontSize:10,fontWeight:700,color:"#b91c1c",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:4}}>Comentário do Studio</div>
+              <div style={{fontSize:12,color:"#7f1d1d",marginBottom:10}}>{series.studioComment}</div>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                {onPublish&&<button onClick={e=>{e.stopPropagation();onPublish(series);}} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"4px 12px",borderRadius:20,border:`1px solid #b91c1c`,background:"#b91c1c",color:"#fff",cursor:"pointer"}}>↑ Submeter novamente</button>}
+              </div>
             </div>
           )}
 
-          {/* Footer actions: studio workflow + visibility + send */}
-          {isOwner&&(hasStudio||onTogglePublic||onSend)&&(
-            <div style={{display:"flex",gap:8,flexWrap:"wrap",justifyContent:"flex-end",paddingTop:6,borderTop:`1px solid ${C.stone}`,marginTop:2}}>
-              {hasStudio&&series.visibility==='personal'&&onPublish&&(
-                <button onClick={e=>{e.stopPropagation();onPublish(series);}} title="Submeter para revisão do studio" style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"4px 12px",borderRadius:20,border:`1px solid #3b82f6`,background:"transparent",color:"#1a56db",cursor:"pointer"}}>↑ Studio</button>
-              )}
-              {series.visibility==='pending_studio'&&onUnpublish&&(
-                <button onClick={e=>{e.stopPropagation();onUnpublish(series);}} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"4px 12px",borderRadius:20,border:`1px solid ${C.stone}`,background:"transparent",color:C.mist,cursor:"pointer"}}>Retirar submissão</button>
-              )}
-              {series.visibility==='studio'&&onUnpublish&&(
-                <button onClick={e=>{e.stopPropagation();onUnpublish(series);}} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"4px 12px",borderRadius:20,border:`1px solid ${C.stone}`,background:"transparent",color:C.mist,cursor:"pointer"}}>Tornar privada</button>
-              )}
-              {onTogglePublic&&(series.visibility==='personal'||series.visibility==='studio'||series.visibility==='public')&&(
-                <button onClick={e=>{e.stopPropagation();onTogglePublic(series);}} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"4px 12px",borderRadius:20,border:`1px solid ${series.visibility==='public'?C.crimson:C.stone}`,background:"transparent",color:series.visibility==='public'?C.crimson:C.mist,cursor:"pointer"}}>{series.visibility==='public'?'🌐 Pública':'🔒 Privada'}</button>
-              )}
-              {onSend&&<button onClick={e=>{e.stopPropagation();onSend({...series,_discoverType:'series'});}} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"4px 12px",borderRadius:20,border:`1px solid ${C.stone}`,background:"transparent",color:C.mist,cursor:"pointer"}}>Enviar →</button>}
-            </div>
-          )}
-          {!isOwner&&onSend&&(
-            <div style={{display:"flex",justifyContent:"flex-end",paddingTop:6,borderTop:`1px solid ${C.stone}`}}>
-              <button onClick={e=>{e.stopPropagation();onSend({...series,_discoverType:'series'});}} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"4px 12px",borderRadius:20,border:`1px solid ${C.stone}`,background:"transparent",color:C.mist,cursor:"pointer"}}>Enviar →</button>
-            </div>
-          )}
-        </div>
+          </div>
+        </>
       )}
     </div>
   );
@@ -1295,7 +1351,6 @@ const MovementLibraryScreen = ({ series, aiStyle }) => {
             <tr style={{background:"#e8e0dc"}}>
               <th style={{textAlign:"left",padding:"10px 16px",fontSize:11,fontWeight:700,color:C.neutral,textTransform:"uppercase",letterSpacing:"0.06em"}}>Movimento</th>
               <th style={{textAlign:"left",padding:"10px 12px",fontSize:11,fontWeight:700,color:C.neutral,textTransform:"uppercase",letterSpacing:"0.06em"}}>Tipo</th>
-              <th style={{textAlign:"left",padding:"10px 12px",fontSize:11,fontWeight:700,color:C.neutral,textTransform:"uppercase",letterSpacing:"0.06em"}}>Respiração</th>
               <th style={{textAlign:"left",padding:"10px 12px",fontSize:11,fontWeight:700,color:C.neutral,textTransform:"uppercase",letterSpacing:"0.06em"}}>Notas</th>
               <th style={{textAlign:"left",padding:"10px 12px",fontSize:11,fontWeight:700,color:C.neutral,textTransform:"uppercase",letterSpacing:"0.06em"}}>Séries</th>
             </tr>
@@ -1331,9 +1386,6 @@ const MovementLibraryScreen = ({ series, aiStyle }) => {
                     ))}
                   </div>
                 </td>
-                <td style={{padding:"10px 12px",verticalAlign:"top",fontSize:12,color:C.mist,fontStyle:"italic"}}>
-                  {[...new Set(mov.entries.filter(e=>e.breath).map(e=>e.breath))].join(" · ")}
-                </td>
                 <td style={{padding:"10px 12px",verticalAlign:"top",fontSize:12,color:C.mist,maxWidth:200}}>
                   {[...new Set(mov.entries.filter(e=>e.notes).map(e=>e.notes))].join(" · ")}
                 </td>
@@ -1350,27 +1402,84 @@ const MovementLibraryScreen = ({ series, aiStyle }) => {
   );
 };
 
-const EditorMovTable = ({ side, data, chore, upMov, addMov, delMov, reorderMov }) => {
+// Ghost row — hover to reveal transition cue between movements
+const GhostCueRow = ({ value, onChange, placeholder="✦ cue de transição…" }) => {
+  const [vis, setVis] = React.useState(false);
+  const [focused, setFocused] = React.useState(false);
+  const show = vis || focused || !!value;
+  const ph = placeholder;
+  return (
+    <div onMouseEnter={()=>setVis(true)} onMouseLeave={()=>setVis(false)}
+      style={{minHeight:show?24:8,display:"flex",alignItems:"center",paddingLeft:22,paddingRight:28,transition:"min-height 0.1s"}}>
+      {show&&<input value={value} onChange={e=>onChange(e.target.value)}
+        onFocus={()=>setFocused(true)} onBlur={()=>setFocused(false)}
+        placeholder={ph}
+        style={{width:"100%",fontSize:11,padding:"2px 10px",borderRadius:4,
+          border:`1px dashed ${C.sig}70`,background:`${C.sig}10`,
+          fontFamily:"'Satoshi',sans-serif",color:"#6a4800",outline:"none"}}/>}
+    </div>
+  );
+};
+
+// Mini-modal for movement notes (parallel mode)
+const NotesMiniModal = ({ movName, notes, onSave, onClose }) => {
+  const [local, setLocal] = React.useState(notes||"");
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.3)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={onClose}>
+      <div style={{background:C.white,borderRadius:12,padding:20,width:340,boxShadow:"0 8px 32px rgba(0,0,0,0.2)"}} onClick={e=>e.stopPropagation()}>
+        <div style={{fontSize:13,fontWeight:700,color:C.ink,marginBottom:10}}>{movName||"Movimento"}</div>
+        <textarea value={local} onChange={e=>setLocal(e.target.value)} autoFocus
+          placeholder="Notas do movimento, respiração, dicas…" rows={5}
+          style={{width:"100%",fontFamily:"'Satoshi',sans-serif",fontSize:12,border:`1px solid ${C.stone}`,borderRadius:8,padding:"8px 12px",outline:"none",resize:"vertical",boxSizing:"border-box",color:C.ink}}/>
+        <div style={{display:"flex",gap:8,marginTop:12,justifyContent:"flex-end"}}>
+          <Btn small variant="ghost" onClick={onClose}>Cancelar</Btn>
+          <Btn small onClick={()=>{onSave(local);onClose();}}>Guardar</Btn>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Notes side panel (normal/non-parallel mode)
+const MovNotesPanel = ({ movements, side, onUpdate, onClose, width=200 }) => (
+  <div style={{width,flexShrink:0,borderLeft:`1px solid ${C.stone}`,paddingLeft:14,display:"flex",flexDirection:"column",gap:0,overflow:"auto"}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,paddingBottom:8,borderBottom:`1px solid ${C.stone}`}}>
+      <div style={{fontSize:10,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em"}}>Notas</div>
+      <button onClick={onClose} style={{background:"none",border:"none",cursor:"pointer",color:C.mist,padding:"1px 4px",fontSize:14,lineHeight:1}}>×</button>
+    </div>
+    <div style={{display:"flex",flexDirection:"column",gap:10,overflowY:"auto",maxHeight:500}}>
+      {(movements||[]).map((m,i)=>(
+        <div key={i}>
+          <div style={{fontSize:10,fontWeight:600,color:C.neutral,marginBottom:3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{i+1}. {m.movement||<span style={{color:C.stone,fontStyle:"italic"}}>—</span>}</div>
+          <textarea value={m.notes||""} onChange={e=>onUpdate(i,e.target.value)}
+            placeholder="Notas, respiração, dicas…" rows={2}
+            style={{width:"100%",fontFamily:"'Satoshi',sans-serif",fontSize:11,border:`1px solid ${C.stone}`,borderRadius:6,padding:"4px 8px",outline:"none",resize:"vertical",boxSizing:"border-box",color:C.ink,background:C.white,lineHeight:1.4}}/>
+        </div>
+      ))}
+    </div>
+  </div>
+);
+
+const EditorMovTable = ({ side, data, chore, upMov, addMov, delMov, reorderMov, openCue="", closeCue="", onOpenCueChange, onCloseCueChange }) => {
   const dragIdx = React.useRef(null);
   const [dragOver, setDragOver] = React.useState(null);
   const cols = chore
-    ? "18px minmax(65px,80px) minmax(80px,1fr) 2fr minmax(65px,80px) 1.5fr 28px"
-    : "18px 2fr minmax(80px,110px) minmax(65px,80px) 1.5fr 28px";
+    ? "18px minmax(65px,80px) minmax(80px,1fr) 2fr 28px"
+    : "18px 2fr minmax(80px,110px) 28px";
   return (
-    <div style={{display:"flex",flexDirection:"column",gap:3}}>
+    <div style={{display:"flex",flexDirection:"column"}}>
       <div style={{display:"grid",gap:5,gridTemplateColumns:cols,marginBottom:3}}>
         <div/>
         {chore&&<div style={{fontSize:11,fontWeight:700,color:C.neutral,textTransform:"uppercase"}}>Timing</div>}
         {chore&&<div style={{fontSize:11,fontWeight:700,color:C.neutral,textTransform:"uppercase"}}>Lyric</div>}
-        <div style={{fontSize:11,fontWeight:700,color:C.neutral,textTransform:"uppercase"}}>Movement</div>
+        <div style={{fontSize:11,fontWeight:700,color:C.neutral,textTransform:"uppercase"}}>Movimento</div>
         {!chore&&<div style={{fontSize:11,fontWeight:700,color:C.neutral,textTransform:"uppercase"}}>Tempo/Reps</div>}
-        <div style={{fontSize:11,fontWeight:700,color:C.neutral,textTransform:"uppercase"}}>Breath</div>
-        {side==="r"&&<div style={{fontSize:11,fontWeight:700,color:C.crimson,textTransform:"uppercase"}}>Transition cue</div>}
         <div/>
       </div>
+      {onOpenCueChange&&<GhostCueRow value={openCue} onChange={onOpenCueChange} placeholder="✦ cue de abertura…"/>}
       {data.movements.map((m,i)=>(
         <React.Fragment key={i}>
-          {i>0&&<div style={{height:2}}/>}
+          {i>0&&<GhostCueRow value={data.movements[i-1].transitionCue||""} onChange={v=>upMov(side,i-1,"transitionCue",v)}/>}
           <div
             draggable
             onDragStart={()=>{ dragIdx.current=i; }}
@@ -1384,84 +1493,80 @@ const EditorMovTable = ({ side, data, chore, upMov, addMov, delMov, reorderMov }
             <span style={{color:C.stone,fontSize:13,cursor:"grab",textAlign:"center",userSelect:"none",paddingTop:1}}>⠿</span>
             {chore&&<EditorInp ph="0''-30''" val={m.timing}  onChange={v=>upMov(side,i,"timing",v)}/>}
             {chore&&<EditorInp ph="Lyric"    val={m.lyric}   onChange={v=>upMov(side,i,"lyric",v)}/>}
-            <EditorInp ph="Movement"         val={m.movement} onChange={v=>upMov(side,i,"movement",v)} listId="mov-library"/>
+            <EditorInp ph="Movimento"        val={m.movement} onChange={v=>upMov(side,i,"movement",v)} listId="mov-library"/>
             {!chore&&<EditorInp ph="ex. 8 reps, 30s" val={m.timeReps||""} onChange={v=>upMov(side,i,"timeReps",v)}/>}
-            <EditorInp ph="Breath"           val={m.breath}   onChange={v=>upMov(side,i,"breath",v)}/>
-            {side==="r"&&<EditorInp ph="✦ Transition cue…" val={m.transitionCue||""} onChange={v=>upMov(side,i,"transitionCue",v)} gold/>}
             <button onClick={()=>delMov(side,i)} style={{background:"none",border:"none",cursor:"pointer",color:C.neutral,padding:3,width:28}}><Icon name="x" size={13}/></button>
-          </div>
-          {/* Notes / modifications row */}
-          <div style={{paddingLeft:23,paddingRight:33}}>
-            <input placeholder="✎ Notas, modificações, dicas…" value={m.notes||""} onChange={e=>upMov(side,i,"notes",e.target.value)}
-              style={{fontSize:11,padding:"2px 7px",borderRadius:4,border:`1px solid ${C.stone}50`,background:`${C.blue}20`,fontFamily:"'Satoshi',sans-serif",width:"100%",boxSizing:"border-box",color:C.mist}}/>
           </div>
         </React.Fragment>
       ))}
-      <div style={{marginTop:4}}><Btn small variant="ghost" onClick={()=>addMov(side)}><Icon name="plus" size={12}/> Add row</Btn></div>
+      {onCloseCueChange&&<GhostCueRow value={closeCue} onChange={onCloseCueChange} placeholder="✦ cue de fecho…"/>}
+      <div style={{marginTop:4}}><Btn small variant="ghost" onClick={()=>addMov(side)}><Icon name="plus" size={12}/> Adicionar movimento</Btn></div>
     </div>
   );
 };
 
-const EditorSigTable = ({ chore, rMovs, bMovs, upMov, addMov, delMov, rLen, bLen, reorderMov }) => {
-  const count = Math.max(rMovs.length, bMovs.length);
+const EditorSigTable = ({ columns=[], onColUpdate, onAddRow, onDelRow, onReorderRow, chore, openCue="", closeCue="", onOpenCueChange, onCloseCueChange }) => {
+  const PCOLS = [C.reformer, C.barre, '#4a7a9a', '#4a8a5a', '#7a4a9a'];
+  const count = Math.max(...(columns.map(c=>c.movements?.length||0).concat([0])));
   const dragIdx = React.useRef(null);
   const [dragOver, setDragOver] = React.useState(null);
+  const [noteModal, setNoteModal] = React.useState(null);
+  const n = columns.length;
   const cols = chore
-    ? "18px minmax(65px,75px) minmax(80px,110px) 1fr minmax(65px,80px) minmax(90px,120px) 1fr minmax(65px,80px) 28px"
-    : "18px 1fr minmax(65px,80px) minmax(90px,120px) 1fr minmax(65px,80px) 28px";
+    ? `18px minmax(65px,75px) minmax(80px,110px) ${Array(n).fill('1fr').join(' ')} 28px`
+    : `18px minmax(70px,100px) ${Array(n).fill('1fr').join(' ')} 28px`;
   return (
     <div style={{overflowX:"auto"}}>
-      <div style={{minWidth:600}}>
+      <div style={{minWidth:200+n*180}}>
         <div style={{display:"grid",gridTemplateColumns:cols,gap:4,marginBottom:4}}>
           <div/>
           {chore&&<div style={{fontSize:11,fontWeight:700,color:`${C.white}90`,background:C.ink,borderRadius:"4px 4px 0 0",padding:"5px 6px",textAlign:"center"}}>Timing</div>}
           {chore&&<div style={{fontSize:11,fontWeight:700,color:`${C.white}90`,background:C.ink,borderRadius:"4px 4px 0 0",padding:"5px 6px",textAlign:"center"}}>Lyric</div>}
-          <div style={{fontSize:11,fontWeight:700,color:C.reformer,background:C.ink,borderRadius:"4px 4px 0 0",padding:"5px 6px",textAlign:"center"}}>Reformer</div>
-          <div style={{fontSize:11,fontWeight:700,color:"#7ec8c8",background:C.ink,borderRadius:"4px 4px 0 0",padding:"5px 6px",textAlign:"center"}}>Breath R</div>
-          <div style={{fontSize:11,fontWeight:700,color:C.sig,background:C.ink,borderRadius:"4px 4px 0 0",padding:"5px 6px",textAlign:"center"}}>✦ Cue</div>
-          <div style={{fontSize:11,fontWeight:700,color:C.barre,background:C.ink,borderRadius:"4px 4px 0 0",padding:"5px 6px",textAlign:"center"}}>Barre</div>
-          <div style={{fontSize:11,fontWeight:700,color:"#e8a898",background:C.ink,borderRadius:"4px 4px 0 0",padding:"5px 6px",textAlign:"center"}}>Breath B</div>
+          {!chore&&<div style={{fontSize:11,fontWeight:700,color:C.neutral,textTransform:"uppercase"}}>Tempo/Reps</div>}
+          {columns.map((col,ci)=>(
+            <div key={col.type} style={{fontSize:11,fontWeight:700,color:PCOLS[ci%5],background:C.ink,borderRadius:"4px 4px 0 0",padding:"5px 6px",textAlign:"center"}}>{col.type}</div>
+          ))}
           <div/>
         </div>
+        {onOpenCueChange&&<GhostCueRow value={openCue} onChange={onOpenCueChange} placeholder="✦ cue de abertura…"/>}
         {Array.from({length:count}).map((_,i)=>{
-          const rm = rMovs[i]||{timing:"",lyric:"",movement:"",breath:"",transitionCue:""};
-          const bm = bMovs[i]||{timing:"",lyric:"",movement:"",breath:""};
+          const rm=columns[0]?.movements?.[i]||{};
           return (
             <React.Fragment key={i}>
-              {i>0&&<div style={{height:3}}/>}
+              {i>0&&<GhostCueRow value={columns[0]?.movements?.[i-1]?.transitionCue||""} onChange={v=>onColUpdate(0,i-1,"transitionCue",v)}/>}
               <div
                 draggable
                 onDragStart={()=>{ dragIdx.current=i; }}
                 onDragOver={e=>{ e.preventDefault(); setDragOver(i); }}
-                onDrop={()=>{ if(dragIdx.current!=null&&dragIdx.current!==i){ reorderMov("sig",dragIdx.current,i); } dragIdx.current=null; setDragOver(null); }}
+                onDrop={()=>{ if(dragIdx.current!=null&&dragIdx.current!==i){ onReorderRow(dragIdx.current,i); } dragIdx.current=null; setDragOver(null); }}
                 onDragEnd={()=>{ dragIdx.current=null; setDragOver(null); }}
                 style={{display:"grid",gridTemplateColumns:cols,gap:4,alignItems:"center",
                   background:dragOver===i?`${C.sig}25`:"transparent",
-                  borderRadius:4,padding:"3px 0",marginBottom:1,
+                  borderRadius:4,padding:"3px 0",
                   outline:dragOver===i?`2px dashed ${C.sig}`:"none"}}>
                 <span style={{color:C.stone,fontSize:13,cursor:"grab",textAlign:"center",userSelect:"none"}}>⠿</span>
-                {chore&&<EditorInp ph="0''-30''" val={rm.timing} onChange={v=>upMov("r",i,"timing",v)}/>}
-                {chore&&<EditorInp ph="Lyric"    val={rm.lyric}  onChange={v=>{upMov("r",i,"lyric",v);upMov("b",i,"lyric",v);}}/>}
-                <div>
-                  <EditorInp ph="Reformer movement" val={rm.movement} onChange={v=>upMov("r",i,"movement",v)} listId="mov-library"/>
-                  <input placeholder="✎ Notas…" value={rm.notes||""} onChange={e=>upMov("r",i,"notes",e.target.value)}
-                    style={{marginTop:3,fontSize:10,padding:"2px 5px",borderRadius:4,border:`1px solid ${C.stone}50`,background:`${C.blue}20`,fontFamily:"'Satoshi',sans-serif",width:"100%",boxSizing:"border-box",color:C.mist}}/>
-                </div>
-                <EditorInp ph="Breath"            val={rm.breath}         onChange={v=>upMov("r",i,"breath",v)}/>
-                <EditorInp ph="✦ Transition cue…" val={rm.transitionCue||""} onChange={v=>upMov("r",i,"transitionCue",v)} gold/>
-                <EditorInp ph="Barre movement"    val={bm.movement}       onChange={v=>upMov("b",i,"movement",v)} listId="mov-library"/>
-                <EditorInp ph="Breath"            val={bm.breath}         onChange={v=>upMov("b",i,"breath",v)}/>
-                <button onClick={()=>{delMov("r",i);delMov("b",i);}} style={{background:"none",border:"none",cursor:"pointer",color:C.neutral,padding:3,width:28}}><Icon name="x" size={13}/></button>
+                {chore&&<EditorInp ph="0''-30''" val={rm.timing||""} onChange={v=>columns.forEach((_,ci)=>onColUpdate(ci,i,"timing",v))}/>}
+                {chore&&<EditorInp ph="Lyric" val={rm.lyric||""} onChange={v=>columns.forEach((_,ci)=>onColUpdate(ci,i,"lyric",v))}/>}
+                {!chore&&<EditorInp ph="ex. 8 reps" val={rm.timeReps||""} onChange={v=>columns.forEach((_,ci)=>onColUpdate(ci,i,"timeReps",v))}/>}
+                {columns.map((col,ci)=>{
+                  const m=col.movements?.[i]||{};
+                  return (
+                    <div key={ci} style={{display:"flex",alignItems:"center",gap:3}}>
+                      <div style={{flex:1}}><EditorInp ph={col.type} val={m.movement||""} onChange={v=>onColUpdate(ci,i,"movement",v)} listId="mov-library"/></div>
+                      <button onClick={()=>setNoteModal({ci,i,movName:m.movement,notes:m.notes||""})}
+                        title="Notas" style={{background:"none",border:"none",cursor:"pointer",color:m.notes?C.neutral:C.stone,padding:"2px 4px",fontSize:12,flexShrink:0}}>✎</button>
+                    </div>
+                  );
+                })}
+                <button onClick={()=>onDelRow(i)} style={{background:"none",border:"none",cursor:"pointer",color:C.neutral,padding:3,width:28}}><Icon name="x" size={13}/></button>
               </div>
             </React.Fragment>
           );
         })}
-        <div style={{marginTop:6}}><Btn small variant="ghost" onClick={()=>{
-          for(let x=rLen;x<bLen;x++) addMov("r");
-          for(let x=bLen;x<rLen;x++) addMov("b");
-          addMov("r"); addMov("b");
-        }}><Icon name="plus" size={12}/> Add row</Btn></div>
+        {onCloseCueChange&&<GhostCueRow value={closeCue} onChange={onCloseCueChange} placeholder="✦ cue de fecho…"/>}
+        <div style={{marginTop:6}}><Btn small variant="ghost" onClick={onAddRow}><Icon name="plus" size={12}/> Adicionar linha</Btn></div>
       </div>
+      {noteModal&&<NotesMiniModal movName={noteModal.movName} notes={noteModal.notes} onSave={v=>onColUpdate(noteModal.ci,noteModal.i,"notes",v)} onClose={()=>setNoteModal(null)}/>}
     </div>
   );
 };
@@ -1610,7 +1715,7 @@ Muscles: ${series.muscles?.join(", ")||"-"}`;
 
     try {
       const styleCtx = aiStyle ? `\n\nInstructor teaching style: ${aiStyle}` : "";
-      const systemPrompt = `You are a STOTT Pilates expert coach reviewing an instructor's class series. Your role is to suggest improvements to movements only — sequencing, biomechanical flow, STOTT principles, spring/prop choices, or alignment cues. Be specific and concise. Always explain WHY a change would help. You are NOT rewriting their series — you are offering suggestions that the instructor can choose to apply or ignore. Respond in Portuguese (Portugal).${styleCtx}`;
+      const systemPrompt = `You are an expert Pilates coach reviewing an instructor's class series. Your role is to suggest improvements to movements only — sequencing, biomechanical flow, Pilates principles, spring/prop choices, or alignment cues. Be specific and concise. Always explain WHY a change would help. You are NOT rewriting their series — you are offering suggestions that the instructor can choose to apply or ignore. Respond in Portuguese (Portugal).${styleCtx}`;
 
       const contextBlock = buildContext();
       // Build message history for the API
@@ -1653,7 +1758,6 @@ Muscles: ${series.muscles?.join(", ")||"-"}`;
   };
   const QUICK_ACTIONS = [
     { label: "✦ Músculos", actionType: "muscles", prompt: "Analisa a série e lista os 5 músculos principais trabalhados. Responde APENAS com JSON no formato: {\"muscles\":[\"músculo1\",\"músculo2\",...]}" },
-    { label: "✦ Notas de Instructor", actionType: "notes", prompt: "Escreve notas de instructor para esta série: técnica, erros comuns, e cues verbais em português (2-3 frases). Responde APENAS com o texto das notas, sem formatação extra." },
     { label: "✦ Modificações", actionType: "mods", prompt: "Sugere modificações, progressões e regressões para esta série para diferentes níveis e limitações físicas comuns. Responde em português." },
   ];
 
@@ -1782,22 +1886,60 @@ Muscles: ${series.muscles?.join(", ")||"-"}`;
 };
 
 // ─── SERIES EDITOR ────────────────────────────────────────────────────────────
-const SeriesEditor = ({ series, onSave, onSaveAsNew, onCancel, onDelete, aiStyle, studioSettings={}, availableZones, availableSeriesTypes }) => {
+const SeriesEditor = ({ series, onSave, onSaveAsNew, onCancel, onDelete, aiStyle, studioSettings={}, availableZones, availableSeriesTypes, availableClassTypes, onPublish }) => {
   const initS = series ? JSON.parse(JSON.stringify(series)) : {...JSON.parse(JSON.stringify(EMPTY_SERIES)), id:`s-${Date.now()}`, createdAt: new Date().toISOString()};
-  const [s, setS] = useState(initS);
-  const [originalSnap] = useState(()=>JSON.stringify({name:initS.name,song:initS.song,type:initS.type,status:initS.status,muscles:initS.muscles,cues:initS.cues,reformer:initS.reformer,barre:initS.barre}));
-  const [generatingCues, setGeneratingCues] = useState(false);
-  const [generatingTrans, setGeneratingTrans] = useState(false);
+  const [s, setS] = useState(() => {
+    if (initS.type === 'signature' && !initS.parallelColumns) {
+      return {...initS, parallelColumns: [
+        {type: initS.reformer?.label||'Reformer', movements: initS.reformer?.movements||[], springs: initS.reformer?.springs||'', props: initS.reformer?.props||'', startPosition: initS.reformer?.startPosition||''},
+        {type: initS.barre?.label||'Barre', movements: initS.barre?.movements||[], props: initS.barre?.props||'', startPosition: initS.barre?.startPosition||''}
+      ]};
+    }
+    return initS;
+  });
+  const [originalSnap] = useState(()=>JSON.stringify({name:initS.name,song:initS.song,type:initS.type,status:initS.status,cues:initS.cues,reformer:initS.reformer,barre:initS.barre,parallelColumns:initS.parallelColumns}));
+  const [generatingMods, setGeneratingMods] = useState(false);
   const toast_ = useToast();
-  const [choreR, setChoreR] = useState(()=> (initS.reformer?.movements||[]).some(m=>m.timing));
-  const [choreB, setChoreB] = useState(()=> (initS.barre?.movements||[]).some(m=>m.timing));
-
+  const [choreMode, setChoreMode] = useState(()=> (initS.reformer?.movements||initS.barre?.movements||[]).some(m=>m.timing));
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [modsOpen, setModsOpen] = useState(!!(initS.modifications));
+  const [notesPanelOpen, setNotesPanelOpen] = useState(false);
   const [showCancelWarn, setShowCancelWarn] = useState(false);
+  const [notesWidth, setNotesWidth] = React.useState(200);
+  const [notesCol, setNotesCol] = React.useState(0);
+  const notesDragRef = React.useRef({startX:0, startW:0});
+  const [commentWithdrawn, setCommentWithdrawn] = useState(false);
+  const [studioCheck, setStudioCheck] = React.useState(null); // null | 'loading' | { verdict, explanation }
+
+  const checkVsStudio = async () => {
+    if (!studioSettings) return;
+    setStudioCheck('loading');
+    const studioContext = [studioSettings.ai_profile ? aiToString(studioSettings.ai_profile) : '', studioSettings.guidelines || ''].filter(Boolean).join('\n');
+    if (!studioContext.trim()) { setStudioCheck({ verdict: '⚠️', explanation: 'O studio não tem perfil de IA configurado.' }); return; }
+    const movSummary = (s.movements || []).slice(0, 8).map(m => m.movement || m.lyric || '').filter(Boolean).join(', ');
+    const seriesDesc = `Série "${s.name}" (${s.type}) — Zona: ${s.targetZone || s.primaryZone || '—'} — Movimentos: ${movSummary || '—'}`;
+    try {
+      const res = await fetch('/api/ai', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          system: `Perfil do studio:\n${studioContext}`,
+          messages: [{ role: 'user', content: `Avalia se esta série é compatível com o perfil e diretrizes do studio. Responde APENAS com um JSON: {"verdict": "✓ Compatível" | "⚠️ Atenção" | "✗ Incompatível", "explanation": "<1-2 frases em português>"}\n\n${seriesDesc}` }],
+          max_tokens: 200,
+        }),
+      });
+      const data = await res.json();
+      const text = (data.content?.[0]?.text || '').replace(/```json|```/g, '').trim();
+      const parsed = JSON.parse(text);
+      setStudioCheck(parsed);
+    } catch {
+      setStudioCheck({ verdict: '⚠️', explanation: 'Erro ao verificar. Tenta novamente.' });
+    }
+  };
 
   React.useEffect(()=>{ window.scrollTo({top:0,behavior:"smooth"}); }, []);
 
   const handleCancel = () => {
-    const snap = JSON.stringify({name:s.name,song:s.song,type:s.type,status:s.status,muscles:s.muscles,cues:s.cues,reformer:s.reformer,barre:s.barre});
+    const snap = JSON.stringify({name:s.name,song:s.song,type:s.type,status:s.status,muscles:s.muscles,cues:s.cues,reformer:s.reformer,barre:s.barre,parallelColumns:s.parallelColumns});
     if(snap !== originalSnap){ setShowCancelWarn(true); return; }
     onCancel();
   };
@@ -1821,46 +1963,72 @@ const SeriesEditor = ({ series, onSave, onSaveAsNew, onCancel, onDelete, aiStyle
     }
   };
 
-  const generateCues = async () => {
-    setGeneratingCues(true);
-    try {
-      const movs = s.type!=="barre"?s.reformer.movements:s.barre.movements;
-      const instrExamples = await examplesStore.getRelevant('instructor');
-      const examplesCtx = examplesStore.formatExamples(instrExamples);
-      const styleCtx = (aiStyle?`\n\nInstructor teaching style:\n${aiStyle}`:"") + examplesCtx;
-      const prompt = `STOTT Pilates instructor. Series: "${s.name}", type: ${s.type}, movements: ${movs.map(m=>m.movement).filter(Boolean).join(", ")}, start: ${s.type!=="barre"?s.reformer.startPosition:s.barre.startPosition}.${styleCtx}\n\nGenerate muscles (max 5) and instructor notes (2-3 sentences, common errors + verbal cues in Portuguese). JSON only: {"muscles":["m1"],"cues":"notes"}`;
-      const text = await aiCall(prompt);
-      const parsed = JSON.parse(text);
-      if(parsed.muscles) setS(p=>({...p,muscles:parsed.muscles,cues:parsed.cues||p.cues}));
-    } catch(e){ console.error(e); toast_?.('Erro ao gerar com IA', 'error'); }
-    setGeneratingCues(false);
+  const upParallelMov = (colIndex, i, field, val) => setS(p => {
+    const cols = [...(p.parallelColumns||[])];
+    const movs = [...(cols[colIndex]?.movements||[])];
+    while(movs.length <= i) movs.push({timing:"",lyric:"",movement:"",timeReps:"",notes:"",transitionCue:""});
+    movs[i] = {...movs[i], [field]: val};
+    cols[colIndex] = {...cols[colIndex], movements: movs};
+    return {...p, parallelColumns: cols};
+  });
+
+  const upParallelColField = (colIndex, field, val) => setS(p => {
+    const cols = [...(p.parallelColumns||[])];
+    cols[colIndex] = {...cols[colIndex], [field]: val};
+    return {...p, parallelColumns: cols};
+  });
+
+  const moveParallelCol = (from, to) => setS(p => {
+    const cols = [...(p.parallelColumns||[])];
+    const [item] = cols.splice(from, 1);
+    cols.splice(to, 0, item);
+    return {...p, parallelColumns: cols};
+  });
+
+  const toggleParallel = () => {
+    if (isParallel) {
+      up("type", 'reformer');
+    } else {
+      setS(p => {
+        if (p.parallelColumns) return {...p, type:'signature'};
+        const cols = [
+          {type: p.reformer?.label||(availableClassTypes?.[0]||'Reformer'), movements: p.reformer?.movements||[], springs: p.reformer?.springs||'', props: p.reformer?.props||'', startPosition: p.reformer?.startPosition||''},
+          {type: p.barre?.label||(availableClassTypes?.[1]||'Barre'), movements: p.barre?.movements||[], props: p.barre?.props||'', startPosition: p.barre?.startPosition||''}
+        ];
+        return {...p, type:'signature', parallelColumns: cols};
+      });
+    }
   };
 
-  const generateTransitions = async () => {
-    setGeneratingTrans(true);
+  const startNotesDrag = e => {
+    notesDragRef.current = {startX: e.clientX, startW: notesWidth};
+    const onMove = mv => setNotesWidth(Math.max(160, Math.min(400, notesDragRef.current.startW - (mv.clientX - notesDragRef.current.startX))));
+    const onUp = () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    e.preventDefault();
+  };
+
+  const generateMods = async () => {
+    setGeneratingMods(true);
     try {
-      const rM=s.reformer?.movements||[], bM=s.barre?.movements||[];
-      const seen=new Set(), timings=[];
-      [...rM,...bM].forEach(m=>{ if(!seen.has(m.timing)){seen.add(m.timing);timings.push(m.timing);} });
-      const rows=timings.map(t=>({timing:t,r:rM.find(m=>m.timing===t),b:bM.find(m=>m.timing===t)}));
-      const transExamples = await examplesStore.getRelevant('transition');
-      const examplesCtx = examplesStore.formatExamples(transExamples);
-      const styleCtx = (aiStyle?`\n\nInstructor style: ${aiStyle}`:"") + examplesCtx;
-      const prompt = `STOTT Pilates Signature class instructor (8 reformers + 8 barre simultaneously).${styleCtx}\n\nWrite short verbal transition cues (max 10 words each) to announce what's coming for BOTH groups. Skip row 0.\n\nRows:\n${rows.map((r,i)=>`${i}. ${r.timing}|r:${r.r?.movement||"-"}|b:${r.b?.movement||"-"}`).join("\n")}\n\nJSON array only, one per row (empty string for row 0): ["","cue1","cue2",...]`;
+      const movs = s.type==="barre"?s.barre?.movements||[]:s.reformer?.movements||[];
+      const movList = movs.map(m=>m.movement).filter(Boolean).join(", ");
+      const zones = s.targetZone||"";
+      const styleCtx = aiStyle?`\n\nInstructor style: ${aiStyle}`:"";
+      const prompt = `Pilates instructor. Series: "${s.name}", type: ${s.type}. Movements: ${movList||"—"}. Target zones: ${zones||"—"}.${styleCtx}\n\nEscreve modificações práticas em Português para:\n- Pré/pós-natal\n- Lesões comuns nas zonas trabalhadas\n- Progressões e regressões\n\nSê conciso e prático.`;
       const text = await aiCall(prompt);
-      const cues = JSON.parse(text);
-      if(Array.isArray(cues)){
-        setS(p=>{
-          const newR=[...(p.reformer?.movements||[])];
-          timings.forEach((t,i)=>{ const idx=newR.findIndex(m=>m.timing===t); if(idx>=0) newR[idx]={...newR[idx],transitionCue:cues[i]||""}; });
-          return {...p,reformer:{...p.reformer,movements:newR}};
-        });
-      }
-    } catch(e){ console.error(e); toast_?.('Erro ao gerar com IA', 'error'); }
-    setGeneratingTrans(false);
+      up("modifications", text);
+      setModsOpen(true);
+    } catch(e){ console.error(e); toast_?.('Erro ao gerar com IA','error'); }
+    setGeneratingMods(false);
   };
 
   // MovTable and SigTable are defined OUTSIDE SeriesEditor (see below) to avoid re-mount on keystroke
+
+  const isParallel = s.type==="signature";
+  const notesMovements = isParallel ? [] : (s.type==="barre" ? s.barre?.movements||[] : s.reformer?.movements||[]);
+  const notesSide = s.type==="barre" ? "b" : "r";
 
   return (
     <>
@@ -1871,37 +2039,98 @@ const SeriesEditor = ({ series, onSave, onSaveAsNew, onCancel, onDelete, aiStyle
       * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important;
           box-shadow: none !important; background: white !important; background-color: white !important;
           border-radius: 0 !important; }
-      /* Strip all section borders/boxes */
       [style*="borderRadius:12"], [style*="borderRadius:16"] {
         border: none !important; padding: 0 !important; margin-bottom: 4px !important;
       }
-      /* Tables — clean rules */
       table { width: 100% !important; border-collapse: collapse !important; }
       td, th { padding: 1.5px 4px !important; border-bottom: 0.5px solid #ddd !important; font-size: 8.5px !important; line-height: 1.3 !important; }
       tr.print-thead th { border-bottom: 1px solid #444 !important; font-weight: 700 !important; background: white !important; font-size: 7.5px !important; text-transform: uppercase !important; }
       tr.print-cue-row td { font-style: italic !important; color: #555 !important; border-bottom: none !important; }
-      /* Inputs/textareas as plain text */
       input, textarea { border: none !important; background: transparent !important; resize: none !important;
                         overflow: hidden !important; padding: 0 !important; font-size: 8.5px !important; width: 100% !important; }
-      /* Hide buttons and editor chrome */
       button { display: none !important; }
-      /* Headings */
       h3 { font-size: 11px !important; margin: 0 0 3px !important; }
     }`}</style>
-    <div className="series-editor-card" style={{background:C.white,borderRadius:16,border:`1px solid ${C.stone}`,padding:28,display:"flex",flexDirection:"column",gap:20}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-        <h3 style={{fontFamily:"'Clash Display', sans-serif",fontSize:22,fontWeight:500,color:C.crimson,margin:0}}>{series?.id?"Editar série":"Nova série"}</h3>
-        <div style={{display:"flex",gap:8,alignItems:"center"}}>
-          <Btn small onClick={()=>onSave(s)}><Icon name="save" size={13}/> Guardar série</Btn>
-          {series?.id&&onSaveAsNew&&<Btn variant="ghost" small onClick={()=>{
-            const newName = window.prompt("Nome da nova série:", s.name+" (cópia)");
-            if(newName) onSaveAsNew({...JSON.parse(JSON.stringify(s)), id:`s-${Date.now()}`, name:newName});
-          }}><Icon name="copy" size={13}/> Duplicar</Btn>}
+    <div className="series-editor-card" style={{background:C.white,borderRadius:16,border:`1px solid ${C.stone}`,padding:28,display:"flex",flexDirection:"column",gap:16}}>
 
+      {/* Header */}
+      <div style={{display:"flex",gap:12,alignItems:"center",flexWrap:"wrap"}}>
+        <input value={s.name} onChange={e=>up("name",e.target.value)} placeholder="Nome da série"
+          style={{flex:1,minWidth:180,fontFamily:"'Clash Display',sans-serif",fontSize:20,fontWeight:500,color:C.crimson,border:"none",background:"transparent",outline:"none",padding:0}}/>
+        <div style={{display:"flex",gap:6,flexShrink:0}}>
+          {["WIP","Pronta"].map(v=>(
+            <button key={v} onClick={()=>up("status",v)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"4px 12px",borderRadius:20,
+              border:`1px solid ${s.status===v?(v==="Pronta"?"#3a6a9a":C.neutral):C.stone}`,
+              background:s.status===v?(v==="Pronta"?"#3a6a9a":C.neutral):"transparent",
+              color:s.status===v?C.white:C.mist,cursor:"pointer"}}>{v}</button>
+          ))}
+        </div>
+        <div style={{display:"flex",gap:8,flexShrink:0}}>
+          <Btn small onClick={()=>{
+            if(!s.type&&!isParallel){toast_?.('Escolhe o tipo da série antes de guardar.','error');return;}
+            let toSave=s;
+            if(isParallel&&s.parallelColumns?.length>0){
+              const[c0,c1]=s.parallelColumns;
+              toSave={...s,
+                reformer:{...(s.reformer||{}),label:c0?.type,movements:c0?.movements||[],springs:c0?.springs||'',props:c0?.props||'',startPosition:c0?.startPosition||''},
+                barre:{...(s.barre||{}),label:c1?.type||'',movements:c1?.movements||[],props:c1?.props||'',startPosition:c1?.startPosition||''}
+              };
+            }
+            onSave(toSave);
+          }}><Icon name="save" size={13}/> Guardar</Btn>
           <Btn variant="ghost" small onClick={handleCancel}><Icon name="x" size={14}/></Btn>
         </div>
       </div>
 
+      {/* Type row — always visible, required */}
+      <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",padding:"8px 0",borderBottom:`1px solid ${C.stone}`}}>
+        <span style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em",flexShrink:0}}>Tipo:</span>
+        {!isParallel&&[["reformer","Reformer"],["barre","Barre"]].map(([val,lbl])=>{
+          const clr = val==="reformer"?C.reformer:C.barre;
+          const isActive = s.type===val;
+          return <button key={val} onClick={()=>up("type",val)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 14px",borderRadius:20,
+            border:`1px solid ${isActive?clr:C.stone}`,
+            background:isActive?clr:"transparent",
+            color:isActive?(val==="reformer"?C.white:"#5a1a30"):C.mist,cursor:"pointer"}}>{lbl}</button>;
+        })}
+        {isParallel&&[...new Set([...(availableClassTypes?.length?availableClassTypes:[]),'Reformer','Barre',...(s.parallelColumns||[]).map(c=>c.type)])].map(t=>{
+          const colIndex=(s.parallelColumns||[]).findIndex(c=>c.type===t);
+          const isSel=colIndex!==-1;
+          return <button key={t} onClick={()=>{
+            const cols=s.parallelColumns||[];
+            if(isSel){if(cols.length<=1)return;up('parallelColumns',cols.filter(c=>c.type!==t));}
+            else{up('parallelColumns',[...cols,{type:t,movements:[],springs:'',props:'',startPosition:''}]);}
+          }} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 14px",borderRadius:20,
+            border:`1px solid ${isSel?C.sig:C.stone}`,background:isSel?`${C.sig}30`:"transparent",
+            color:isSel?C.ink:C.mist,cursor:"pointer"}}>{t}{isSel?' ✓':''}</button>;
+        })}
+        <div style={{display:"flex",gap:8,marginLeft:"auto"}}>
+          <Toggle labelOff="Única" labelOn="Paralelo" active={isParallel} onClick={toggleParallel} color={C.sig}/>
+          <Toggle labelOff="Simples" labelOn="♫ Coreograf." active={choreMode} onClick={()=>setChoreMode(p=>!p)} color={C.neutral}/>
+        </div>
+        {!s.type&&!isParallel&&(
+          <span style={{fontSize:11,color:"#b91c1c",fontWeight:600,width:"100%"}}>Escolhe o tipo antes de guardar</span>
+        )}
+      </div>
+
+      {/* Studio comment */}
+      {s.studioComment&&(
+        <div style={{background:"#fef2f2",border:"1px solid #fca5a5",borderRadius:8,padding:"10px 14px"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8,marginBottom:4}}>
+            <div style={{fontSize:10,fontWeight:700,color:"#b91c1c",textTransform:"uppercase",letterSpacing:"0.06em"}}>Comentário do Studio</div>
+            {commentWithdrawn&&<button onClick={()=>up('studioComment',null)} title="Apagar comentário permanentemente" style={{background:"none",border:"none",cursor:"pointer",color:"#b91c1c",fontSize:14,lineHeight:1,padding:0,flexShrink:0}}>×</button>}
+          </div>
+          <div style={{fontSize:13,color:"#7f1d1d",marginBottom:10}}>{s.studioComment}</div>
+          {!commentWithdrawn&&(
+            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+              {onPublish&&<button onClick={()=>{ up('studioComment',null); onPublish({...s,studioComment:null}); }} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"4px 12px",borderRadius:20,border:`1px solid #b91c1c`,background:"#b91c1c",color:"#fff",cursor:"pointer"}}>↑ Submeter novamente</button>}
+              <button onClick={async()=>{up('studioComment',null);setCommentWithdrawn(true);await supabase.from('series').update({studio_comment:null}).eq('id',s.id);}} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"4px 12px",borderRadius:20,border:`1px solid #fca5a5`,background:"transparent",color:"#b91c1c",cursor:"pointer"}}>× Retirar submissão</button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Unsaved changes warning */}
       {showCancelWarn&&(
         <div style={{background:C.cream,border:`1px solid ${C.stone}`,borderRadius:10,padding:"14px 18px",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
           <span style={{fontSize:13,color:C.slate,flex:1}}>Tens alterações não guardadas. Tens a certeza que queres sair?</span>
@@ -1911,191 +2140,227 @@ const SeriesEditor = ({ series, onSave, onSaveAsNew, onCancel, onDelete, aiStyle
           </div>
         </div>
       )}
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
-        <Field label="Nome da série" val={s.name} onChange={v=>up("name",v)}/>
-        <Field label="Música (opcional)" val={s.song} onChange={v=>up("song",v)}/>
-      </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
-        <Field label="Cue de abertura (início da série)" val={s.openCue||""} onChange={v=>up("openCue",v)} placeholder="ex. Vamos para o reformer — 2 vermelhas, pés na barra…"/>
-        <Field label="Cue de fecho (saída / transição)" val={s.closeCue||""} onChange={v=>up("closeCue",v)} placeholder="ex. Muito bem, vamos guardar as correias e…"/>
-      </div>
-      <div style={{display:"flex",flexDirection:"column",gap:4}}>
-        <label style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em"}}>Data de criação</label>
-        <div style={{fontSize:13,color:C.mist,padding:"4px 0"}}>{s.createdAt?new Date(s.createdAt).toLocaleDateString("pt-PT",{day:"2-digit",month:"short",year:"numeric"}):"—"}</div>
-      </div>
-      <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-        <label style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em"}}>Tipo:</label>
-        {[["reformer","Reformer","C.reformer"],["barre","Barre","C.barre"],["signature","Signature (ambos)","C.sig"]].map(([val,lbl,col])=>{
-          const clr = val==="reformer"?C.reformer:val==="barre"?C.barre:C.sig;
-          const activeText = val==="barre"?"#5a1a30":"#6a3000";
-          return <button key={val} onClick={()=>up("type",val)} style={{fontFamily:"'Satoshi', sans-serif",fontSize:12,fontWeight:600,padding:"5px 14px",borderRadius:20,border:`1px solid ${s.type===val?clr:C.stone}`,background:s.type===val?clr:"transparent",color:s.type===val?(val==="reformer"?C.white:activeText):C.mist,cursor:"pointer"}}>{lbl}</button>;
-        })}
-        <div style={{marginLeft:"auto",display:"flex",gap:8}}>
-          {["testing","approved"].map(v=>{
-            const isActive = s.status===v;
-            const clr = v==="approved"?"#3a6a9a":C.neutral;
-            return <button key={v} onClick={()=>up("status",v)} style={{fontFamily:"'Satoshi', sans-serif",fontSize:12,fontWeight:600,padding:"5px 14px",borderRadius:20,border:`1px solid ${isActive?clr:C.stone}`,background:isActive?clr:"transparent",color:isActive?C.white:C.mist,cursor:"pointer"}}>{v==="testing"?"Em teste":"Aprovada"}</button>;
-          })}
-        </div>
-      </div>
 
-      {/* Reformer-only editor */}
-      {s.type==="reformer"&&(
-        <div className="series-editor-section" style={{background:C.white,borderRadius:12,padding:16,border:`1px solid ${C.stone}`}}>
-          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
-            <div style={{fontSize:12,fontWeight:700,color:C.reformer,textTransform:"uppercase",letterSpacing:"0.08em"}}>Reformer</div>
-            <Toggle label={choreR?"♫ Coreografado":"Simples"} active={choreR} onClick={()=>setChoreR(p=>!p)} color={C.neutral}/>
-          </div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:12}}>
-            <Field label="Springs" val={s.reformer.springs} onChange={v=>upR("springs",v)}/>
-            <Field label="Props" val={s.reformer.props} onChange={v=>upR("props",v)}/>
-            <Field label="Posição inicial" val={s.reformer.startPosition} onChange={v=>upR("startPosition",v)}/>
-          </div>
-          <EditorMovTable side="r" data={s.reformer} chore={choreR} upMov={upMov} addMov={addMov} delMov={delMov} reorderMov={reorderMov}/>
-        </div>
-      )}
-
-      {/* Barre-only editor */}
-      {s.type==="barre"&&(
-        <div className="series-editor-section" style={{background:C.white,borderRadius:12,padding:16,border:`1px solid ${C.stone}`}}>
-          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
-            <div style={{fontSize:12,fontWeight:700,color:C.barre,textTransform:"uppercase",letterSpacing:"0.08em"}}>Barre / Mat</div>
-            <Toggle label={choreB?"♫ Coreografado":"Simples"} active={choreB} onClick={()=>setChoreB(p=>!p)} color={C.neutral}/>
-          </div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
-            <Field label="Props" val={s.barre.props} onChange={v=>upB("props",v)}/>
-            <Field label="Posição inicial" val={s.barre.startPosition} onChange={v=>upB("startPosition",v)}/>
-          </div>
-          <EditorMovTable side="b" data={s.barre} chore={choreB} upMov={upMov} addMov={addMov} delMov={delMov} reorderMov={reorderMov}/>
-        </div>
-      )}
-
-      {/* Signature unified editor — Reformer + Barre side by side */}
-      {s.type==="signature"&&(
-        <div style={{background:C.white,borderRadius:12,padding:16,border:`1px solid ${C.stone}`}}>
-          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,flexWrap:"wrap"}}>
-            <div style={{fontSize:12,fontWeight:700,color:C.neutral,textTransform:"uppercase",letterSpacing:"0.08em"}}>Reformer + Barre</div>
-            <Toggle label={choreR?"♫ Coreografado":"Simples"} active={choreR} onClick={()=>{setChoreR(p=>!p);setChoreB(p=>!p);}} color={C.neutral}/>
-            <Btn small variant="gold" onClick={generateTransitions} style={{marginLeft:"auto"}} disabled={generatingTrans}>
-              <Icon name="ai" size={12}/>{generatingTrans?"A gerar…":"✦ Gerar transition cues (IA)"}
-            </Btn>
-          </div>
-          {/* Setup: 2 col */}
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:14}}>
-            <div style={{background:C.cream,borderRadius:8,padding:12,border:`1px solid ${C.stone}`}}>
-              <div style={{fontSize:10,fontWeight:700,color:C.reformer,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Reformer</div>
-              <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                <Field label="Springs" val={s.reformer.springs} onChange={v=>upR("springs",v)}/>
-                <Field label="Props" val={s.reformer.props} onChange={v=>upR("props",v)}/>
-                <Field label="Posição inicial" val={s.reformer.startPosition} onChange={v=>upR("startPosition",v)}/>
-              </div>
-            </div>
-            <div style={{background:C.cream,borderRadius:8,padding:12,border:`1px solid ${C.stone}`}}>
-              <div style={{fontSize:10,fontWeight:700,color:C.barre,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Barre</div>
-              <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                <Field label="Props" val={s.barre.props} onChange={v=>upB("props",v)}/>
-                <Field label="Posição inicial" val={s.barre.startPosition} onChange={v=>upB("startPosition",v)}/>
-              </div>
-            </div>
-          </div>
-          <EditorSigTable chore={choreR} rMovs={s.reformer?.movements||[]} bMovs={s.barre?.movements||[]} upMov={upMov} addMov={addMov} delMov={delMov} rLen={s.reformer?.movements?.length||0} bLen={s.barre?.movements?.length||0} reorderMov={reorderMov}/>
-        </div>
-      )}
-
-      <div className="series-editor-section" style={{background:C.white,borderRadius:12,padding:16,border:`1px solid ${C.stone}`}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-          <div style={{fontSize:12,fontWeight:700,color:C.neutral,textTransform:"uppercase",letterSpacing:"0.08em"}}>Músculos e cues gerais</div>
-          <Btn small variant="gold" onClick={generateCues} disabled={generatingCues}><Icon name="ai" size={12}/>{generatingCues?"A gerar…":"✦ Gerar com IA"}</Btn>
-        </div>
-        <div style={{marginBottom:10}}>
-          <label style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em",display:"block",marginBottom:6}}>Músculos (separados por vírgula)</label>
-          <input value={s.muscles.join(", ")} onChange={e=>setS(p=>({...p,muscles:e.target.value.split(",").map(x=>x.trim()).filter(Boolean)}))} style={{width:"100%",fontFamily:"'Satoshi', sans-serif",fontSize:13,padding:"8px 12px",borderRadius:8,border:`1px solid ${C.stone}`,outline:"none",color:C.ink,background:C.cream,boxSizing:"border-box"}}/>
-        </div>
-        <div style={{marginBottom:10}}>
-          <div style={{display:"flex",flexDirection:"column",gap:6}}>
-            <label style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em"}}>Zonas target</label>
-            <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-              {(availableZones?.length ? availableZones : ["Glutes","Hamstrings","Quads","Inner Thighs","Calves","Core","Back","Arms","Shoulders","Chest","Full Body","Cardio","Warm-Up","Mobility","Flexibility","Balance"]).map(tag=>{
-                const active = (s.targetZone||"").split(",").map(x=>x.trim()).includes(tag);
-                const isPrimary = s.primaryZone===tag;
-                return <button key={tag} onClick={()=>{
-                  const tags = (s.targetZone||"").split(",").map(x=>x.trim()).filter(Boolean);
-                  const next = active ? tags.filter(t=>t!==tag) : [...tags,tag];
-                  const updates = {targetZone: next.join(", ")};
-                  if(active && isPrimary) updates.primaryZone = "";
-                  if(!active && next.length===1) updates.primaryZone = tag;
-                  setS(p=>({...p,...updates}));
-                }} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"3px 10px",borderRadius:20,
-                  border:`1px solid ${isPrimary?"#1a3a6a":active?"#2a5a8a":C.stone}`,
-                  background:isPrimary?`${C.blue}90`:active?`${C.blue}60`:"transparent",
-                  color:isPrimary?"#0a1a4a":active?"#1a3a6a":C.mist,cursor:"pointer"}}>{tag}</button>;
-              })}
-            </div>
-            {(()=>{
-              const activeTags = (s.targetZone||"").split(",").map(x=>x.trim()).filter(Boolean);
-              if(activeTags.length < 2) return null;
-              return (
-                <div style={{display:"flex",flexDirection:"column",gap:4,marginTop:4}}>
-                  <label style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em"}}>Zona principal <span style={{fontWeight:400,textTransform:"none",letterSpacing:0}}>(para ordenação)</span></label>
-                  <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-                    {activeTags.map(tag=>{
-                      const isPrimary = s.primaryZone===tag;
-                      return <button key={tag} onClick={()=>setS(p=>({...p,primaryZone:tag}))}
-                        style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:isPrimary?700:500,
-                          padding:"3px 12px",borderRadius:20,cursor:"pointer",
-                          border:`1px solid ${isPrimary?"#1a3a6a":"#aac"}`,
-                          background:isPrimary?"#1a3a6a":"transparent",
-                          color:isPrimary?"#fff":"#3a5a8a",
-                          display:"flex",alignItems:"center",gap:5}}>
-                        {isPrimary&&<span style={{fontSize:9}}>★</span>}{tag}
-                      </button>;
-                    })}
+      {/* Detalhes (collapsible) */}
+      <div style={{borderRadius:10,border:`1px solid ${C.stone}`,overflow:"hidden"}}>
+        <button onClick={()=>setDetailsOpen(p=>!p)} style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 16px",background:detailsOpen?C.cream:"transparent",border:"none",cursor:"pointer",fontFamily:"'Satoshi',sans-serif"}}>
+          <span style={{fontSize:12,fontWeight:700,color:C.neutral,textTransform:"uppercase",letterSpacing:"0.08em"}}>Detalhes</span>
+          <span style={{color:C.mist,fontSize:12}}>{detailsOpen?"▲":"▼"}</span>
+        </button>
+        {detailsOpen&&(
+          <div style={{padding:16,display:"flex",flexDirection:"column",gap:14,borderTop:`1px solid ${C.stone}`}}>
+            {isParallel&&(s.parallelColumns||[]).length>1&&(
+              <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+                <span style={{fontSize:10,color:C.mist,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.05em"}}>Ordem:</span>
+                {(s.parallelColumns||[]).map((col,ci)=>(
+                  <div key={col.type} style={{display:"flex",alignItems:"center",gap:2,padding:"2px 8px",borderRadius:20,background:`${C.sig}20`,border:`1px solid ${C.sig}50`,fontSize:11,fontWeight:600,color:C.ink}}>
+                    {col.type}
+                    {ci>0&&<button onClick={()=>moveParallelCol(ci,ci-1)} style={{background:"none",border:"none",cursor:"pointer",fontSize:11,color:C.neutral,padding:"0 2px",lineHeight:1}}>←</button>}
+                    {ci<(s.parallelColumns||[]).length-1&&<button onClick={()=>moveParallelCol(ci,ci+1)} style={{background:"none",border:"none",cursor:"pointer",fontSize:11,color:C.neutral,padding:"0 2px",lineHeight:1}}>→</button>}
                   </div>
-                </div>
-              );
-            })()}
-          </div>
-        </div>
-        <div style={{marginBottom:10}}>
-          <div style={{display:"flex",flexDirection:"column",gap:6}}>
-            <label style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em"}}>Tipo de série</label>
-            <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-              {(availableSeriesTypes||studioSettings?.series_types||DEFAULT_SERIES_TYPES).map(tag=>{
-                const active = s.seriesType===tag;
-                return <button key={tag} onClick={()=>setS(p=>({...p,seriesType:active?"":tag}))}
-                  style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"3px 10px",borderRadius:20,
-                    border:`1px solid ${active?"#8a4010":C.stone}`,
-                    background:active?`${C.sig}60`:"transparent",
-                    color:active?"#5a2a00":C.mist,cursor:"pointer"}}>{tag}</button>;
-              })}
+                ))}
+              </div>
+            )}
+            {/* Music (only if chore) */}
+            {choreMode&&<Field label="Música" val={s.song||""} onChange={v=>up("song",v)} placeholder="Nome da música"/>}
+            {/* Zones */}
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              <label style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em"}}>Zonas target</label>
+              <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+                {(availableZones?.length ? availableZones : ["Glutes","Hamstrings","Quads","Inner Thighs","Calves","Core","Back","Arms","Shoulders","Chest","Full Body","Cardio","Warm-Up","Mobility","Flexibility","Balance"]).map(tag=>{
+                  const active = (s.targetZone||"").split(",").map(x=>x.trim()).includes(tag);
+                  const isPrimary = s.primaryZone===tag;
+                  return <button key={tag} onClick={()=>{
+                    const tags = (s.targetZone||"").split(",").map(x=>x.trim()).filter(Boolean);
+                    const next = active ? tags.filter(t=>t!==tag) : [...tags,tag];
+                    const updates = {targetZone: next.join(", ")};
+                    if(active && isPrimary) updates.primaryZone = "";
+                    if(!active && next.length===1) updates.primaryZone = tag;
+                    setS(p=>({...p,...updates}));
+                  }} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"3px 10px",borderRadius:20,
+                    border:`1px solid ${isPrimary?"#1a3a6a":active?"#2a5a8a":C.stone}`,
+                    background:isPrimary?`${C.blue}90`:active?`${C.blue}60`:"transparent",
+                    color:isPrimary?"#0a1a4a":active?"#1a3a6a":C.mist,cursor:"pointer"}}>{tag}</button>;
+                })}
+              </div>
+              {(()=>{
+                const activeTags = (s.targetZone||"").split(",").map(x=>x.trim()).filter(Boolean);
+                if(activeTags.length < 2) return null;
+                return (
+                  <div style={{display:"flex",flexDirection:"column",gap:4,marginTop:4}}>
+                    <label style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em"}}>Zona principal <span style={{fontWeight:400,textTransform:"none",letterSpacing:0}}>(para ordenação)</span></label>
+                    <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+                      {activeTags.map(tag=>{
+                        const isPrimary = s.primaryZone===tag;
+                        return <button key={tag} onClick={()=>setS(p=>({...p,primaryZone:tag}))}
+                          style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:isPrimary?700:500,padding:"3px 12px",borderRadius:20,cursor:"pointer",
+                            border:`1px solid ${isPrimary?"#1a3a6a":"#aac"}`,background:isPrimary?"#1a3a6a":"transparent",
+                            color:isPrimary?"#fff":"#3a5a8a",display:"flex",alignItems:"center",gap:5}}>
+                          {isPrimary&&<span style={{fontSize:9}}>★</span>}{tag}
+                        </button>;
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
+            {/* Tipo de série */}
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              <label style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em"}}>Tipo de série</label>
+              <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+                {(availableSeriesTypes||studioSettings?.series_types||DEFAULT_SERIES_TYPES).map(tag=>{
+                  const active = s.seriesType===tag;
+                  return <button key={tag} onClick={()=>setS(p=>({...p,seriesType:active?"":tag}))}
+                    style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"3px 10px",borderRadius:20,
+                      border:`1px solid ${active?"#8a4010":C.stone}`,background:active?`${C.sig}60`:"transparent",
+                      color:active?"#5a2a00":C.mist,cursor:"pointer"}}>{tag}</button>;
+                })}
+              </div>
+            </div>
+            {/* Instructor notes + Video side by side */}
+            <div style={{display:"flex",gap:12,alignItems:"flex-start"}}>
+              <div style={{flex:1}}>
+                <Field label="Notas de Instructor" val={s.cues||""} onChange={v=>up("cues",v)} multiline/>
+              </div>
+              <div style={{width:"28%",minWidth:100,flexShrink:0}}>
+                <label style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em",display:"block",marginBottom:6}}>Vídeo</label>
+                <SeriesVideo seriesId={s.id} videoUrl={s.videoUrl||""} onUpdate={v=>up("videoUrl",v)}/>
+              </div>
+            </div>
+            {/* Verificar vs estúdio */}
+            {studioSettings && Object.keys(studioSettings).length > 0 && (
+              <div style={{ marginTop: 16, paddingTop: 14, borderTop: `1px solid ${C.stone}` }}>
+                <button
+                  onClick={checkVsStudio}
+                  disabled={studioCheck === 'loading'}
+                  style={{ padding: '7px 16px', borderRadius: 8, border: `1px solid ${C.stone}`, background: 'transparent', fontFamily: "'Satoshi',sans-serif", fontWeight: 600, fontSize: 13, cursor: studioCheck === 'loading' ? 'wait' : 'pointer', color: C.ink, display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                >
+                  {studioCheck === 'loading' ? '⏳ A verificar…' : '🏛 Verificar vs estúdio'}
+                </button>
+                {studioCheck && studioCheck !== 'loading' && (
+                  <div style={{
+                    marginTop: 10, padding: '10px 14px', borderRadius: 8, fontSize: 13,
+                    background: studioCheck.verdict?.startsWith('✓') ? '#f0fdf4' : studioCheck.verdict?.startsWith('✗') ? '#fef2f2' : '#fefce8',
+                    border: `1px solid ${studioCheck.verdict?.startsWith('✓') ? '#86efac' : studioCheck.verdict?.startsWith('✗') ? '#fca5a5' : '#fde047'}`,
+                    color: studioCheck.verdict?.startsWith('✓') ? '#166534' : studioCheck.verdict?.startsWith('✗') ? '#991b1b' : '#854d0e',
+                  }}>
+                    <span style={{ fontWeight: 700 }}>{studioCheck.verdict}</span>
+                    {studioCheck.explanation && <span style={{ marginLeft: 8 }}>{studioCheck.explanation}</span>}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
+        )}
+      </div>
+
+      {/* Setup fields — always visible */}
+      {!isParallel&&s.type==="barre"&&(
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          <Field label="Props" val={s.barre.props} onChange={v=>upB("props",v)}/>
+          <Field label="Posição inicial" val={s.barre.startPosition} onChange={v=>upB("startPosition",v)}/>
         </div>
-        <Field label="Notas de Instructor" val={s.cues} onChange={v=>up("cues",v)} multiline/>
-      </div>
-
-      {/* Modifications */}
-      <div style={{background:C.white,borderRadius:12,padding:16,border:`1px solid ${C.stone}`}}>
-        <div style={{fontSize:12,fontWeight:700,color:C.neutral,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:10}}>Modificações da série</div>
-        <Field label="Modificações gerais (ex. variações, progressões, regressões)" val={s.modifications||""} onChange={v=>up("modifications",v)} multiline/>
-      </div>
-
-      {/* Video upload */}
-      <div>
-        <div style={{fontSize:12,fontWeight:700,color:C.neutral,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Vídeo de referência</div>
-        <SeriesVideo seriesId={s.id} videoUrl={s.videoUrl||""} onUpdate={v=>up("videoUrl",v)}/>
-      </div>
-
-      {/* Delete series — only shown when editing existing series */}
-      {series?.id && onDelete && (
-        <div style={{borderTop:`1px solid ${C.stone}`,paddingTop:16,display:"flex",justifyContent:"flex-start"}}>
-          <Btn variant="danger" small onClick={()=>onDelete(series.id)}>
-            <Icon name="x" size={13}/> Apagar série
-          </Btn>
+      )}
+      {!isParallel&&s.type!=="barre"&&(
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
+          <Field label="Springs" val={s.reformer.springs} onChange={v=>upR("springs",v)}/>
+          <Field label="Props" val={s.reformer.props} onChange={v=>upR("props",v)}/>
+          <Field label="Posição inicial" val={s.reformer.startPosition} onChange={v=>upR("startPosition",v)}/>
+        </div>
+      )}
+      {isParallel&&(
+        <div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min((s.parallelColumns||[]).length,3)},1fr)`,gap:12}}>
+          {(s.parallelColumns||[]).map((col,ci)=>(
+            <div key={col.type} style={{background:C.cream,borderRadius:8,padding:12,border:`1px solid ${C.stone}`}}>
+              <div style={{fontSize:10,fontWeight:700,color:C.neutral,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>{col.type}</div>
+              <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                <Field label="Springs" val={col.springs||''} onChange={v=>upParallelColField(ci,'springs',v)}/>
+                <Field label="Props" val={col.props||''} onChange={v=>upParallelColField(ci,'props',v)}/>
+                <Field label="Posição inicial" val={col.startPosition||''} onChange={v=>upParallelColField(ci,'startPosition',v)}/>
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
-{/* save moved to header */}
+      {/* Movimentos */}
+      <div>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+          <div style={{fontSize:12,fontWeight:700,color:C.neutral,textTransform:"uppercase",letterSpacing:"0.08em"}}>Movimentos</div>
+          <button onClick={()=>setNotesPanelOpen(p=>!p)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"3px 10px",borderRadius:20,border:`1px solid ${notesPanelOpen?C.neutral:C.stone}`,background:notesPanelOpen?C.neutral:"transparent",color:notesPanelOpen?C.white:C.mist,cursor:"pointer"}}>
+            {notesPanelOpen?"◀ Fechar notas":"▶ Notas"}
+          </button>
+        </div>
+        <div style={{display:"flex",gap:16,alignItems:"flex-start"}}>
+          <div style={{flex:1,minWidth:0}}>
+            {!isParallel&&s.type==="barre"&&<EditorMovTable side="b" data={s.barre} chore={choreMode} upMov={upMov} addMov={addMov} delMov={delMov} reorderMov={reorderMov} openCue={s.openCue||""} closeCue={s.closeCue||""} onOpenCueChange={v=>up("openCue",v)} onCloseCueChange={v=>up("closeCue",v)}/>}
+            {!isParallel&&s.type!=="barre"&&<EditorMovTable side="r" data={s.reformer} chore={choreMode} upMov={upMov} addMov={addMov} delMov={delMov} reorderMov={reorderMov} openCue={s.openCue||""} closeCue={s.closeCue||""} onOpenCueChange={v=>up("openCue",v)} onCloseCueChange={v=>up("closeCue",v)}/>}
+            {isParallel&&(
+              <EditorSigTable
+                columns={s.parallelColumns||[]}
+                chore={choreMode}
+                onColUpdate={upParallelMov}
+                onAddRow={()=>setS(p=>({...p,parallelColumns:(p.parallelColumns||[]).map(c=>({...c,movements:[...(c.movements||[]),{timing:"",lyric:"",movement:"",timeReps:"",notes:"",transitionCue:""}]}))}))}
+                onDelRow={i=>setS(p=>({...p,parallelColumns:(p.parallelColumns||[]).map(c=>({...c,movements:(c.movements||[]).filter((_,mi)=>mi!==i)}))}))}
+                onReorderRow={(from,to)=>setS(p=>({...p,parallelColumns:(p.parallelColumns||[]).map(c=>{const a=[...(c.movements||[])];const[item]=a.splice(from,1);a.splice(to,0,item);return{...c,movements:a};})}))}
+                openCue={s.openCue||""} closeCue={s.closeCue||""}
+                onOpenCueChange={v=>up("openCue",v)} onCloseCueChange={v=>up("closeCue",v)}
+              />
+            )}
+          </div>
+          {notesPanelOpen&&(
+            <>
+              <div onMouseDown={startNotesDrag} style={{width:5,cursor:"col-resize",alignSelf:"stretch",background:C.stone,opacity:0.35,borderRadius:3,margin:"0 4px",flexShrink:0}}/>
+              <div style={{display:"flex",flexDirection:"column",gap:0}}>
+                {isParallel&&(
+                  <div style={{display:"flex",gap:4,marginBottom:6,flexWrap:"wrap"}}>
+                    {(s.parallelColumns||[]).map((col,ci)=>(
+                      <button key={col.type} onClick={()=>setNotesCol(ci)}
+                        style={{fontFamily:"'Satoshi',sans-serif",fontSize:10,fontWeight:600,padding:"2px 8px",borderRadius:20,
+                          border:`1px solid ${notesCol===ci?C.neutral:C.stone}`,
+                          background:notesCol===ci?C.neutral:"transparent",
+                          color:notesCol===ci?C.white:C.mist,cursor:"pointer"}}>
+                        {col.type}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <MovNotesPanel
+                  movements={isParallel?(s.parallelColumns?.[notesCol]?.movements||[]):notesMovements}
+                  side={notesSide}
+                  onUpdate={isParallel?(i,v)=>upParallelMov(notesCol,i,"notes",v):(i,v)=>upMov(notesSide,i,"notes",v)}
+                  onClose={()=>setNotesPanelOpen(false)}
+                  width={notesWidth}
+                />
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Modificações (collapsible) */}
+      <div style={{borderRadius:10,border:`1px solid ${C.stone}`,overflow:"hidden"}}>
+        <button onClick={()=>setModsOpen(p=>!p)} style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 16px",background:modsOpen?C.cream:"transparent",border:"none",cursor:"pointer",fontFamily:"'Satoshi',sans-serif"}}>
+          <span style={{fontSize:12,fontWeight:700,color:C.neutral,textTransform:"uppercase",letterSpacing:"0.08em"}}>Modificações</span>
+          <span style={{color:C.mist,fontSize:12}}>{modsOpen?"▲":"▼"}</span>
+        </button>
+        {modsOpen&&(
+          <div style={{padding:16,display:"flex",flexDirection:"column",gap:10,borderTop:`1px solid ${C.stone}`}}>
+            <Field label="" val={s.modifications||""} onChange={v=>up("modifications",v)} multiline placeholder="Modificações para pré/pós-natal, lesões por zona…"/>
+          </div>
+        )}
+      </div>
+
+      {/* Delete + Duplicate */}
+      {series?.id&&(onDelete||onSaveAsNew)&&(
+        <div style={{borderTop:`1px solid ${C.stone}`,paddingTop:16,display:"flex",gap:8,alignItems:"center"}}>
+          {onDelete&&<Btn variant="danger" small onClick={()=>onDelete(series.id)}><Icon name="x" size={13}/> Apagar série</Btn>}
+          {onSaveAsNew&&<Btn variant="ghost" small onClick={()=>{
+            const newName = window.prompt("Nome da nova série:", s.name+" (cópia)");
+            if(newName) onSaveAsNew({...JSON.parse(JSON.stringify(s)), id:`s-${Date.now()}`, name:newName});
+          }}><Icon name="copy" size={13}/> Duplicar</Btn>}
+        </div>
+      )}
     </div>
     </>
   );
@@ -2107,10 +2372,10 @@ const SeriesEditor = ({ series, onSave, onSaveAsNew, onCancel, onDelete, aiStyle
 const AulaSeriesCard = ({
   ser, idx, isSig,
   modR, modB, setModR, setModB,
-  showSetup, showIntro, showCues, showInstrNotes,
+  showSetup, showCues, showInstrNotes,
   showTiming, showLyric,
   aiStyle, onEdit, onUpdateSeries, setSeriesList, MovTable,
-  teachingMode=false
+  teachingMode=false, readOnly=false
 }) => {
   const [collapsed, setCollapsed] = React.useState(false);
   const isExpanded = !collapsed || teachingMode;
@@ -2131,7 +2396,7 @@ const AulaSeriesCard = ({
       const examples = await examplesStore.getRelevant('instructor');
       const styleCtx = (aiStyle ? `\nInstructor style: ${aiStyle}` : "") + examplesStore.formatExamples(examples);
       const movList = (ser.type==="barre"?ser.barre:ser.reformer)?.movements?.map(m=>m.movement).filter(Boolean).join(", ")||"-";
-      const prompt = `STOTT Pilates instructor. Write concise instructor notes for this series.${styleCtx}\nSeries: "${ser.name}"\nMuscles: ${ser.muscles?.join(", ")||"-"}\nMovements: ${movList}\nFocus on key technique cues, common mistakes, and modifications. Return ONLY the notes text.`;
+      const prompt = `Pilates instructor. Write concise instructor notes for this series.${styleCtx}\nSeries: "${ser.name}"\nMuscles: ${ser.muscles?.join(", ")||"-"}\nMovements: ${movList}\nFocus on key technique cues, common mistakes, and modifications. Return ONLY the notes text.`;
       const text = (await aiCall(prompt)).trim().replace(/^["']|["']$/g,"");
       setLocalCues(text);
       updateSer({...ser, cues:text});
@@ -2153,7 +2418,7 @@ const AulaSeriesCard = ({
             <Toggle label="Reformer" active={modR[ser.id]!==false} onClick={()=>setModR(p=>({...p,[ser.id]:!p[ser.id]}))} color={C.reformer}/>
             <Toggle label="Barre"    active={modB[ser.id]!==false} onClick={()=>setModB(p=>({...p,[ser.id]:!p[ser.id]}))} color={C.barre}/>
           </>}
-          <Btn small variant="ghost" onClick={onEdit}><Icon name="edit" size={13}/> Editar série</Btn>
+          {onEdit&&<Btn small variant="ghost" onClick={onEdit}><Icon name="edit" size={13}/> Editar série</Btn>}
         </div>}
         {!teachingMode&&<span style={{color:C.mist,display:"inline-flex",transition:"transform 0.2s",transform:collapsed?"rotate(0deg)":"rotate(180deg)",flexShrink:0}}>
           <Icon name="chevron" size={15}/>
@@ -2186,8 +2451,6 @@ const AulaSeriesCard = ({
             </div>;
           })()}
 
-          {showIntro&&<IntroCue series={ser} aiStyle={aiStyle} readOnly={false}
-            onChange={v=>updateSer({...ser,introCue:v})}/>}
 
           <MovTable ser={ser}/>
 
@@ -2195,13 +2458,14 @@ const AulaSeriesCard = ({
             <div style={{padding:"10px 14px",background:C.white,border:`1px solid ${C.stone}`,borderRadius:8}}>
               <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
                 <span style={{fontSize:12,fontWeight:600,color:C.neutral,textTransform:"uppercase",letterSpacing:"0.05em",flex:1}}>Instructor Notes</span>
-                <button onClick={generateNotes} disabled={generating} title="Gerar com IA"
+                {!readOnly&&<button onClick={generateNotes} disabled={generating} title="Gerar com IA"
                   style={{background:"none",border:`1px solid ${C.stone}`,borderRadius:5,cursor:generating?"wait":"pointer",color:C.neutral,padding:"2px 8px",fontSize:10,display:"inline-flex",alignItems:"center",gap:3,opacity:generating?0.5:1,fontFamily:"'Satoshi', sans-serif",fontWeight:600}}>
                   <Icon name="ai" size={10}/>{generating?"…":"✦ IA"}
-                </button>
+                </button>}
               </div>
               <AutoTextarea value={localCues} placeholder="Notas de Instructor…"
                 onChange={e=>{setLocalCues(e.target.value);updateSer({...ser,cues:e.target.value});}}
+                disabled={readOnly}
                 style={{fontSize:12,color:C.ink}}/>
             </div>
           )}
@@ -2248,8 +2512,34 @@ const ForkModal = ({ seriesName, classCount, onApplyAll, onFork, onCancel }) => 
   </div>
 );
 
+// ─── WARM/COOL GHOST ROW ──────────────────────────────────────────────────────
+const WarmCoolGhostRow = ({ label, value, onChange, generating, readOnly }) => {
+  const [expanded, setExpanded] = React.useState(!!value);
+  const isWarmup = label === 'Warm-up';
+
+  React.useEffect(()=>{ if(value) setExpanded(true); }, [value]);
+
+  return (
+    <div style={{borderRadius:10,border:`1.5px dashed ${C.stone}`,padding:"8px 14px",background:isWarmup?"#fafeff":"#fff8f0",marginBottom:isWarmup?8:0,marginTop:isWarmup?0:8}}>
+      <div style={{display:"flex",alignItems:"center",gap:10}}>
+        <span style={{fontSize:10,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em",flex:1}}>{isWarmup?"🔥 Warm-up":"❄ Cool-down"}</span>
+        {!readOnly&&!generating&&<button onClick={()=>setExpanded(p=>!p)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,color:C.mist,background:"none",border:`1px solid ${C.stone}`,borderRadius:6,padding:"2px 8px",cursor:"pointer"}}>{expanded?"Fechar":"Editar"}</button>}
+        {generating&&<span style={{fontSize:11,color:C.mist}}>A gerar…</span>}
+      </div>
+      {expanded ? (
+        <textarea value={value||""} onChange={e=>onChange(e.target.value)} placeholder={`Notas de ${isWarmup?"warm-up":"cool-down"}…`} readOnly={readOnly}
+          style={{marginTop:8,width:"100%",fontSize:12,fontFamily:"'Satoshi',sans-serif",color:C.ink,background:"transparent",border:"none",borderBottom:`1px solid ${C.stone}`,outline:"none",resize:"vertical",minHeight:48,padding:"4px 0",boxSizing:"border-box"}}/>
+      ) : value ? (
+        <div style={{marginTop:6,fontSize:12,color:C.mist,lineHeight:1.5,whiteSpace:"pre-wrap"}}>{value}</div>
+      ) : (
+        <div style={{marginTop:4,fontSize:12,color:C.mist,fontStyle:"italic"}}>Ainda sem {isWarmup?"warm-up":"cool-down"}.{!readOnly?" Clica em Editar ou gera com IA.":""}</div>
+      )}
+    </div>
+  );
+};
+
 // ─── AULA VIEW (merged Ver + Modo Aula) ───────────────────────────────────────
-const AulaView = ({ cls, allSeries, onBack, onDeleteClass, onUpdateSeries, onUpdateClass, aiStyle, allClasses=[], onSaveFork, teachingMode, onTeachingModeChange, onSeriesEditChange, studioSettings }) => {
+const AulaView = ({ cls, allSeries, onBack, onDeleteClass, onUpdateSeries, onUpdateClass, aiStyle, allClasses=[], onSaveFork, teachingMode, onTeachingModeChange, onSeriesEditChange, studioSettings, readOnly=false, onPublishClass, onUnpublishClass, onDuplicateClass, onSaveSeriesAsNew }) => {
   const [seriesList, setSeriesList] = useState(()=>cls.seriesIds.map(id=>allSeries.find(s=>s.id===id)).filter(Boolean));
   const [editingId, setEditingId] = useState(null);
   const [notes, setNotes] = useState(cls.notes||"");
@@ -2263,6 +2553,7 @@ const AulaView = ({ cls, allSeries, onBack, onDeleteClass, onUpdateSeries, onUpd
   const flowDragRef = React.useRef(null);
   const [usedDates, setUsedDates] = useState(()=>cls.usedDates||[]);
   const [showDateLog, setShowDateLog] = useState(false);
+  const [commentWithdrawn, setCommentWithdrawn] = useState(false);
   const classLevels = studioSettings?.class_levels || DEFAULT_CLASS_LEVELS;
   const currentCls = React.useMemo(()=>({...cls, name:editName, date:editDate, level:editLevel, notes, usedDates}), [cls, editName, editDate, editLevel, notes, usedDates]);
 
@@ -2294,7 +2585,6 @@ const AulaView = ({ cls, allSeries, onBack, onDeleteClass, onUpdateSeries, onUpd
   const [showLyric,      setShowLyric]      = useState(false);
   const [showTiming,     setShowTiming]     = useState(false);
   const [showSetup,      setShowSetup]      = useState(true);
-  const [showIntro,      setShowIntro]      = useState(false);
   const [showCues,       setShowCues]       = useState(false);
   const [showInstrNotes, setShowInstrNotes] = useState(false);
   const [showAulaNotes,  setShowAulaNotes]  = useState(false);
@@ -2307,6 +2597,32 @@ const AulaView = ({ cls, allSeries, onBack, onDeleteClass, onUpdateSeries, onUpd
   const [openCueRows, setOpenCueRows] = React.useState(new Set());
   const toggleCueRow = key => setOpenCueRows(prev => { const s=new Set(prev); s.has(key)?s.delete(key):s.add(key); return s; });
   const [movHovCell, setMovHovCell] = React.useState(null);
+  const [studioCheckClass, setStudioCheckClass] = React.useState(null);
+
+  const checkClassVsStudio = async () => {
+    if (!studioSettings) return;
+    setStudioCheckClass('loading');
+    const studioContext = [studioSettings.ai_profile ? aiToString(studioSettings.ai_profile) : '', studioSettings.guidelines || ''].filter(Boolean).join('\n');
+    if (!studioContext.trim()) { setStudioCheckClass({ verdict: '⚠️', explanation: 'O studio não tem perfil de IA configurado.' }); return; }
+    const seriesNames = (cls.seriesIds || []).slice(0, 6).map(id => allSeries.find(s => s.id === id)?.name || id).filter(Boolean).join(', ');
+    const classDesc = `Aula "${cls.name || 'Sem nome'}" (${cls.type || '—'}) — Nível: ${cls.level || '—'} — Séries: ${seriesNames || '—'}`;
+    try {
+      const res = await fetch('/api/ai', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          system: `Perfil do studio:\n${studioContext}`,
+          messages: [{ role: 'user', content: `Avalia se esta aula é compatível com o perfil e diretrizes do studio. Responde APENAS com um JSON: {"verdict": "✓ Compatível" | "⚠️ Atenção" | "✗ Incompatível", "explanation": "<1-2 frases em português>"}\n\n${classDesc}` }],
+          max_tokens: 200,
+        }),
+      });
+      const data = await res.json();
+      const text = (data.content?.[0]?.text || '').replace(/```json|```/g, '').trim();
+      const parsed = JSON.parse(text);
+      setStudioCheckClass(parsed);
+    } catch {
+      setStudioCheckClass({ verdict: '⚠️', explanation: 'Erro ao verificar. Tenta novamente.' });
+    }
+  };
 
   const isSig   = cls.type==="signature";
 
@@ -2335,7 +2651,7 @@ const AulaView = ({ cls, allSeries, onBack, onDeleteClass, onUpdateSeries, onUpd
       const alreadyWarmup = warmupSeries.map(s=>s.name).join(", ");
       const alreadyCooldown = cooldownSeries.map(s=>s.name).join(", ");
       const classInfo = `Aula: "${currentCls.name}" (${currentCls.type||"geral"})\nSéries principais:\n${seriesData.map((s,i)=>`${i+1}. ${s.name} — zona: ${s.zone}, músculos: ${s.muscles}`).join("\n")}${alreadyWarmup?`\nJá tem warm-up: ${alreadyWarmup}`:""}${alreadyCooldown?`\nJá tem cool-down/mobilidade: ${alreadyCooldown}`:""}`;
-      const prompt = `És um expert STOTT Pilates. Com base nesta aula:\n\n${classInfo}\n\nSugere exercícios ESPECÍFICOS de warm-up e cool-down para esta aula. Foca nas zonas e músculos que a aula trabalha. Sê concreto: nomeia exercícios reais (ex: "cat-cow, hip flexor stretch, thoracic rotation"). Não escrevas texto longo — dá listas curtas e diretas.\n\nResponde APENAS com JSON: {"warmup":["exercício 1","exercício 2","exercício 3"],"cooldown":["exercício 1","exercício 2","exercício 3"]}`;
+      const prompt = `És um expert Pilates. Com base nesta aula:\n\n${classInfo}\n\nSugere exercícios ESPECÍFICOS de warm-up e cool-down para esta aula. Foca nas zonas e músculos que a aula trabalha. Sê concreto: nomeia exercícios reais (ex: "cat-cow, hip flexor stretch, thoracic rotation"). Não escrevas texto longo — dá listas curtas e diretas.\n\nResponde APENAS com JSON: {"warmup":["exercício 1","exercício 2","exercício 3"],"cooldown":["exercício 1","exercício 2","exercício 3"]}`;
       const text = await aiCall(prompt);
       let parsed;
       try {
@@ -2679,25 +2995,17 @@ const AulaView = ({ cls, allSeries, onBack, onDeleteClass, onUpdateSeries, onUpd
             <span style={{fontFamily:"'Clash Display',sans-serif",fontSize:20,fontWeight:500,color:C.ink,flex:1}}>{editName||cls.name}</span>
             <Btn onClick={()=>onTeachingModeChange(false)} style={{background:C.crimson,color:C.cream}}>✕ Sair do Modo Aula</Btn>
           </div>
-        ) : (<>
-        {/* Row 1: navigation + actions */}
-        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12,flexWrap:"wrap"}}>
+        ) : (
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:8}}>
           <Btn variant="ghost" onClick={onBack}><Icon name="back" size={14}/> Voltar</Btn>
-          <input value={editName} onChange={e=>{ setEditName(e.target.value); onUpdateClass({...currentCls, name:e.target.value}); }}
-            style={{fontFamily:"'Clash Display',sans-serif",fontSize:22,fontWeight:500,color:C.ink,border:"none",borderBottom:`1px solid transparent`,background:"transparent",outline:"none",flex:1,minWidth:120,padding:"2px 4px",borderRadius:4,transition:"border-color 0.15s"}}
-            onFocus={e=>e.target.style.borderBottomColor=C.stone}
-            onBlur={e=>e.target.style.borderBottomColor="transparent"}
-            placeholder="Nome da aula"/>
-          <Badge label={cls.type==="signature"?"✦ Signature":cls.type==="reformer"?"Reformer":"Barre"} color={cls.type==="signature"?"gold":cls.type==="reformer"?"teal":"coral"}/>
-          <Btn small variant="ghost" onClick={()=>setShowFlowEditor(p=>!p)} style={{color:showFlowEditor?C.crimson:C.mist,borderColor:showFlowEditor?C.crimson:C.stone}}>
-            <Icon name="edit" size={13}/> {showFlowEditor?"Fechar fluxo":"Editar fluxo"}
-          </Btn>
-          <Btn small variant="ghost" onClick={handleShare}><Icon name="link" size={13}/> Partilhar</Btn>
-          <Btn small variant="ghost" onClick={()=>window.print()}><Icon name="print" size={13}/> PDF</Btn>
-          <Btn small onClick={()=>onTeachingModeChange(true)} style={{background:C.crimson,color:C.cream}}>▶ Modo Aula</Btn>
-          {onDeleteClass&&<Btn small variant="danger" onClick={()=>onDeleteClass(cls.id)}><Icon name="x" size={13}/> Apagar aula</Btn>}
+          <div style={{display:"flex",gap:8,alignItems:"center"}}>
+            {!readOnly&&<Btn small variant="ghost" onClick={()=>setShowFlowEditor(p=>!p)} style={{color:showFlowEditor?C.crimson:C.mist,borderColor:showFlowEditor?C.crimson:C.stone}}>
+              <Icon name="edit" size={13}/> {showFlowEditor?"Fechar fluxo":"Editar fluxo"}
+            </Btn>}
+            {!readOnly&&<Btn small onClick={()=>onTeachingModeChange(true)} style={{background:C.crimson,color:C.cream}}>▶ Modo Aula</Btn>}
+          </div>
         </div>
-        </>)}
+        )}
       </div>
       <div style={{padding:"0 24px 32px", background:C.cream, minHeight:"100vh"}}>
         {/* PDF-only header */}
@@ -2712,69 +3020,127 @@ const AulaView = ({ cls, allSeries, onBack, onDeleteClass, onUpdateSeries, onUpd
         <div className="no-print" style={{display:"flex",gap:20,alignItems:"flex-start",paddingTop:16}}>
           {/* Left sidebar — meta, filters, toggles */}
           {!teachingMode&&(
-            <div style={{width:160,flexShrink:0,display:"flex",flexDirection:"column",gap:16}}>
-              {/* Date */}
-              <div>
-                <div style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Data</div>
-                <input type="date" value={editDate} onChange={e=>{ setEditDate(e.target.value); onUpdateClass({...currentCls, date:e.target.value}); }}
-                  style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,padding:"5px 8px",borderRadius:6,border:`1px solid ${C.stone}`,color:C.ink,width:"100%",boxSizing:"border-box",background:C.white}}/>
+            <div style={{width:170,flexShrink:0,display:"flex",flexDirection:"column",gap:0}}>
+              {/* Tipo de aula — always visible */}
+              <div style={{padding:"0 0 10px"}}>
+                <Badge label={cls.type==="signature"?"✦ Signature":cls.type==="reformer"?"Reformer":"Barre"} color={cls.type==="signature"?"gold":cls.type==="reformer"?"teal":"coral"}/>
               </div>
-              {/* Used dates */}
-              <div>
-                <button onClick={()=>setShowDateLog(p=>!p)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"5px 12px",borderRadius:20,border:`1px solid ${showDateLog?C.neutral:C.stone}`,background:showDateLog?C.neutral:"transparent",color:showDateLog?C.white:C.mist,cursor:"pointer",width:"100%",textAlign:"left"}}>
-                  📅 {usedDates.length>0?`Usada ${usedDates.length}×`:"Registar uso"}
-                </button>
-                {showDateLog&&(
-                  <div style={{marginTop:8,background:C.white,borderRadius:8,border:`1px solid ${C.stone}`,padding:"8px 10px",display:"flex",flexDirection:"column",gap:4}}>
-                    {usedDates.map(d=>(
-                      <span key={d} style={{display:"inline-flex",alignItems:"center",justifyContent:"space-between",gap:4,fontSize:11,color:C.ink}}>
-                        {d}
-                        <button onClick={()=>removeUsedDate(d)} style={{background:"none",border:"none",cursor:"pointer",color:C.mist,padding:0,lineHeight:1,fontSize:11}}>×</button>
-                      </span>
-                    ))}
-                    <div style={{display:"flex",gap:4,marginTop:4}}>
-                      <input type="date" defaultValue={new Date().toISOString().split('T')[0]}
-                        style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,padding:"3px 5px",borderRadius:5,border:`1px solid ${C.stone}`,color:C.ink,flex:1,minWidth:0}}
-                        onChange={e=>{ if(e.target.value) addUsedDate(e.target.value); e.target.value=""; }}/>
-                      <button onClick={()=>addUsedDate(new Date().toISOString().split('T')[0])} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"3px 8px",borderRadius:6,border:`1px solid ${C.stone}`,background:"transparent",color:C.ink,cursor:"pointer",flexShrink:0}}>Hoje</button>
-                    </div>
-                    {usedDates.length>0&&<button onClick={()=>{ setUsedDates([]); onUpdateClass({...currentCls,usedDates:[]}); }} style={{fontFamily:"'Satoshi',sans-serif",fontSize:10,color:C.mist,background:"none",border:`1px solid ${C.stone}`,borderRadius:20,padding:"2px 8px",cursor:"pointer",marginTop:2}}>× Limpar</button>}
+
+
+              {/* Detalhes — collapsible */}
+              <CollapsibleSection title="Detalhes" defaultOpen={false}>
+                <div style={{display:"flex",flexDirection:"column",gap:10,paddingBottom:8}}>
+                  {/* Date */}
+                  <div>
+                    <div style={{fontSize:10,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4}}>Data</div>
+                    {readOnly ? (
+                      <div style={{fontSize:12,color:C.ink}}>{editDate||'—'}</div>
+                    ) : (
+                      <input type="date" value={editDate} onChange={e=>{ setEditDate(e.target.value); onUpdateClass({...currentCls, date:e.target.value}); }}
+                        style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,padding:"5px 8px",borderRadius:6,border:`1px solid ${C.stone}`,color:C.ink,width:"100%",boxSizing:"border-box",background:C.white}}/>
+                    )}
                   </div>
-                )}
-              </div>
-              {/* Level filter */}
-              <div>
-                <div style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Nível</div>
-                <div style={{display:"flex",flexDirection:"column",gap:4}}>
-                  {classLevels.map(lvl=>(
-                    <button key={lvl} onClick={()=>{ const n=editLevel===lvl?"":lvl; setEditLevel(n); onUpdateClass({...currentCls, level:n}); }}
-                      style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"4px 10px",borderRadius:20,border:`1px solid ${editLevel===lvl?C.neutral:C.stone}`,background:editLevel===lvl?C.neutral:"transparent",color:editLevel===lvl?C.white:C.mist,cursor:"pointer",textAlign:"left"}}>
-                      {lvl}
-                    </button>
+                  {/* Used dates */}
+                  {!readOnly&&(
+                    <div>
+                      <button onClick={()=>setShowDateLog(p=>!p)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"5px 12px",borderRadius:8,border:`1px solid ${showDateLog?C.neutral:C.stone}`,background:showDateLog?C.neutral:"transparent",color:showDateLog?C.white:C.ink,cursor:"pointer",textAlign:"left",width:"100%"}}>
+                        📅 {usedDates.length>0?`Usada ${usedDates.length}×`:"Registar uso"}
+                      </button>
+                      {showDateLog&&(
+                        <div style={{marginTop:6,background:C.white,borderRadius:8,border:`1px solid ${C.stone}`,padding:"8px 10px",display:"flex",flexDirection:"column",gap:4}}>
+                          {usedDates.map(d=>(
+                            <span key={d} style={{display:"inline-flex",alignItems:"center",justifyContent:"space-between",gap:4,fontSize:11,color:C.ink}}>
+                              {d}
+                              <button onClick={()=>removeUsedDate(d)} style={{background:"none",border:"none",cursor:"pointer",color:C.mist,padding:0,lineHeight:1,fontSize:11}}>×</button>
+                            </span>
+                          ))}
+                          <div style={{display:"flex",gap:4,marginTop:4}}>
+                            <input type="date" defaultValue={new Date().toISOString().split('T')[0]}
+                              style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,padding:"3px 5px",borderRadius:5,border:`1px solid ${C.stone}`,color:C.ink,flex:1,minWidth:0}}
+                              onChange={e=>{ if(e.target.value) addUsedDate(e.target.value); e.target.value=""; }}/>
+                            <button onClick={()=>addUsedDate(new Date().toISOString().split('T')[0])} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"3px 8px",borderRadius:6,border:`1px solid ${C.stone}`,background:"transparent",color:C.ink,cursor:"pointer",flexShrink:0}}>Hoje</button>
+                          </div>
+                          {usedDates.length>0&&<button onClick={()=>{ setUsedDates([]); onUpdateClass({...currentCls,usedDates:[]}); }} style={{fontFamily:"'Satoshi',sans-serif",fontSize:10,color:C.mist,background:"none",border:`1px solid ${C.stone}`,borderRadius:20,padding:"2px 8px",cursor:"pointer",marginTop:2}}>× Limpar</button>}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {/* Level */}
+                  <div>
+                    <div style={{fontSize:10,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4}}>Nível</div>
+                    <div style={{display:"flex",flexDirection:"column",gap:3}}>
+                      {classLevels.map(lvl=>(
+                        readOnly ? (
+                          <span key={lvl} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 12px",borderRadius:8,border:`1px solid ${editLevel===lvl?C.neutral:C.stone}`,background:editLevel===lvl?C.neutral:"transparent",color:editLevel===lvl?C.white:C.ink,display:"block"}}>{lvl}</span>
+                        ) : (
+                          <button key={lvl} onClick={()=>{ const n=editLevel===lvl?"":lvl; setEditLevel(n); onUpdateClass({...currentCls, level:n}); }}
+                            style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 12px",borderRadius:8,border:`1px solid ${editLevel===lvl?C.neutral:C.stone}`,background:editLevel===lvl?C.neutral:"transparent",color:editLevel===lvl?C.white:C.ink,cursor:"pointer",textAlign:"left"}}>
+                            {lvl}
+                          </button>
+                        )
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </CollapsibleSection>
+
+              {/* Colunas — collapsible */}
+              <CollapsibleSection title="Colunas" defaultOpen={false}>
+                <div style={{display:"flex",flexDirection:"column",gap:3,paddingBottom:8}}>
+                  {[["Timing",showTiming,()=>setShowTiming(p=>!p)],["Lyric",showLyric,()=>setShowLyric(p=>!p)],["Setup",showSetup,()=>setShowSetup(p=>!p)],["Cues",showCues,()=>setShowCues(p=>!p)],["Notas Instr.",showInstrNotes,()=>setShowInstrNotes(p=>!p)],["Notas Aula",showAulaNotes,()=>setShowAulaNotes(p=>!p)]].map(([lbl,active,fn])=>(
+                    <button key={lbl} onClick={fn} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 12px",borderRadius:8,border:`1px solid ${active?C.neutral:C.stone}`,background:active?C.neutral:"transparent",color:active?C.white:C.ink,cursor:"pointer",textAlign:"left"}}>{lbl}</button>
                   ))}
                 </div>
-              </div>
-              {/* Column toggles */}
-              <div>
-                <div style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Colunas</div>
-                <div style={{display:"flex",flexDirection:"column",gap:4}}>
-                  {tBtn("Timing",showTiming,()=>setShowTiming(p=>!p))}
-                  {tBtn("Lyric",showLyric,()=>setShowLyric(p=>!p))}
-                  {tBtn("Setup",showSetup,()=>setShowSetup(p=>!p))}
-                  {tBtn("Intro",showIntro,()=>setShowIntro(p=>!p))}
-                  {tBtn("Cues",showCues,()=>setShowCues(p=>!p))}
-                  {tBtn("Instr Notes",showInstrNotes,()=>setShowInstrNotes(p=>!p))}
-                  {tBtn("Notas da Aula",showAulaNotes,()=>setShowAulaNotes(p=>!p))}
+              </CollapsibleSection>
+
+              {/* Actions */}
+              {!readOnly&&(
+                <div style={{borderTop:`1px solid ${C.stone}`,display:"flex",flexDirection:"column",gap:3,background:`${C.stone}40`,borderRadius:8,padding:"8px 10px",marginTop:8}}>
+                  <button onClick={handleShare} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 12px",borderRadius:8,border:`1px solid ${C.stone}`,background:C.white,color:C.ink,cursor:"pointer",textAlign:"left"}}>Partilhar</button>
+                  <button onClick={()=>window.print()} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 12px",borderRadius:8,border:`1px solid ${C.stone}`,background:C.white,color:C.ink,cursor:"pointer",textAlign:"left"}}>PDF</button>
+                  {studioSettings&&<button onClick={checkClassVsStudio} disabled={studioCheckClass==='loading'} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 12px",borderRadius:8,border:`1px solid ${C.stone}`,background:C.white,color:C.ink,cursor:"pointer",textAlign:"left",opacity:studioCheckClass==='loading'?0.6:1}}>{studioCheckClass==='loading'?'⏳':'🏛 Verificar vs Studio'}</button>}
+                  {studioCheckClass&&studioCheckClass!=='loading'&&<div style={{fontSize:11,padding:"4px 8px",borderRadius:8,background:studioCheckClass.verdict?.startsWith('✓')?'#f0fdf4':studioCheckClass.verdict?.startsWith('✗')?'#fef2f2':'#fefce8',color:studioCheckClass.verdict?.startsWith('✓')?'#166534':studioCheckClass.verdict?.startsWith('✗')?'#991b1b':'#854d0e',cursor:'pointer'}} onClick={()=>setStudioCheckClass(null)} title={studioCheckClass.explanation}>{studioCheckClass.verdict}: {studioCheckClass.explanation}</div>}
+                  {onDuplicateClass&&<button onClick={()=>onDuplicateClass(cls)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 12px",borderRadius:8,border:`1px solid ${C.stone}`,background:C.white,color:C.ink,cursor:"pointer",textAlign:"left"}}>Duplicar</button>}
+                  {cls.visibility==='pending_studio'&&onUnpublishClass&&<button onClick={()=>onUnpublishClass(cls)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 12px",borderRadius:8,border:`1px solid ${C.stone}`,background:C.white,color:C.mist,cursor:"pointer",textAlign:"left"}}>Retirar submissão</button>}
+                  {onDeleteClass&&<button onClick={()=>onDeleteClass(cls.id)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 12px",borderRadius:8,border:"1px solid #fca5a5",background:C.white,color:"#b91c1c",cursor:"pointer",textAlign:"left"}}>Apagar aula</button>}
                 </div>
-              </div>
-              {/* Warm-up button */}
-              <button onClick={()=>setShowWarmupPanel(p=>!p)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"5px 12px",borderRadius:20,border:`1px solid ${showWarmupPanel?C.crimson:C.stone}`,background:showWarmupPanel?`${C.crimson}10`:"transparent",color:showWarmupPanel?C.crimson:C.mist,cursor:"pointer",textAlign:"left"}}>✦ Warm-up / Cool-down</button>
+              )}
+
               {/* Series count */}
-              <div style={{fontSize:11,color:C.mist}}>{seriesList.length} série{seriesList.length!==1?"s":""}</div>
+              <div style={{fontSize:11,color:C.mist,marginTop:8}}>{seriesList.length} série{seriesList.length!==1?"s":""}</div>
             </div>
           )}
           {/* Main content */}
           <div style={{flex:1,minWidth:0}}>
+            {/* Class name + studio comment */}
+            {!teachingMode&&(
+              <div style={{marginBottom:16}}>
+                {readOnly ? (
+                  <div style={{fontFamily:"'Clash Display',sans-serif",fontSize:22,fontWeight:500,color:C.ink,padding:"2px 4px",marginBottom:4}}>{editName||cls.name||'(sem título)'}</div>
+                ) : (
+                  <input value={editName} onChange={e=>{ setEditName(e.target.value); onUpdateClass({...currentCls, name:e.target.value}); }}
+                    style={{fontFamily:"'Clash Display',sans-serif",fontSize:22,fontWeight:500,color:C.ink,border:"none",borderBottom:`1px solid transparent`,background:"transparent",outline:"none",width:"100%",display:"block",padding:"2px 4px",borderRadius:4,transition:"border-color 0.15s",boxSizing:"border-box"}}
+                    onFocus={e=>e.target.style.borderBottomColor=C.stone}
+                    onBlur={e=>e.target.style.borderBottomColor="transparent"}
+                    placeholder="Nome da aula"/>
+                )}
+                {cls.studioComment&&(
+                  <div style={{background:"#fef2f2",border:"1px solid #fca5a5",borderRadius:8,padding:"10px 14px",marginTop:6}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8,marginBottom:4}}>
+                      <div style={{fontSize:10,fontWeight:700,color:"#b91c1c",textTransform:"uppercase",letterSpacing:"0.06em"}}>Comentário do Studio</div>
+                      {!readOnly&&commentWithdrawn&&<button onClick={()=>onUpdateClass({...currentCls,studioComment:null})} title="Apagar comentário permanentemente" style={{background:"none",border:"none",cursor:"pointer",color:"#b91c1c",fontSize:14,lineHeight:1,padding:0,flexShrink:0}}>×</button>}
+                    </div>
+                    <div style={{fontSize:12,color:"#7f1d1d",lineHeight:1.4,marginBottom:10}}>{cls.studioComment}</div>
+                    {!readOnly&&!commentWithdrawn&&(
+                      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                        {onPublishClass&&<button onClick={()=>{ const c={...currentCls,studioComment:null}; onUpdateClass(c); onPublishClass(c); }} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"4px 12px",borderRadius:20,border:`1px solid #b91c1c`,background:"#b91c1c",color:"#fff",cursor:"pointer"}}>↑ Submeter novamente</button>}
+                        <button onClick={()=>{setCommentWithdrawn(true);onUpdateClass({...currentCls,studioComment:null});}} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"4px 12px",borderRadius:20,border:`1px solid #fca5a5`,background:"transparent",color:"#b91c1c",cursor:"pointer"}}>× Retirar submissão</button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
             {/* Notas da Aula */}
             {showAulaNotes&&(
               <div style={{background:C.white,borderRadius:12,border:`1px solid ${C.stone}`,padding:16,marginBottom:20}}>
@@ -2782,35 +3148,10 @@ const AulaView = ({ cls, allSeries, onBack, onDeleteClass, onUpdateSeries, onUpd
                 <AutoTextarea value={notes} onChange={e=>{setNotes(e.target.value);onUpdateClass({...cls,notes:e.target.value});}}
                   placeholder="Notas gerais, reminders, modificações…"
                   style={{fontSize:13,color:C.ink,padding:"8px 0"}}
+                  disabled={readOnly}
                   minRows={2}/>
               </div>
             )}
-            {/* Warm-up / Cool-down Panel */}
-            {showWarmupPanel&&(
-              <div style={{background:C.white,borderRadius:12,border:`1px solid ${C.stone}`,padding:16,marginBottom:20}}>
-                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
-                  <div style={{fontFamily:"'Clash Display',sans-serif",fontSize:15,fontWeight:500,color:C.crimson}}>✦ Warm-up / Cool-down</div>
-                  <Btn small variant="gold" onClick={generateWarmupCooldown} disabled={generatingWC}>
-                    <Icon name="ai" size={12}/>{generatingWC?"A gerar…":"Gerar com IA"}
-                  </Btn>
-                </div>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-                  <div>
-                    <label style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em",display:"block",marginBottom:6}}>Warm-up</label>
-                    <AutoTextarea value={warmupNotes} onChange={e=>{setWarmupNotes(e.target.value);onUpdateClass({...currentCls,warmupNotes:e.target.value,cooldownNotes});}}
-                      placeholder="Descreve o warm-up para esta aula…"
-                      style={{width:"100%",fontSize:13,minHeight:80,resize:"vertical",borderRadius:8,border:`1px solid ${C.stone}`,padding:"8px 10px",fontFamily:"'Satoshi',sans-serif",color:C.ink,background:C.cream,outline:"none",boxSizing:"border-box"}}/>
-                  </div>
-                  <div>
-                    <label style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em",display:"block",marginBottom:6}}>Cool-down</label>
-                    <AutoTextarea value={cooldownNotes} onChange={e=>{setCooldownNotes(e.target.value);onUpdateClass({...currentCls,warmupNotes,cooldownNotes:e.target.value});}}
-                      placeholder="Descreve o cool-down para esta aula…"
-                      style={{width:"100%",fontSize:13,minHeight:80,resize:"vertical",borderRadius:8,border:`1px solid ${C.stone}`,padding:"8px 10px",fontFamily:"'Satoshi',sans-serif",color:C.ink,background:C.cream,outline:"none",boxSizing:"border-box"}}/>
-                  </div>
-                </div>
-              </div>
-            )}
-
         {/* Flow Editor */}
         {showFlowEditor&&(
           <div className="no-print" style={{background:C.white,borderRadius:12,border:`2px solid ${C.crimson}30`,padding:16,marginBottom:20}}>
@@ -2864,29 +3205,52 @@ const AulaView = ({ cls, allSeries, onBack, onDeleteClass, onUpdateSeries, onUpd
           </div>
         )}
 
+        {/* Warm-up ghost row */}
+        {!teachingMode&&(
+          <WarmCoolGhostRow
+            label="Warm-up"
+            value={warmupNotes}
+            onChange={v=>{setWarmupNotes(v);onUpdateClass({...currentCls,warmupNotes:v,cooldownNotes});}}
+            generating={generatingWC}
+            readOnly={readOnly}
+          />
+        )}
+
         {/* Series */}
         <div className="print-series-grid">
         {seriesList.map((ser,idx)=>(
           <div key={ser.id} className="print-series-card" style={{marginBottom:16,pageBreakInside:"avoid"}}>
             {editingId===ser.id ? (
-              <SeriesEditor series={ser} onSave={saveEdit} onCancel={()=>{ setEditingId(null); onSeriesEditChange?.(null); }} aiStyle={aiStyle} studioSettings={studioSettings} availableZones={studioSettings?.zones?.length?studioSettings.zones:undefined}/>
+              <SeriesEditor series={ser} onSave={saveEdit} onSaveAsNew={onSaveSeriesAsNew} onCancel={()=>{ setEditingId(null); onSeriesEditChange?.(null); }} aiStyle={aiStyle} studioSettings={studioSettings} availableZones={studioSettings?.zones?.length?studioSettings.zones:undefined}/>
             ) : (
               <AulaSeriesCard ser={ser} idx={idx} isSig={isSig}
                 modR={modR} modB={modB} setModR={setModR} setModB={setModB}
-                showSetup={showSetup} showIntro={showIntro} showCues={showCues} showInstrNotes={showInstrNotes}
+                showSetup={showSetup} showCues={showCues} showInstrNotes={showInstrNotes}
                 showTiming={showTiming} showLyric={showLyric}
                 aiStyle={aiStyle}
-                onEdit={()=>{ setEditingId(ser.id); onSeriesEditChange?.(ser); }}
+                onEdit={readOnly?null:()=>{ setEditingId(ser.id); onSeriesEditChange?.(ser); }}
                 onUpdateSeries={onUpdateSeries}
                 setSeriesList={setSeriesList}
                 MovTable={MovTable}
                 teachingMode={teachingMode}
+                readOnly={readOnly}
               />
 
             )}
           </div>
         ))}
         </div>
+
+        {/* Cool-down ghost row */}
+        {!teachingMode&&(
+          <WarmCoolGhostRow
+            label="Cool-down"
+            value={cooldownNotes}
+            onChange={v=>{setCooldownNotes(v);onUpdateClass({...currentCls,warmupNotes,cooldownNotes:v});}}
+            generating={generatingWC}
+            readOnly={readOnly}
+          />
+        )}
           </div>{/* end main content column */}
         </div>{/* end two-column flex */}
       </div>
@@ -2900,9 +3264,10 @@ const AulaView = ({ cls, allSeries, onBack, onDeleteClass, onUpdateSeries, onUpd
 
 // ─── AI CLASS BUILDER ─────────────────────────────────────────────────────────
 const DEFAULT_STUDIO_CLASS_TYPES = ['Reformer', 'Matwork', 'Barre', 'Cycling'];
-const DEFAULT_CLASS_LEVELS = ['foundations', 'intermediate', 'advanced', 'flow', 'dynamic'];
+const DEFAULT_CLASS_LEVELS = ['Foundations', 'Intermediate', 'Advanced', 'Flow', 'Dynamic'];
 const DEFAULT_SERIES_TYPES = ['Warm-up', 'Força', 'Cardio', 'Flow', 'Mobilidade', 'Cool-down'];
-const DEFAULT_STUDIO_ZONES = ['Glutes', 'Hamstrings', 'Quads', 'Inner Thighs', 'Calves', 'Core', 'Back', 'Arms', 'Shoulders', 'Chest', 'Full Body', 'Cardio', 'Warm-Up', 'Mobility', 'Flexibility', 'Balance'];
+const DEFAULT_STUDIO_ZONES = ['Glutes', 'Hamstrings', 'Quads', 'Inner Thighs', 'Calves', 'Core', 'Back', 'Arms', 'Shoulders', 'Chest', 'Full Body'];
+const DEFAULT_STUDIO_SERIES_TYPES = ['Warm-Up', 'Cardio', 'Mobility', 'Flexibility', 'Balance', 'Flow', 'Força', 'Cool-down'];
 
 const AIClassBuilder = ({ available, allSeries, cls, aiStyle, onApply }) => {
   const [open, setOpen] = React.useState(false);
@@ -3018,11 +3383,18 @@ Only use IDs from the available list. Return only the JSON array, no explanation
 };
 
 // ─── CLASS BUILDER ────────────────────────────────────────────────────────────
-const ClassBuilder = ({ allSeries, classes, onSave, onDeleteClass, onViewAula, studioSettings, onPublishClass, onUnpublishClass, hasStudio, onToggleClassPublic, onSendClass }) => {
+const ClassBuilder = ({ allSeries, classes, onSave, onDeleteClass, onPermanentDeleteClass, onViewAula, studioSettings, onPublishClass, onUnpublishClass, hasStudio, onToggleClassPublic, onSendClass, onUpdateClass }) => {
   const [creating, setCreating] = useState(false);
   const [newCls, setNewCls] = useState(null);
   const [classSearch, setClassSearch] = useState("");
   const [classLevelFilter, setClassLevelFilter] = useState("");
+  const [showTypePicker, setShowTypePicker] = React.useState(false);
+  const [confirmRemoveClassId, setConfirmRemoveClassId] = useState(null);
+  const [flowSearch, setFlowSearch] = useState("");
+  const [showArchive, setShowArchive] = useState(false);
+  const [classSortBy, setClassSortBy] = useState("date"); // 'name','date','level'
+  const [classSortOrder, setClassSortOrder] = useState("desc");
+  const [expandedClassIds, setExpandedClassIds] = React.useState(new Set());
   const classLevels = studioSettings?.class_levels || DEFAULT_CLASS_LEVELS;
 
   const startCreate = type => {
@@ -3031,98 +3403,217 @@ const ClassBuilder = ({ allSeries, classes, onSave, onDeleteClass, onViewAula, s
   };
   const handleCreate = () => { onSave(newCls); onViewAula(newCls); setCreating(false); setNewCls(null); };
 
-  if (creating && newCls) return (
-    <div style={{display:"flex",flexDirection:"column",gap:16,maxWidth:540}}>
+  if (creating && newCls) {
+    const compatSeries = allSeries.filter(s=>
+      newCls.type==='signature' ? s.type==='signature' : s.type===newCls.type || s.type==='signature'
+    );
+    const inFlow = newCls.seriesIds || [];
+    const toggleSeries = id => setNewCls(p=>({...p, seriesIds: inFlow.includes(id)?inFlow.filter(x=>x!==id):[...inFlow,id]}));
+    return (
+    <div style={{display:"flex",flexDirection:"column",gap:16}}>
       <div style={{display:"flex",gap:12,alignItems:"center"}}>
         <Btn variant="ghost" small onClick={()=>setCreating(false)}><Icon name="back" size={13}/></Btn>
         <h3 style={{fontFamily:"'Clash Display', sans-serif",fontSize:22,fontWeight:500,color:C.crimson,margin:0,flex:1}}>
           Nova aula {newCls.type==="signature"?"Signature":newCls.type==="reformer"?"Reformer":"Barre"}
         </h3>
       </div>
-      <Field label="Nome da aula" val={newCls.name} onChange={v=>setNewCls(p=>({...p,name:v}))} placeholder="ex. Cardio Flow Quarta"/>
-      <div>
-        <label style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em",display:"block",marginBottom:4}}>Data</label>
-        <input type="date" value={newCls.date} onChange={e=>setNewCls(p=>({...p,date:e.target.value}))} style={{width:"100%",fontFamily:"'Satoshi', sans-serif",fontSize:13,padding:"8px 12px",borderRadius:8,border:`1px solid ${C.stone}`,outline:"none",boxSizing:"border-box"}}/>
-      </div>
-      <div>
-        <label style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em",display:"block",marginBottom:6}}>Nível</label>
-        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-          {classLevels.map(lvl=>(
-            <button key={lvl} onClick={()=>setNewCls(p=>({...p,level:p.level===lvl?"":lvl}))}
-              style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 14px",borderRadius:20,
-                border:`1px solid ${newCls.level===lvl?C.neutral:C.stone}`,
-                background:newCls.level===lvl?C.neutral:"transparent",
-                color:newCls.level===lvl?C.white:C.mist,cursor:"pointer"}}>
-              {lvl}
-            </button>
-          ))}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20,alignItems:"flex-start"}}>
+        {/* Left: name, date, level */}
+        <div style={{display:"flex",flexDirection:"column",gap:12}}>
+          <Field label="Nome da aula" val={newCls.name} onChange={v=>setNewCls(p=>({...p,name:v}))} placeholder="ex. Cardio Flow Quarta"/>
+          <div>
+            <label style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em",display:"block",marginBottom:4}}>Data</label>
+            <input type="date" value={newCls.date} onChange={e=>setNewCls(p=>({...p,date:e.target.value}))} style={{width:"100%",fontFamily:"'Satoshi', sans-serif",fontSize:13,padding:"8px 12px",borderRadius:8,border:`1px solid ${C.stone}`,outline:"none",boxSizing:"border-box"}}/>
+          </div>
+          <div>
+            <label style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em",display:"block",marginBottom:6}}>Nível</label>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+              {classLevels.map(lvl=>(
+                <button key={lvl} onClick={()=>setNewCls(p=>({...p,level:p.level===lvl?"":lvl}))}
+                  style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 14px",borderRadius:20,
+                    border:`1px solid ${newCls.level===lvl?C.neutral:C.stone}`,
+                    background:newCls.level===lvl?C.neutral:"transparent",
+                    color:newCls.level===lvl?C.white:C.mist,cursor:"pointer"}}>
+                  {lvl}
+                </button>
+              ))}
+            </div>
+          </div>
+          <Btn onClick={handleCreate} style={{alignSelf:"flex-start",marginTop:4}}><Icon name="plus" size={14}/> Criar aula{inFlow.length>0?` (${inFlow.length} séries)`:""}</Btn>
+        </div>
+        {/* Right: series flow */}
+        <div>
+          <div style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Fluxo da aula {inFlow.length>0&&<span style={{color:C.crimson}}>({inFlow.length})</span>}</div>
+          {inFlow.length>0&&(
+            <div style={{marginBottom:10,display:"flex",flexDirection:"column",gap:4}}>
+              {inFlow.map((id,i)=>{
+                const s=allSeries.find(x=>x.id===id);
+                if(!s) return null;
+                return <div key={id} style={{display:"flex",alignItems:"center",gap:6,padding:"5px 10px",background:C.cream,borderRadius:8,border:`1px solid ${C.stone}`,fontSize:12}}>
+                  <span style={{fontWeight:600,color:C.mist,minWidth:16,fontSize:10}}>{i+1}</span>
+                  <span style={{flex:1,color:C.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.name}</span>
+                  <button onClick={()=>toggleSeries(id)} style={{background:"none",border:"none",cursor:"pointer",color:C.mist,padding:"1px 3px",fontSize:12}}>×</button>
+                </div>;
+              })}
+            </div>
+          )}
+          <input value={flowSearch} onChange={e=>setFlowSearch(e.target.value)} placeholder="Pesquisar séries…"
+            style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,padding:"6px 10px",borderRadius:8,border:`1px solid ${C.stone}`,outline:"none",width:"100%",boxSizing:"border-box",marginBottom:6}}/>
+          <div style={{display:"flex",flexDirection:"column",gap:4,maxHeight:260,overflowY:"auto"}}>
+            {compatSeries.filter(s=>!inFlow.includes(s.id)&&(!flowSearch||s.name.toLowerCase().includes(flowSearch.toLowerCase()))).map(s=>(
+              <div key={s.id} onClick={()=>toggleSeries(s.id)}
+                style={{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",background:C.white,borderRadius:8,border:`1px solid ${C.stone}`,cursor:"pointer",fontSize:12}}
+                onMouseEnter={e=>e.currentTarget.style.borderColor=C.neutral}
+                onMouseLeave={e=>e.currentTarget.style.borderColor=C.stone}>
+                <span style={{flex:1,color:C.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.name}</span>
+                <Badge label={s.type==="signature"?"✦":s.type==="reformer"?"R":"B"} color={s.type==="signature"?"gold":s.type==="reformer"?"teal":"coral"}/>
+                <span style={{color:C.crimson,fontWeight:700,fontSize:14,lineHeight:1}}>+</span>
+              </div>
+            ))}
+            {compatSeries.length===0&&<div style={{color:C.mist,fontSize:12,padding:8}}>Sem séries disponíveis para este tipo.</div>}
+          </div>
         </div>
       </div>
-      <Btn onClick={handleCreate} style={{alignSelf:"flex-start"}}><Icon name="plus" size={14}/> Criar e começar a aula</Btn>
     </div>
-  );
+    );
+  }
 
   const filteredClasses = classes.filter(c=>{
+    if (showArchive) return !!c.isArchived;
+    if (c.isArchived) return false;
     if(classSearch && !c.name.toLowerCase().includes(classSearch.toLowerCase())) return false;
     if(classLevelFilter && c.level!==classLevelFilter) return false;
     return true;
+  }).sort((a,b)=>{
+    let va, vb;
+    if(classSortBy==='name') { va=(a.name||'').toLowerCase(); vb=(b.name||'').toLowerCase(); }
+    else if(classSortBy==='level') { va=a.level||''; vb=b.level||''; }
+    else { va=a.date||''; vb=b.date||''; }
+    return classSortOrder==='asc' ? va.localeCompare(vb) : vb.localeCompare(va);
   });
 
   return (
     <div>
       {/* Top bar: create buttons + search */}
       <div style={{display:"flex",gap:12,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
-        <Btn onClick={()=>startCreate("reformer")}><Icon name="plus" size={14}/> Nova aula Reformer</Btn>
-        <Btn variant="ghost" onClick={()=>startCreate("barre")}><Icon name="plus" size={14}/> Nova aula Barre</Btn>
-        <Btn variant="ghost" onClick={()=>startCreate("signature")} style={{borderColor:C.sig,color:"#7a4010"}}><Icon name="plus" size={14}/> Nova Signature</Btn>
-        <div style={{flex:1}}/>
+        <h2 style={{fontFamily:"'Clash Display', sans-serif",fontSize:26,fontWeight:500,color:C.crimson,margin:0,flex:1}}>Planeamento de Aulas</h2>
         <input value={classSearch} onChange={e=>setClassSearch(e.target.value)} placeholder="Pesquisar aulas…"
-          style={{fontFamily:"'Satoshi',sans-serif",fontSize:13,padding:"6px 14px",borderRadius:20,border:`1px solid ${C.stone}`,outline:"none",width:180}}/>
+          style={{fontFamily:"'Satoshi',sans-serif",fontSize:13,padding:"6px 14px",borderRadius:20,border:`1px solid ${C.stone}`,outline:"none",width:180,background:C.white,color:C.ink}}/>
+        <Btn onClick={()=>setShowTypePicker(p=>!p)}><Icon name="plus" size={14}/> Nova Aula</Btn>
       </div>
+      {showTypePicker&&(
+        <div style={{display:"flex",gap:8,marginBottom:16,padding:"12px 16px",background:C.white,borderRadius:10,border:`1px solid ${C.stone}`,flexWrap:"wrap",alignItems:"center"}}>
+          <span style={{fontSize:12,fontWeight:700,color:C.mist,fontFamily:"'Satoshi',sans-serif",marginRight:4}}>Tipo:</span>
+          {[["reformer","Reformer"],["barre","Barre"],["signature","✦ Signature"]].map(([type,label])=>(
+            <button key={type} onClick={()=>{startCreate(type);setShowTypePicker(false);}} style={{padding:"7px 18px",borderRadius:20,border:`1px solid ${type==="signature"?C.sig:C.stone}`,background:"transparent",color:type==="signature"?"#7a4010":C.ink,fontWeight:600,fontSize:13,cursor:"pointer",fontFamily:"'Satoshi',sans-serif"}}>{label}</button>
+          ))}
+          <button onClick={()=>setShowTypePicker(false)} style={{marginLeft:"auto",background:"none",border:"none",cursor:"pointer",color:C.mist,fontSize:16,padding:"0 4px"}}>×</button>
+        </div>
+      )}
       {/* Two-column layout: filters left, list right */}
       <div style={{display:"flex",gap:20,alignItems:"flex-start"}}>
         {/* Left column: filters */}
-        <div style={{width:140,flexShrink:0}}>
-          <div style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Nível</div>
-          <div style={{display:"flex",flexDirection:"column",gap:5}}>
-            <button onClick={()=>setClassLevelFilter("")} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 12px",borderRadius:20,border:`1px solid ${!classLevelFilter?C.neutral:C.stone}`,background:!classLevelFilter?C.neutral:"transparent",color:!classLevelFilter?C.white:C.mist,cursor:"pointer",textAlign:"left"}}>Todos</button>
-            {classLevels.map(lvl=>(
-              <button key={lvl} onClick={()=>setClassLevelFilter(p=>p===lvl?"":lvl)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 12px",borderRadius:20,border:`1px solid ${classLevelFilter===lvl?C.neutral:C.stone}`,background:classLevelFilter===lvl?C.neutral:"transparent",color:classLevelFilter===lvl?C.white:C.mist,cursor:"pointer",textAlign:"left"}}>{lvl}</button>
-            ))}
+        <div style={{width:170,flexShrink:0}}>
+          <CollapsibleSection title="Nível" defaultOpen={true}>
+            <div style={{display:"flex",flexDirection:"column",gap:4,paddingBottom:8}}>
+              <button onClick={()=>{setClassLevelFilter("");setShowArchive(false);}} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 12px",borderRadius:8,border:`1px solid ${!classLevelFilter&&!showArchive?C.neutral:C.stone}`,background:!classLevelFilter&&!showArchive?C.neutral:"transparent",color:!classLevelFilter&&!showArchive?C.white:C.ink,cursor:"pointer",textAlign:"left"}}>Todos</button>
+              {classLevels.map(lvl=>(
+                <button key={lvl} onClick={()=>{setClassLevelFilter(p=>p===lvl?"":lvl);setShowArchive(false);}} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 12px",borderRadius:8,border:`1px solid ${classLevelFilter===lvl?C.neutral:C.stone}`,background:classLevelFilter===lvl?C.neutral:"transparent",color:classLevelFilter===lvl?C.white:C.ink,cursor:"pointer",textAlign:"left"}}>{lvl}</button>
+              ))}
+            </div>
+          </CollapsibleSection>
+
+          <CollapsibleSection title="Ordenar" defaultOpen={false}>
+            <div style={{display:"flex",flexDirection:"column",gap:4,paddingBottom:8}}>
+              {[["name","Nome"],["date","Data"],["level","Nível"]].map(([val,lbl])=>(
+                <button key={val} onClick={()=>{ if(classSortBy===val) setClassSortOrder(p=>p==="asc"?"desc":"asc"); else { setClassSortBy(val); setClassSortOrder("desc"); }}} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 12px",borderRadius:8,border:`1px solid ${classSortBy===val?C.neutral:C.stone}`,background:classSortBy===val?C.neutral:"transparent",color:classSortBy===val?C.white:C.ink,cursor:"pointer",textAlign:"left"}}>{lbl}{classSortBy===val?(classSortOrder==="asc"?" ↑":" ↓"):""}</button>
+              ))}
+            </div>
+          </CollapsibleSection>
+
+          <div style={{borderTop:`1px solid ${C.stone}`,paddingTop:8,marginTop:4}}>
+            <button onClick={()=>{setShowArchive(p=>!p);setClassLevelFilter("");}} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,color:showArchive?C.crimson:C.mist,background:"none",border:"none",cursor:"pointer",padding:"4px 0",textAlign:"left",textDecoration:"underline"}}>📦 Arquivo</button>
           </div>
         </div>
         {/* Right column: class list */}
         <div style={{flex:1,minWidth:0}}>
-          {filteredClasses.length===0&&<div style={{textAlign:"center",color:C.mist,padding:40,fontSize:14}}>{classes.length===0?"Ainda não há aulas criadas.":"Nenhuma aula encontrada."}</div>}
-          <div style={{display:"flex",flexDirection:"column",gap:10}}>
-            {filteredClasses.map(c=>(
-              <div key={c.id} onClick={()=>onViewAula(c)} style={{background:C.white,borderRadius:12,border:`1px solid ${C.stone}`,padding:"14px 18px",cursor:"pointer",transition:"border-color 0.15s"}}
-                onMouseEnter={e=>e.currentTarget.style.borderColor=C.neutral}
-                onMouseLeave={e=>e.currentTarget.style.borderColor=C.stone}>
-                <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontFamily:"'Clash Display', sans-serif",fontSize:18,fontWeight:500,color:C.ink}}>{c.name||"Sem nome"}</div>
-                    <div style={{fontSize:12,color:C.mist,marginTop:2}}>{c.date} · {c.seriesIds.length} série{c.seriesIds.length!==1?"s":""}{c.level?` · ${c.level}`:""}</div>
-                    {c.studioComment&&<div style={{fontSize:11,color:"#b91c1c",marginTop:4,background:"#fef2f2",padding:"3px 8px",borderRadius:6,display:"inline-block"}}>{c.studioComment}</div>}
+          {showArchive ? (
+            <div>
+              {filteredClasses.length === 0 && <div style={{textAlign:"center",color:C.mist,padding:40,fontSize:14}}>Arquivo vazio.</div>}
+              <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                {filteredClasses.map(c=>(
+                  <div key={c.id} style={{background:C.white,borderRadius:12,border:`1px solid ${C.stone}`,padding:"12px 16px",display:"flex",alignItems:"center",gap:12}}>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontFamily:"'Clash Display',sans-serif",fontSize:16,fontWeight:500,color:C.ink}}>{c.name||"Sem nome"}</div>
+                      <div style={{fontSize:12,color:C.mist,marginTop:2}}>{c.date} · {c.seriesIds?.length||0} séries</div>
+                    </div>
+                    <button onClick={async()=>{onSave({...c,isArchived:false});}} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 14px",borderRadius:8,border:`1px solid ${C.neutral}`,background:"transparent",color:C.neutral,cursor:"pointer"}}>↺ Restaurar</button>
+                    <button onClick={async()=>{if(window.confirm("Apagar permanentemente esta aula? Esta acção não pode ser desfeita."))onPermanentDeleteClass&&onPermanentDeleteClass(c.id);}} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 14px",borderRadius:8,border:"1px solid #b91c1c",background:"transparent",color:"#b91c1c",cursor:"pointer"}}>🗑 Apagar</button>
                   </div>
-                  <Badge label={c.type==="signature"?"✦ Signature":c.type} color={c.type==="signature"?"gold":c.type==="reformer"?"teal":"coral"}/>
-                  {c.visibility==='personal'&&c.studioComment&&onPublishClass&&(
-                    <span onClick={e=>{e.stopPropagation();onPublishClass(c);}} title="Rejeitado — clica para submeter novamente" style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:20,background:"#fef2f2",color:"#b91c1c",border:"1px solid #fca5a5",cursor:"pointer"}}>✗ Rejeitado — submeter?</span>
-                  )}
-                  {c.visibility==='pending_studio'&&(onUnpublishClass ? (
-                    <span onClick={e=>{e.stopPropagation();onUnpublishClass(c);}} title="Clica para retirar submissão" style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:20,background:"#fef9ec",color:"#b45309",border:"1px solid #fcd34d",cursor:"pointer"}}>⏳ Em revisão ×</span>
-                  ) : (
-                    <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:20,background:"#fef9ec",color:"#b45309",border:"1px solid #fcd34d"}}>⏳ Em revisão</span>
-                  ))}
-                  {hasStudio&&c.visibility==='personal'&&!c.studioComment&&onPublishClass&&<Btn small variant="ghost" onClick={e=>{e.stopPropagation();onPublishClass(c);}} title="Submeter para revisão do studio" style={{color:"#1a56db"}}>↑ Studio</Btn>}
-                  {onToggleClassPublic&&c.visibility!=='pending_studio'&&<button onClick={e=>{e.stopPropagation();onToggleClassPublic(c);}} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"4px 10px",borderRadius:20,border:`1px solid ${c.visibility==='public'?C.crimson:C.stone}`,background:"transparent",color:c.visibility==='public'?C.crimson:C.mist,cursor:"pointer"}}>{c.visibility==='public'?'🌐 Pública':'🔒 Privada'}</button>}
-                  {onSendClass&&<Btn small variant="ghost" onClick={e=>{e.stopPropagation();onSendClass({...c,_discoverType:'class'});}} style={{color:C.mist}}>Enviar →</Btn>}
-                  <Btn small onClick={e=>{e.stopPropagation();onViewAula(c);}}><Icon name="eye" size={13}/> Ver Aula</Btn>
-                  <button onClick={e=>{e.stopPropagation();onDeleteClass(c.id);}} title="Apagar aula" style={{background:"none",border:`1px solid ${C.stone}`,borderRadius:8,cursor:"pointer",color:C.coral,padding:"6px 8px",display:"inline-flex",alignItems:"center"}}><Icon name="x" size={13}/></button>
-                </div>
+                ))}
               </div>
-            ))}
+            </div>
+          ) : (
+          <>
+          {filteredClasses.length===0&&<div style={{textAlign:"center",color:C.mist,padding:40,fontSize:14}}>{classes.filter(c=>!c.isArchived).length===0?"Ainda não há aulas criadas.":"Nenhuma aula encontrada."}</div>}
+          <div style={{display:"flex",flexDirection:"column",gap:6}}>
+            {filteredClasses.map(c=>{
+              const isExpanded = expandedClassIds.has(c.id);
+              const toggleExpand = () => setExpandedClassIds(prev => { const n=new Set(prev); n.has(c.id)?n.delete(c.id):n.add(c.id); return n; });
+              return (
+                <div key={c.id} style={{background:C.white,borderRadius:14,border:`1px solid ${isExpanded?C.neutral:C.stone}`,transition:"border-color 0.15s,box-shadow 0.15s",overflow:"hidden",boxShadow:isExpanded?"0 4px 24px rgba(0,0,0,0.09)":"none"}}
+                  onMouseEnter={e=>{ if(!isExpanded)e.currentTarget.style.borderColor=C.neutral; }}
+                  onMouseLeave={e=>{ if(!isExpanded)e.currentTarget.style.borderColor=C.stone; }}>
+                  {/* Header */}
+                  <div onClick={toggleExpand} style={{cursor:"pointer",padding:"8px 14px",display:"flex",alignItems:"center",gap:10}}>
+                    <div style={{width:36,height:36,borderRadius:"50%",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",
+                      background:c.type==="signature"?`${C.sig}40`:c.type==="reformer"?`${C.reformer}20`:`${C.barre}30`,
+                      border:`1.5px solid ${c.type==="signature"?C.sig:c.type==="reformer"?`${C.reformer}50`:`${C.barre}60`}`,
+                    }}>
+                      <span style={{fontSize:14,fontWeight:700,color:c.type==="signature"?"#7a4010":c.type==="reformer"?C.reformer:"#c0507a",lineHeight:1}}>
+                        {c.type==="signature"?"✦":c.type==="reformer"?"R":"B"}
+                      </span>
+                    </div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontFamily:"'Clash Display',sans-serif",fontSize:15,fontWeight:500,color:C.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name||"Sem nome"}</div>
+                      <div style={{fontSize:11,color:C.mist,marginTop:1}}>{[c.level,c.date,c.seriesIds?.length?`${c.seriesIds.length} série${c.seriesIds.length!==1?"s":""}`:null].filter(Boolean).join(" · ")}</div>
+                      {c.studioComment&&<span style={{fontSize:9,fontWeight:700,color:"#b91c1c",background:"#fef2f2",borderRadius:10,padding:"2px 7px",display:"inline-block",marginTop:2}}>Comentário</span>}
+                    </div>
+                    <span style={{color:C.mist,display:"inline-flex",transition:"transform 0.2s",transform:isExpanded?"rotate(180deg)":"rotate(0deg)",flexShrink:0}}>
+                      <Icon name="chevron" size={16}/>
+                    </span>
+                  </div>
+                  {/* Expanded controls */}
+                  {isExpanded && (
+                    <div style={{padding:"6px 14px 10px",display:"flex",gap:6,alignItems:"center",justifyContent:"flex-end",flexWrap:"wrap"}} onClick={e=>e.stopPropagation()}>
+                      {c.visibility==='pending_studio'&&<span style={{fontSize:10,fontWeight:700,color:"#b45309",background:"#fef9ec",borderRadius:10,padding:"2px 8px",whiteSpace:"nowrap"}}>Em revisão</span>}
+                      {c.visibility==='studio'&&<span style={{fontSize:10,fontWeight:700,color:C.white,background:"#16a34a",borderRadius:10,padding:"2px 8px",whiteSpace:"nowrap"}}>Studio ✓</span>}
+                      {hasStudio && (onPublishClass||onUnpublishClass) && (()=>{
+                        const studioOn = c.visibility==='studio'||c.visibility==='pending_studio';
+                        const studioColor = c.visibility==='studio' ? '#16a34a' : c.visibility==='pending_studio' ? '#d97706' : C.crimson;
+                        return <>
+                          <span style={{fontSize:11,color:C.mist,whiteSpace:"nowrap"}}>Pessoal</span>
+                          <MiniToggle on={studioOn} onColor={studioColor}
+                            onToggle={()=>{ if(studioOn) { onUnpublishClass&&onUnpublishClass(c); } else { onPublishClass&&onPublishClass(c); } }}
+                          />
+                          <span style={{fontSize:11,color:C.mist,whiteSpace:"nowrap"}}>Studio</span>
+                        </>;
+                      })()}
+                      {onToggleClassPublic && <>
+                        <span style={{fontSize:11,color:C.mist,whiteSpace:"nowrap"}}>🔒 Privada</span>
+                        <MiniToggle on={!!c.isPublic} onToggle={()=>onToggleClassPublic(c)}/>
+                        <span style={{fontSize:11,color:C.mist,whiteSpace:"nowrap"}}>🌐 Pública</span>
+                      </>}
+                      {onSendClass&&<button onClick={()=>onSendClass({...c,_discoverType:'class'})} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"3px 10px",borderRadius:20,border:`1px solid ${C.stone}`,background:"transparent",color:C.mist,cursor:"pointer",whiteSpace:"nowrap"}}>Enviar →</button>}
+                      <button onClick={()=>onViewAula(c)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"3px 10px",borderRadius:20,border:`1px solid ${C.crimson}`,background:C.crimson,color:C.cream,cursor:"pointer",whiteSpace:"nowrap"}}>Abrir</button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
+          </>
+          )}
         </div>
       </div>
     </div>
@@ -3197,23 +3688,27 @@ const AiStylePanel = ({ value, onChange }) => {
 // ─── MOVEMENT LIBRARY PAGE ────────────────────────────────────────────────────
 const MovementLibraryPage = ({ series, onUpdateSeries, aiStyle }) => {
   const [search, setSearch] = React.useState("");
-  const [expandedMovs, setExpandedMovs] = React.useState(new Set());
-  const [editingFields, setEditingFields] = React.useState({});
+  const [typeFilter, setTypeFilter] = React.useState("all"); // 'all','reformer','barre','signature'
+  const [editingKey, setEditingKey] = React.useState(null); // key of movement being edited inline
+  const [editFields, setEditFields] = React.useState({}); // { name, notes }
+  const [selected, setSelected] = React.useState(new Set()); // keys of selected movements for batch delete
+  const [hovSeriesKey, setHovSeriesKey] = React.useState(null);
   const toast_ = useToast();
+  const confirm_ = useConfirm();
 
   // Deduplicated movements with notes aggregated and seriesRefs collected
   const movements = React.useMemo(()=>{
     const map = new Map();
     series.forEach(s=>{
-      const add = (movs, sideKey, type) => (movs||[]).forEach((m,idx)=>{
+      const add = (movs, sideKey, displayType) => (movs||[]).forEach((m,idx)=>{
         if(!m.movement) return;
         const key = m.movement.toLowerCase().trim();
-        if(!map.has(key)) map.set(key, { movement:m.movement, notes:new Set(), breath:new Set(), series:new Set(), types:new Set(), refs:[] });
+        if(!map.has(key)) map.set(key, { movement:m.movement, notes:new Set(), seriesNames:new Set(), types:new Set(), seriesTypes:new Set(), refs:[] });
         const e = map.get(key);
         if(m.notes) m.notes.split(/[.;·]/).map(n=>n.trim()).filter(Boolean).forEach(n=>e.notes.add(n));
-        if(m.breath?.trim()) e.breath.add(m.breath.trim());
-        e.series.add(s.name);
-        e.types.add(type);
+        e.seriesNames.add(s.name);
+        e.types.add(displayType);
+        e.seriesTypes.add(s.type);
         e.refs.push({ seriesId: s.id, sideKey, movIndex: idx });
       });
       add(s.reformer?.movements, "reformer", s.type==="barre"?"barre":"reformer");
@@ -3222,23 +3717,31 @@ const MovementLibraryPage = ({ series, onUpdateSeries, aiStyle }) => {
     return [...map.values()].sort((a,b)=>a.movement.localeCompare(b.movement,"pt"));
   }, [series]);
 
-  const filtered = search
-    ? movements.filter(m=>m.movement.toLowerCase().includes(search.toLowerCase()))
-    : movements;
+  const filtered = React.useMemo(()=>{
+    let result = movements;
+    if (search) result = result.filter(m=>m.movement.toLowerCase().includes(search.toLowerCase()));
+    if (typeFilter !== 'all') result = result.filter(m=>m.seriesTypes.has(typeFilter));
+    return result;
+  }, [movements, search, typeFilter]);
 
   const typeColor = t => t==="reformer"?C.reformer:t==="barre"?"#c0507a":C.sig;
 
-  const toggleExpand = key => setExpandedMovs(prev => { const s=new Set(prev); s.has(key)?s.delete(key):s.add(key); return s; });
+  const startEdit = (m) => {
+    const key = m.movement.toLowerCase().trim();
+    setEditingKey(key);
+    setEditFields({ name: m.movement, notes: [...m.notes].join(' · ') });
+  };
 
-  const saveEdit = async (movKey, refs) => {
-    const fields = editingFields[movKey] ?? {};
-    const newName = (fields.name ?? '').trim();
-    const newBreath = (fields.breath ?? '').trim();
-    const newNotes = (fields.notes ?? '').trim();
+  const cancelEdit = () => { setEditingKey(null); setEditFields({}); };
+
+  const saveEdit = async (m) => {
+    const key = m.movement.toLowerCase().trim();
+    const newName = (editFields.name ?? '').trim();
+    const newNotes = (editFields.notes ?? '').trim();
     if (!newName) { toast_?.('O nome não pode estar vazio', 'error'); return; }
     try {
       const bySeries = {};
-      refs.forEach(r => { if(!bySeries[r.seriesId]) bySeries[r.seriesId]=[]; bySeries[r.seriesId].push(r); });
+      m.refs.forEach(r => { if(!bySeries[r.seriesId]) bySeries[r.seriesId]=[]; bySeries[r.seriesId].push(r); });
       for (const [seriesId, seriesRefs] of Object.entries(bySeries)) {
         const s = series.find(x => x.id === seriesId);
         if (!s) continue;
@@ -3247,99 +3750,171 @@ const MovementLibraryPage = ({ series, onUpdateSeries, aiStyle }) => {
           const side = updated[r.sideKey];
           if (!side?.movements) return;
           const movs = [...side.movements];
-          movs[r.movIndex] = { ...movs[r.movIndex], movement: newName, breath: newBreath, notes: newNotes };
+          movs[r.movIndex] = { ...movs[r.movIndex], movement: newName, notes: newNotes };
           updated = { ...updated, [r.sideKey]: { ...side, movements: movs } };
         });
         await onUpdateSeries(updated);
       }
       toast_?.('Guardado');
-      toggleExpand(movKey);
+      cancelEdit();
     } catch(e) {
       console.error('saveEdit failed:', e);
       toast_?.('Erro ao guardar', 'error');
     }
   };
 
+  const deleteMovements = async (keys) => {
+    const confirmed = await confirm_?.(`Eliminar ${keys.size} movimento${keys.size!==1?'s':''}? Esta acção remove-os de todas as séries.`);
+    if (!confirmed) return;
+    const affectedRefs = [];
+    movements.filter(m => keys.has(m.movement.toLowerCase().trim())).forEach(m => affectedRefs.push(...m.refs));
+    const bySeries = {};
+    affectedRefs.forEach(r => { if(!bySeries[r.seriesId]) bySeries[r.seriesId]=[]; bySeries[r.seriesId].push(r); });
+    for (const [seriesId, seriesRefs] of Object.entries(bySeries)) {
+      const s = series.find(x => x.id === seriesId);
+      if (!s) continue;
+      let updated = { ...s };
+      // Group by sideKey and remove by index (descending to not shift indices)
+      const bySide = {};
+      seriesRefs.forEach(r => { if(!bySide[r.sideKey]) bySide[r.sideKey]=[]; bySide[r.sideKey].push(r.movIndex); });
+      for (const [sideKey, indices] of Object.entries(bySide)) {
+        const side = updated[sideKey];
+        if (!side?.movements) continue;
+        const movs = side.movements.filter((_,i) => !indices.includes(i));
+        updated = { ...updated, [sideKey]: { ...side, movements: movs } };
+      }
+      await onUpdateSeries(updated);
+    }
+    setSelected(new Set());
+    toast_?.(`${keys.size} movimento${keys.size!==1?'s':''} eliminado${keys.size!==1?'s':''}`);
+  };
+
+  const toggleSelect = (key) => setSelected(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
+  const toggleSelectAll = () => {
+    if (selected.size === filtered.length) setSelected(new Set());
+    else setSelected(new Set(filtered.map(m => m.movement.toLowerCase().trim())));
+  };
+
+  const TYPE_FILTERS = [
+    { val:"all", label:"Todos" },
+    { val:"signature", label:"Signature" },
+    { val:"reformer", label:"Reformer" },
+    { val:"barre", label:"Barre" },
+  ];
+
   return (
     <div>
-      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20,flexWrap:"wrap"}}>
+      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16,flexWrap:"wrap"}}>
         <h2 style={{fontFamily:"'Clash Display', sans-serif",fontSize:26,fontWeight:500,color:C.crimson,margin:0,flex:1}}>Biblioteca de Movimentos</h2>
         <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Pesquisar…"
-          style={{fontFamily:"'Satoshi',sans-serif",fontSize:13,padding:"8px 14px",borderRadius:8,border:`1px solid ${C.stone}`,outline:"none",background:C.white,width:220}}/>
+          style={{fontFamily:"'Satoshi',sans-serif",fontSize:13,padding:"8px 14px",borderRadius:8,border:`1px solid ${C.stone}`,outline:"none",background:C.white,width:200}}/>
       </div>
-      <div style={{fontSize:12,color:C.mist,marginBottom:16}}>{filtered.length} movimento{filtered.length!==1?"s":""}</div>
+
+      {/* Filters + batch actions */}
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14,flexWrap:"wrap"}}>
+        {TYPE_FILTERS.map(f=>(
+          <button key={f.val} onClick={()=>setTypeFilter(f.val)}
+            style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"4px 12px",borderRadius:20,
+              border:`1px solid ${typeFilter===f.val?C.crimson:C.stone}`,
+              background:typeFilter===f.val?C.crimson:"transparent",
+              color:typeFilter===f.val?C.cream:C.mist,cursor:"pointer"}}>
+            {f.label}
+          </button>
+        ))}
+        <div style={{flex:1}}/>
+        <span style={{fontSize:12,color:C.mist}}>{filtered.length} movimento{filtered.length!==1?"s":""}</span>
+        {selected.size>0&&(
+          <button onClick={()=>deleteMovements(selected)}
+            style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:700,padding:"4px 14px",borderRadius:20,border:"1px solid #b91c1c",background:"#b91c1c",color:"#fff",cursor:"pointer"}}>
+            🗑 Eliminar {selected.size} selecionado{selected.size!==1?"s":""}
+          </button>
+        )}
+      </div>
+
       <div style={{background:C.white,borderRadius:12,border:`1px solid ${C.stone}`,overflow:"hidden"}}>
-        <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:13,tableLayout:"fixed"}}>
+          <colgroup>
+            <col style={{width:36}}/>
+            <col style={{width:"28%"}}/>
+            <col style={{width:"10%"}}/>
+            <col style={{width:"52%"}}/>
+            <col style={{width:44}}/>
+            <col style={{width:36}}/>
+          </colgroup>
           <thead>
             <tr style={{background:"#f0e8e4"}}>
-              <th style={{textAlign:"left",padding:"10px 16px",fontSize:11,fontWeight:700,color:C.neutral,textTransform:"uppercase",letterSpacing:"0.06em"}}>Movimento</th>
-              <th style={{textAlign:"left",padding:"10px 12px",fontSize:11,fontWeight:700,color:C.neutral,textTransform:"uppercase",letterSpacing:"0.06em"}}>Tipo</th>
-              <th style={{textAlign:"left",padding:"10px 12px",fontSize:11,fontWeight:700,color:C.neutral,textTransform:"uppercase",letterSpacing:"0.06em"}}>Respiração</th>
+              <th style={{padding:"10px 8px",textAlign:"center"}}>
+                <input type="checkbox" checked={selected.size===filtered.length&&filtered.length>0} onChange={toggleSelectAll}/>
+              </th>
+              <th style={{textAlign:"left",padding:"10px 12px",fontSize:11,fontWeight:700,color:C.neutral,textTransform:"uppercase",letterSpacing:"0.06em"}}>Movimento</th>
+              <th style={{textAlign:"left",padding:"10px 8px",fontSize:11,fontWeight:700,color:C.neutral,textTransform:"uppercase",letterSpacing:"0.06em"}}>Tipo</th>
               <th style={{textAlign:"left",padding:"10px 12px",fontSize:11,fontWeight:700,color:C.neutral,textTransform:"uppercase",letterSpacing:"0.06em"}}>Notas</th>
-              <th style={{textAlign:"left",padding:"10px 12px",fontSize:11,fontWeight:700,color:C.neutral,textTransform:"uppercase",letterSpacing:"0.06em"}}>Séries</th>
-              <th style={{width:40}}></th>
+              <th style={{textAlign:"center",padding:"10px 8px",fontSize:11,fontWeight:700,color:C.neutral,textTransform:"uppercase",letterSpacing:"0.06em"}}>Séries</th>
+              <th style={{width:36}}></th>
             </tr>
           </thead>
           <tbody>
             {filtered.map((m,i)=>{
               const movKey = m.movement.toLowerCase().trim();
-              const isExpanded = expandedMovs.has(movKey);
-              const aggregatedNotes = [...m.notes].join(' · ');
+              const isEditing = editingKey === movKey;
+              const isChecked = selected.has(movKey);
               return (
-                <React.Fragment key={m.movement}>
-                  <tr style={{borderTop:`1px solid ${C.stone}`,background:i%2===0?C.white:`${C.cream}80`}}>
-                    <td style={{padding:"10px 16px",fontWeight:600,color:C.ink,verticalAlign:"top"}}>
-                      {m.movement}
-                    </td>
-                    <td style={{padding:"10px 12px",verticalAlign:"top"}}>
-                      <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
-                        {[...m.types].map(t=>(
-                          <span key={t} style={{fontSize:10,fontWeight:700,color:typeColor(t),background:`${typeColor(t)}15`,border:`1px solid ${typeColor(t)}40`,borderRadius:20,padding:"2px 8px",textTransform:"uppercase",letterSpacing:"0.04em"}}>{t}</span>
+                <tr key={m.movement} style={{borderTop:`1px solid ${C.stone}`,background:isEditing?`${C.cream}`:i%2===0?C.white:`${C.cream}60`}}>
+                  <td style={{padding:"8px",textAlign:"center",verticalAlign:"middle"}}>
+                    <input type="checkbox" checked={isChecked} onChange={()=>toggleSelect(movKey)} onClick={e=>e.stopPropagation()}/>
+                  </td>
+                  <td style={{padding:"8px 12px",verticalAlign:"middle",fontWeight:600,color:C.ink}}>
+                    {isEditing
+                      ? <input value={editFields.name??""} onChange={e=>setEditFields(p=>({...p,name:e.target.value}))} autoFocus
+                          style={{width:"100%",fontFamily:"'Satoshi',sans-serif",fontSize:13,color:C.ink,border:`1px solid ${C.stone}`,borderRadius:6,padding:"4px 8px",outline:"none",boxSizing:"border-box"}}/>
+                      : m.movement
+                    }
+                  </td>
+                  <td style={{padding:"8px",verticalAlign:"middle"}}>
+                    <div style={{display:"flex",gap:3,flexWrap:"wrap"}}>
+                      {[...m.types].map(t=>(
+                        <span key={t} style={{fontSize:9,fontWeight:700,color:typeColor(t),background:`${typeColor(t)}15`,border:`1px solid ${typeColor(t)}40`,borderRadius:20,padding:"2px 6px",textTransform:"uppercase",letterSpacing:"0.04em",whiteSpace:"nowrap"}}>{t==="reformer"?"R":t==="barre"?"B":"✦"}</span>
+                      ))}
+                    </div>
+                  </td>
+                  <td style={{padding:"8px 12px",verticalAlign:"middle"}}>
+                    {isEditing
+                      ? <textarea value={editFields.notes??""} onChange={e=>setEditFields(p=>({...p,notes:e.target.value}))} rows={2}
+                          style={{width:"100%",fontFamily:"'Satoshi',sans-serif",fontSize:12,color:C.ink,border:`1px solid ${C.stone}`,borderRadius:6,padding:"4px 8px",outline:"none",resize:"vertical",boxSizing:"border-box"}}/>
+                      : <span style={{fontSize:12,color:C.mist}}>{[...m.notes].join(' · ')}</span>
+                    }
+                    {isEditing && (
+                      <div style={{display:"flex",gap:6,marginTop:6}}>
+                        <button onClick={()=>saveEdit(m)} style={{padding:"3px 12px",borderRadius:6,border:"none",background:C.crimson,color:C.cream,fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"'Satoshi',sans-serif"}}>Guardar</button>
+                        <button onClick={cancelEdit} style={{padding:"3px 10px",borderRadius:6,border:`1px solid ${C.stone}`,background:"transparent",color:C.ink,fontSize:11,cursor:"pointer",fontFamily:"'Satoshi',sans-serif"}}>Cancelar</button>
+                      </div>
+                    )}
+                  </td>
+                  <td style={{padding:"8px",verticalAlign:"middle",textAlign:"center",position:"relative"}}>
+                    <span
+                      onMouseEnter={()=>setHovSeriesKey(movKey)}
+                      onMouseLeave={()=>setHovSeriesKey(null)}
+                      style={{cursor:"default",fontSize:14,color:C.mist,display:"inline-flex",alignItems:"center",justifyContent:"center",width:24,height:24,borderRadius:6,background:hovSeriesKey===movKey?C.stone:"transparent",transition:"background 0.15s"}}
+                      title={[...m.seriesNames].join(', ')}
+                    >
+                      📋
+                    </span>
+                    {hovSeriesKey===movKey&&(
+                      <div style={{position:"absolute",right:0,top:"100%",zIndex:300,background:C.white,border:`1px solid ${C.stone}`,borderRadius:8,padding:"8px 12px",boxShadow:"0 4px 16px rgba(0,0,0,0.12)",minWidth:180,maxWidth:260,pointerEvents:"none"}}>
+                        <div style={{fontSize:10,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Séries</div>
+                        {[...m.seriesNames].map(n=>(
+                          <div key={n} style={{fontSize:12,color:C.ink,padding:"2px 0",lineHeight:1.4}}>{n}</div>
                         ))}
                       </div>
-                    </td>
-                    <td style={{padding:"10px 12px",verticalAlign:"top",fontSize:12,color:C.mist,fontStyle:"italic"}}>
-                      {[...m.breath].join(" · ")}
-                    </td>
-                    <td style={{padding:"10px 12px",verticalAlign:"top",fontSize:12,color:C.mist,maxWidth:200}}>
-                      {aggregatedNotes}
-                    </td>
-                    <td style={{padding:"10px 12px",verticalAlign:"top",fontSize:11,color:C.mist}}>
-                      {[...m.series].join(", ")}
-                    </td>
-                    <td style={{padding:"6px 12px",verticalAlign:"top",textAlign:"right"}}>
-                      <button onClick={()=>{ if(!isExpanded) setEditingFields(p=>({...p,[movKey]:{ name:m.movement, breath:[...m.breath].join(' · '), notes:aggregatedNotes }})); toggleExpand(movKey); }}
-                        title={isExpanded?"Fechar":"Editar notas"}
-                        style={{background:"none",border:"none",cursor:"pointer",color:C.mist,fontSize:13,padding:"2px 6px",borderRadius:6,fontFamily:"'Satoshi',sans-serif",lineHeight:1}}>
-                        {isExpanded?'✕':'✎'}
-                      </button>
-                    </td>
-                  </tr>
-                  {isExpanded&&(
-                    <tr style={{background:i%2===0?`${C.cream}60`:`${C.stone}30`,borderBottom:`1px solid ${C.stone}`}}>
-                      <td colSpan={6} style={{padding:"10px 16px 16px"}}>
-                        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 2fr",gap:10,marginBottom:10}}>
-                          <div>
-                            <label style={{fontSize:10,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.06em",display:"block",marginBottom:4}}>Nome</label>
-                            <input value={editingFields[movKey]?.name??""} onChange={e=>setEditingFields(p=>({...p,[movKey]:{...p[movKey],name:e.target.value}}))} style={{width:"100%",fontFamily:"'Satoshi',sans-serif",fontSize:13,color:C.ink,border:`1px solid ${C.stone}`,borderRadius:6,padding:"6px 10px",outline:"none",boxSizing:"border-box"}}/>
-                          </div>
-                          <div>
-                            <label style={{fontSize:10,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.06em",display:"block",marginBottom:4}}>Respiração</label>
-                            <input value={editingFields[movKey]?.breath??""} onChange={e=>setEditingFields(p=>({...p,[movKey]:{...p[movKey],breath:e.target.value}}))} style={{width:"100%",fontFamily:"'Satoshi',sans-serif",fontSize:13,color:C.ink,border:`1px solid ${C.stone}`,borderRadius:6,padding:"6px 10px",outline:"none",boxSizing:"border-box"}}/>
-                          </div>
-                          <div>
-                            <label style={{fontSize:10,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.06em",display:"block",marginBottom:4}}>Notas</label>
-                            <textarea value={editingFields[movKey]?.notes??""} onChange={e=>setEditingFields(p=>({...p,[movKey]:{...p[movKey],notes:e.target.value}}))} rows={2} style={{width:"100%",fontFamily:"'Satoshi',sans-serif",fontSize:12,color:C.ink,border:`1px solid ${C.stone}`,borderRadius:8,padding:"8px 12px",outline:"none",resize:"vertical",boxSizing:"border-box",lineHeight:1.5}}/>
-                          </div>
-                        </div>
-                        <div style={{display:"flex",gap:8}}>
-                          <button onClick={()=>saveEdit(movKey,m.refs)} style={{padding:"6px 16px",borderRadius:8,border:"none",background:"#721919",color:"#FFFAF7",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"'Satoshi',sans-serif"}}>Guardar</button>
-                          <button onClick={()=>toggleExpand(movKey)} style={{padding:"6px 16px",borderRadius:8,border:`1px solid ${C.stone}`,background:"transparent",color:C.ink,fontWeight:600,fontSize:12,cursor:"pointer",fontFamily:"'Satoshi',sans-serif"}}>Cancelar</button>
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                </React.Fragment>
+                    )}
+                  </td>
+                  <td style={{padding:"8px",verticalAlign:"middle",textAlign:"center"}}>
+                    {!isEditing && (
+                      <button onClick={()=>startEdit(m)} title="Editar"
+                        style={{background:"none",border:"none",cursor:"pointer",color:C.mist,fontSize:13,padding:"2px 5px",borderRadius:5,lineHeight:1}}>✎</button>
+                    )}
+                  </td>
+                </tr>
               );
             })}
           </tbody>
@@ -3351,25 +3926,51 @@ const MovementLibraryPage = ({ series, onUpdateSeries, aiStyle }) => {
 };
 
 
-// ─── STUDIO PAGE ─────────────────────────────────────────────────────────────
+// ─── COLLAPSIBLE SECTION ─────────────────────────────────────────────────────
+const CollapsibleSection = ({ title, defaultOpen = true, children, badge }) => {
+  const [open, setOpen] = React.useState(defaultOpen);
+  return (
+    <div style={{ borderBottom: `1px solid ${C.stone}`, paddingBottom: open ? 20 : 0, marginBottom: open ? 4 : 0 }}>
+      <button
+        onClick={() => setOpen(p => !p)}
+        style={{ width: '100%', background: 'none', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 0', cursor: 'pointer', fontFamily: "'Clash Display',sans-serif", fontSize: 13, fontWeight: 600, color: C.ink, textAlign: 'left' }}
+      >
+        <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {title}
+          {badge && <span style={{ fontSize: 11, background: `${C.crimson}18`, color: C.crimson, borderRadius: 10, padding: '2px 8px', fontFamily: "'Satoshi',sans-serif", fontWeight: 700 }}>{badge}</span>}
+        </span>
+        <span style={{ fontSize: 12, color: C.mist, transition: 'transform 0.2s', display: 'inline-block', transform: open ? 'rotate(180deg)' : 'rotate(0deg)' }}>▾</span>
+      </button>
+      {open && <div style={{ paddingBottom: 4 }}>{children}</div>}
+    </div>
+  );
+};
+
+// ─── PROFILE PAGE ─────────────────────────────────────────────────────────────
 const ProfilePage = ({ profile, user, onProfileUpdate, studioSettings, aiStyle, onAiStyleChange, series=[], onSaveSeries }) => {
   const [editName, setEditName] = useState(profile?.name || '');
-  const [editPrefZones, setEditPrefZones] = useState(profile?.settings?.preferred_zones || []);
+  const [editPrefZones, setEditPrefZones] = useState(
+    profile?.settings?.preferred_zones?.length ? profile.settings.preferred_zones : DEFAULT_STUDIO_ZONES
+  );
   const [editPrefClassTypes, setEditPrefClassTypes] = useState(profile?.settings?.class_types || []);
   const [editPrefLevels, setEditPrefLevels] = useState(profile?.settings?.preferred_levels || []);
-  const [editSeriesTypes, setEditSeriesTypes] = useState(profile?.settings?.series_types || []);
+  const [editSeriesTypes, setEditSeriesTypes] = useState(
+    profile?.settings?.series_types?.length ? profile.settings.series_types : DEFAULT_STUDIO_SERIES_TYPES
+  );
   const [newPrefZone, setNewPrefZone] = useState('');
   const [newPrefClassType, setNewPrefClassType] = useState('');
   const [newPrefLevel, setNewPrefLevel] = useState('');
   const [newSeriesType, setNewSeriesType] = useState('');
   const [isPublic, setIsPublic] = useState(profile?.is_public || false);
+  const [editBio, setEditBio] = useState(profile?.bio || '');
+  const [editAvatarUrl, setEditAvatarUrl] = useState(profile?.avatar_url || '');
   const [saving, setSaving] = useState(false);
-  const [aiLang, setAiLang] = useState('');
-  const [aiTone, setAiTone] = useState('');
-  const [aiCueStyle, setAiCueStyle] = useState('');
-  const [aiNotes, setAiNotes] = useState('');
+  const [aiProfile, setAiProfile] = useState(() => profile?.settings?.ai_profile || BLANK_AI);
   const toast_ = useToast();
   const confirm_ = useConfirm();
+  const autoSaveTimer = React.useRef(null);
+  const profileMounted = React.useRef(false);
+  const saveRef = React.useRef(null);
 
   const removeZone = async (z) => {
     const affected = series.filter(s => (s.targetZone||"").split(",").map(x=>x.trim()).includes(z));
@@ -3397,34 +3998,46 @@ const ProfilePage = ({ profile, user, onProfileUpdate, studioSettings, aiStyle, 
     setEditSeriesTypes(p => p.filter(x => x !== t));
   };
 
-  useEffect(() => { if (aiStyle) setAiNotes(aiStyle); }, []);
-
   useEffect(() => {
     setEditName(profile?.name || '');
-    setEditPrefZones(profile?.settings?.preferred_zones || []);
+    setEditPrefZones(profile?.settings?.preferred_zones?.length ? profile.settings.preferred_zones : DEFAULT_STUDIO_ZONES);
     setEditPrefClassTypes(profile?.settings?.class_types || []);
     setEditPrefLevels(profile?.settings?.preferred_levels || []);
-    setEditSeriesTypes(profile?.settings?.series_types || []);
+    setEditSeriesTypes(profile?.settings?.series_types?.length ? profile.settings.series_types : DEFAULT_STUDIO_SERIES_TYPES);
+    setAiProfile(profile?.settings?.ai_profile || BLANK_AI);
   }, [profile]);
 
-  const save = async () => {
+  const save = async (opts={}) => {
     setSaving(true);
-    const assembled = [aiLang&&`Ensina em ${aiLang}`, aiTone&&`tom ${aiTone.toLowerCase()}`, aiCueStyle&&`cues ${aiCueStyle.toLowerCase()}`, aiNotes.trim()].filter(Boolean).join('. ');
+    const assembled = aiToString(aiProfile);
     onAiStyleChange?.(assembled);
     const { error } = await supabase.from('profiles').update({
       name: editName,
       is_public: isPublic,
-      settings: { ...(profile?.settings || {}), preferred_zones: editPrefZones, class_types: editPrefClassTypes, preferred_levels: editPrefLevels, series_types: editSeriesTypes },
+      bio: editBio || null,
+      avatar_url: editAvatarUrl || null,
+      settings: { ...(profile?.settings || {}), preferred_zones: editPrefZones, class_types: editPrefClassTypes, preferred_levels: editPrefLevels, series_types: editSeriesTypes, ai_profile: aiProfile },
     }).eq('id', profile.id);
     setSaving(false);
     if (!error) {
-      toast_?.('Perfil guardado');
+      if (!opts.silent) toast_?.('Perfil guardado');
       const updated = await api.loadProfile(user.id);
       onProfileUpdate(updated);
     } else {
       toast_?.('Erro ao guardar perfil');
     }
   };
+
+  useEffect(() => { saveRef.current = save; });
+
+  useEffect(() => {
+    if (!profileMounted.current) { profileMounted.current = true; return; }
+    if (!profile?.id) return;
+    clearTimeout(autoSaveTimer.current);
+    autoSaveTimer.current = setTimeout(() => saveRef.current?.({silent:true}), 1500);
+    return () => clearTimeout(autoSaveTimer.current);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editName, editBio, editAvatarUrl, isPublic, JSON.stringify(editPrefZones), JSON.stringify(editPrefClassTypes), JSON.stringify(editPrefLevels), JSON.stringify(editSeriesTypes), JSON.stringify(aiProfile)]);
 
   const classLevelOptions = studioSettings?.class_levels || DEFAULT_CLASS_LEVELS;
 
@@ -3449,58 +4062,70 @@ const ProfilePage = ({ profile, user, onProfileUpdate, studioSettings, aiStyle, 
 
   return (
     <div style={{ maxWidth: 600 }}>
-      <h2 style={{ fontFamily:"'Clash Display',sans-serif", fontSize: 22, fontWeight: 500, color: C.crimson, marginBottom: 20 }}>O meu perfil</h2>
-      <div style={{ background: C.white, borderRadius: 12, border: `1px solid ${C.stone}`, padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 22 }}>
+      <h2 style={{ fontFamily:"'Clash Display',sans-serif", fontSize: 26, fontWeight: 500, color: C.crimson, marginBottom: 20 }}>O meu perfil</h2>
+      <div style={{ background: C.white, borderRadius: 12, border: `1px solid ${C.stone}`, padding: '4px 24px 20px' }}>
 
-        {/* Nome */}
-        <div>
-          <div style={{ fontSize: 12, fontWeight: 700, color: C.mist, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Nome</div>
-          <input value={editName} onChange={e => setEditName(e.target.value)}
-            style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: `1px solid ${C.stone}`, fontFamily: "'Satoshi',sans-serif", fontSize: 14, outline: 'none', boxSizing: 'border-box' }} />
-        </div>
+        {/* 1. Identidade */}
+        <CollapsibleSection title="Identidade" defaultOpen={false}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {/* Avatar + Nome */}
+            <div style={{display:'flex',gap:16,alignItems:'flex-start'}}>
+              {editAvatarUrl&&<img src={editAvatarUrl} alt="" style={{width:72,height:72,borderRadius:'50%',objectFit:'cover',flexShrink:0,border:`2px solid ${C.stone}`}} onError={e=>{e.target.style.display='none';}}/>}
+              <div style={{flex:1}}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: C.mist, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Nome</div>
+                <input value={editName} onChange={e => setEditName(e.target.value)}
+                  style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: `1px solid ${C.stone}`, fontFamily: "'Satoshi',sans-serif", fontSize: 14, outline: 'none', boxSizing: 'border-box' }} />
+              </div>
+            </div>
+            {/* Foto de perfil */}
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: C.mist, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Foto de perfil (URL)</div>
+              <input value={editAvatarUrl} onChange={e => setEditAvatarUrl(e.target.value)}
+                placeholder="https://…" style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: `1px solid ${C.stone}`, fontFamily: "'Satoshi',sans-serif", fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
+            </div>
+            {/* Bio */}
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: C.mist, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Bio</div>
+              <textarea value={editBio} onChange={e => setEditBio(e.target.value)}
+                placeholder="Apresenta-te brevemente…" rows={3}
+                style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: `1px solid ${C.stone}`, fontFamily: "'Satoshi',sans-serif", fontSize: 13, outline: 'none', resize: 'vertical', boxSizing: 'border-box' }} />
+            </div>
+            {/* Email */}
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: C.mist, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Email</div>
+              <div style={{ fontSize: 14, color: C.mist, padding: '8px 0' }}>{user?.email}</div>
+            </div>
+          </div>
+        </CollapsibleSection>
 
-        {/* Email */}
-        <div>
-          <div style={{ fontSize: 12, fontWeight: 700, color: C.mist, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Email</div>
-          <div style={{ fontSize: 14, color: C.mist, padding: '8px 0' }}>{user?.email}</div>
-        </div>
+        {/* 2. Visibilidade */}
+        <CollapsibleSection title="Visibilidade" defaultOpen={false}>
+          <p style={{fontSize:13,color:C.mist,marginBottom:10,margin:'0 0 10px'}}>Torna o teu perfil público para que outros Instrutores te possam enviar conteúdo diretamente e encontrar-te no Descobrir.</p>
+          <label style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer",userSelect:"none"}}>
+            <input type="checkbox" checked={isPublic} onChange={e=>setIsPublic(e.target.checked)} style={{width:16,height:16,cursor:"pointer",accentColor:C.crimson}}/>
+            <span style={{fontFamily:"'Satoshi',sans-serif",fontSize:13,fontWeight:600,color:C.ink}}>Perfil público</span>
+          </label>
+        </CollapsibleSection>
 
-        {/* Zones */}
-        <div>
-          <div style={{ fontSize: 12, fontWeight: 700, color: C.mist, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Zonas target (corpo)</div>
-          <PillRow items={editPrefZones} onRemove={removeZone}
-            newVal={newPrefZone} onNewVal={setNewPrefZone} placeholder="Adicionar zona…"
-            onAdd={() => { const v = newPrefZone.trim(); if (v && !editPrefZones.map(x => x.toLowerCase()).includes(v.toLowerCase())) { setEditPrefZones(p => [...p, v]); setNewPrefZone(''); } }} />
-        </div>
-
-        {/* Series Types */}
-        <div>
-          <div style={{ fontSize: 12, fontWeight: 700, color: C.mist, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Tipos de série</div>
-          <PillRow items={editSeriesTypes} onRemove={removeSeriesType}
-            newVal={newSeriesType} onNewVal={setNewSeriesType} placeholder="ex. Warm-up, Força, Flow…"
-            onAdd={() => { const v = newSeriesType.trim(); if (v && !editSeriesTypes.map(x => x.toLowerCase()).includes(v.toLowerCase())) { setEditSeriesTypes(p => [...p, v]); setNewSeriesType(''); } }} />
-          {editSeriesTypes.length===0&&<div style={{fontSize:11,color:C.mist,marginTop:4}}>Sem tipos personalizados — usa os padrões: {DEFAULT_SERIES_TYPES.join(', ')}</div>}
-        </div>
-
-        {/* Class Types */}
-        <div>
-          <div style={{ fontSize: 12, fontWeight: 700, color: C.mist, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Tipos de aula</div>
+        {/* 3. Tipos de aula */}
+        <CollapsibleSection title="Tipos de aula" defaultOpen={false}>
           <PillRow items={editPrefClassTypes} onRemove={t => setEditPrefClassTypes(p => p.filter(x => x !== t))}
             newVal={newPrefClassType} onNewVal={setNewPrefClassType} placeholder="Adicionar tipo…"
             onAdd={() => { const v = newPrefClassType.trim(); if (v && !editPrefClassTypes.map(x => x.toLowerCase()).includes(v.toLowerCase())) { setEditPrefClassTypes(p => [...p, v]); setNewPrefClassType(''); } }} />
-        </div>
+        </CollapsibleSection>
 
-        {/* Levels */}
-        <div>
-          <div style={{ fontSize: 12, fontWeight: 700, color: C.mist, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Níveis</div>
+        {/* 4. Níveis de aula */}
+        <CollapsibleSection title="Níveis de aula" defaultOpen={false}>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
             {classLevelOptions.map(lvl => {
               const active = editPrefLevels.includes(lvl);
               return (
-                <button key={lvl} onClick={() => setEditPrefLevels(p => active ? p.filter(x => x !== lvl) : [...p, lvl])}
-                  style={{ padding: '5px 14px', borderRadius: 20, border: `1px solid ${active ? C.crimson : C.stone}`, background: active ? `${C.crimson}15` : 'transparent', color: active ? C.crimson : C.mist, fontWeight: active ? 700 : 500, fontSize: 13, cursor: 'pointer', fontFamily: "'Satoshi',sans-serif" }}>
-                  {lvl}
-                </button>
+                <span key={lvl} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '5px 14px', borderRadius: 20, border: `1px solid ${active ? C.crimson : C.stone}`, background: active ? `${C.crimson}15` : 'transparent', fontFamily: "'Satoshi',sans-serif" }}>
+                  <button onClick={() => setEditPrefLevels(p => active ? p.filter(x => x !== lvl) : [...p, lvl])}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: active ? C.crimson : C.mist, fontWeight: active ? 700 : 500, fontSize: 13, padding: 0, fontFamily: "'Satoshi',sans-serif" }}>
+                    {lvl}
+                  </button>
+                </span>
               );
             })}
           </div>
@@ -3508,117 +4133,152 @@ const ProfilePage = ({ profile, user, onProfileUpdate, studioSettings, aiStyle, 
             onRemove={l => setEditPrefLevels(p => p.filter(x => x !== l))}
             newVal={newPrefLevel} onNewVal={setNewPrefLevel} placeholder="Adicionar nível personalizado…"
             onAdd={() => { const v = newPrefLevel.trim(); if (v && !editPrefLevels.map(x => x.toLowerCase()).includes(v.toLowerCase())) { setEditPrefLevels(p => [...p, v]); setNewPrefLevel(''); } }} />
-        </div>
+        </CollapsibleSection>
 
-        {/* Visibilidade */}
-        <div>
-          <div style={{fontSize:12,fontWeight:700,color:C.mist,textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:10}}>Visibilidade do perfil</div>
-          <p style={{fontSize:13,color:C.mist,marginBottom:10,margin:'0 0 10px'}}>Torna o teu perfil público para que outros Instrutores te possam enviar conteúdo diretamente e encontrar-te no Descobrir.</p>
-          <label style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer",userSelect:"none"}}>
-            <input type="checkbox" checked={isPublic} onChange={e=>setIsPublic(e.target.checked)} style={{width:16,height:16,cursor:"pointer",accentColor:C.crimson}}/>
-            <span style={{fontFamily:"'Satoshi',sans-serif",fontSize:13,fontWeight:600,color:C.ink}}>Perfil público</span>
-          </label>
-        </div>
+        {/* 5. Tipos de série */}
+        <CollapsibleSection title="Tipos de série" defaultOpen={false}>
+          <PillRow items={editSeriesTypes} onRemove={removeSeriesType}
+            newVal={newSeriesType} onNewVal={setNewSeriesType} placeholder="ex. Warm-up, Força, Flow…"
+            onAdd={() => { const v = newSeriesType.trim(); if (v && !editSeriesTypes.map(x => x.toLowerCase()).includes(v.toLowerCase())) { setEditSeriesTypes(p => [...p, v]); setNewSeriesType(''); } }} />
+        </CollapsibleSection>
 
-        {/* AI Style */}
-        <div>
-          <div style={{fontSize:12,fontWeight:700,color:C.mist,textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:12}}>Estilo de ensino para IA</div>
-          <div style={{display:'flex',flexDirection:'column',gap:14,marginBottom:12}}>
-            <div>
-              <div style={{fontSize:12,color:C.mist,marginBottom:6,fontWeight:600}}>Língua de ensino</div>
-              <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
-                {['Português','Inglês','Bilingue'].map(l=>(
-                  <button key={l} onClick={()=>setAiLang(p=>p===l?'':l)} style={{padding:'5px 14px',borderRadius:20,border:`1px solid ${aiLang===l?C.crimson:C.stone}`,background:aiLang===l?`${C.crimson}15`:'transparent',color:aiLang===l?C.crimson:C.mist,fontWeight:aiLang===l?700:500,fontSize:13,cursor:'pointer',fontFamily:"'Satoshi',sans-serif"}}>{l}</button>
-                ))}
-              </div>
-            </div>
-            <div>
-              <div style={{fontSize:12,color:C.mist,marginBottom:6,fontWeight:600}}>Tom</div>
-              <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
-                {['Energético','Calmo','Técnico','Motivacional'].map(t=>(
-                  <button key={t} onClick={()=>setAiTone(p=>p===t?'':t)} style={{padding:'5px 14px',borderRadius:20,border:`1px solid ${aiTone===t?C.crimson:C.stone}`,background:aiTone===t?`${C.crimson}15`:'transparent',color:aiTone===t?C.crimson:C.mist,fontWeight:aiTone===t?700:500,fontSize:13,cursor:'pointer',fontFamily:"'Satoshi',sans-serif"}}>{t}</button>
-                ))}
-              </div>
-            </div>
-            <div>
-              <div style={{fontSize:12,color:C.mist,marginBottom:6,fontWeight:600}}>Estilo de cues</div>
-              <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
-                {['Curtos e directos','Detalhados','Metáforas visuais'].map(s=>(
-                  <button key={s} onClick={()=>setAiCueStyle(p=>p===s?'':s)} style={{padding:'5px 14px',borderRadius:20,border:`1px solid ${aiCueStyle===s?C.crimson:C.stone}`,background:aiCueStyle===s?`${C.crimson}15`:'transparent',color:aiCueStyle===s?C.crimson:C.mist,fontWeight:aiCueStyle===s?700:500,fontSize:13,cursor:'pointer',fontFamily:"'Satoshi',sans-serif"}}>{s}</button>
-                ))}
-              </div>
-            </div>
-            <div>
-              <div style={{fontSize:12,color:C.mist,marginBottom:6,fontWeight:600}}>Notas livres</div>
-              <textarea value={aiNotes} onChange={e=>setAiNotes(e.target.value)} placeholder="ex. nunca cues de perda de peso, usa sempre nomes em português…" rows={3} style={{width:'100%',fontFamily:"'Satoshi',sans-serif",fontSize:13,color:C.ink,border:`1px solid ${C.stone}`,borderRadius:8,padding:'8px 12px',outline:'none',resize:'vertical',boxSizing:'border-box',lineHeight:1.5}}/>
-            </div>
-            {(aiLang||aiTone||aiCueStyle||aiNotes.trim())&&(
-              <div style={{background:C.cream,border:`1px solid ${C.stone}`,borderRadius:8,padding:'10px 14px',fontSize:12,color:C.mist}}>
-                <span style={{fontWeight:700,color:C.ink}}>Preview: </span>
-                {[aiLang&&`Ensina em ${aiLang}`,aiTone&&`tom ${aiTone.toLowerCase()}`,aiCueStyle&&`cues ${aiCueStyle.toLowerCase()}`,aiNotes.trim()].filter(Boolean).join('. ')}
-              </div>
-            )}
-          </div>
-        </div>
+        {/* 6. Zonas target */}
+        <CollapsibleSection title="Zonas target" defaultOpen={false}>
+          <PillRow items={editPrefZones} onRemove={removeZone}
+            newVal={newPrefZone} onNewVal={setNewPrefZone} placeholder="Adicionar zona…"
+            onAdd={() => { const v = newPrefZone.trim(); if (v && !editPrefZones.map(x => x.toLowerCase()).includes(v.toLowerCase())) { setEditPrefZones(p => [...p, v]); setNewPrefZone(''); } }} />
+        </CollapsibleSection>
 
-        <button onClick={save} disabled={saving} style={{ alignSelf: 'flex-start', padding: '9px 24px', borderRadius: 8, border: 'none', background: saving ? C.stone : C.crimson, color: C.cream, fontWeight: 700, fontSize: 13, cursor: saving ? 'not-allowed' : 'pointer', fontFamily: "'Satoshi',sans-serif" }}>
-          {saving ? 'A guardar…' : 'Guardar perfil'}
-        </button>
+        {/* 7. IA — Estilo de instrução */}
+        <CollapsibleSection title="IA — Estilo de instrução" defaultOpen={false}>
+          <AiForm ai={aiProfile} setAi={setAiProfile} />
+          {aiToString(aiProfile) && (
+            <div style={{marginTop:14,background:C.cream,border:`1px solid ${C.stone}`,borderRadius:8,padding:'10px 14px',fontSize:12,color:C.mist}}>
+              <span style={{fontWeight:700,color:C.ink}}>Preview: </span>{aiToString(aiProfile)}
+            </div>
+          )}
+        </CollapsibleSection>
+
+        <div style={{ paddingTop: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <button onClick={save} disabled={saving} style={{ alignSelf: 'flex-start', padding: '9px 24px', borderRadius: 8, border: 'none', background: saving ? C.stone : C.crimson, color: C.cream, fontWeight: 700, fontSize: 13, cursor: saving ? 'not-allowed' : 'pointer', fontFamily: "'Satoshi',sans-serif" }}>
+            {saving ? 'A guardar…' : 'Guardar perfil'}
+          </button>
+          <button onClick={async()=>{ await supabase.auth.signOut(); }} style={{ alignSelf: 'flex-start', marginTop: 8, padding: '9px 24px', borderRadius: 8, border: `1px solid ${C.stone}`, background: 'transparent', color: C.mist, fontWeight: 600, fontSize: 13, cursor: 'pointer', fontFamily: "'Satoshi',sans-serif" }}>
+            Sair da conta
+          </button>
+        </div>
       </div>
     </div>
   );
 };
 
-const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotification, onSaveSeries, onSaveClass, onDeleteSeries, onDeleteClass, onViewAula, allSeries=[] }) => {
-  const [activeTab, setActiveTab] = useState('series');
+const buildTourSlides = (isInst, isStud) => {
+  const s = [];
+  if (isInst) {
+    s.push(
+      { tab:'home',    title:'Início',               body:'As tuas aulas recentes, partilhas recebidas e avisos do studio.' },
+      { tab:'library', title:'Biblioteca de séries',  body:'Cria e organiza séries por zona, tipo e estado. Marca como WIP enquanto constróis e Pronta quando está completa.' },
+      { tab:'library', action:'openNewSeries', title:'Edição de série',        body:'Abre qualquer série para editar movimentos, timing e cues de transição. A IA sugere cues com base no teu estilo de instrução.' },
+      { tab:'builder', title:'Planeamento de aulas',  body:'Combina séries para criar aulas completas. Filtra por nível e regista datas.' },
+      { tab:'builder', action:'openNewClass',  title:'Edição de aula',         body:'Abre uma aula para ver a sequência de séries, ajustar a ordem e consultar o histórico de datas de ensino.' },
+    );
+  }
+  s.push({ tab:'studio', studioTab:'series', title:'Biblioteca do estúdio', body:'Séries e aulas aprovadas pelo studio, disponíveis para toda a equipa.' });
+  if (isStud) {
+    s.push(
+      { tab:'studio', studioTab:'members',  title:'Membros do studio',  body:'Gere os instrutores da equipa — aprova pedidos de entrada e atribui papéis.' },
+      { tab:'studio', studioTab:'reviews',  title:'Revisões',           body:'Aprova ou rejeita séries e aulas com comentários. O instrutor recebe notificação imediata.' },
+      { tab:'studio', studioTab:'settings', title:'Configurações',      body:'Define tipos de aula, zonas, o código de convite e o perfil público do studio.' },
+    );
+  }
+  if (isInst) {
+    s.push({ tab:'discover', title:'Descobrir', body:'Explora séries públicas de outros instrutores e recebe partilhas directas para a tua biblioteca.' });
+  }
+  return s;
+};
+
+const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotification, onSaveSeries, onSaveClass, onSaveStudioSeries, onSaveStudioClass, onDeleteSeries, onDeleteClass, onViewAula, allSeries=[], allClasses=[], onPublishSeries, onPublishClass, activeTab='series', onTabChange }) => {
+  const setActiveTab = onTabChange || (() => {});
+  const [submitModal, setSubmitModal] = useState(false); // picker modal
+  const [submitTab, setSubmitTab] = useState('series'); // 'series' | 'classes'
   const [members, setMembers] = useState([]);
   const [rejectingItem, setRejectingItem] = useState(null);
   const [savingFeatured, setSavingFeatured] = useState(false);
   const [expandedSeriesId, setExpandedSeriesId] = useState(null); // series id shown expanded in reviews/library
   const [editingStudioSeriesId, setEditingStudioSeriesId] = useState(null); // series id being edited inline
   const [newStudioClassType, setNewStudioClassType] = useState(null); // 'reformer'|'barre'|'signature' for creating
+  const [showSeriesTypePicker, setShowSeriesTypePicker] = useState(false);
+  const [showClassTypePicker, setShowClassTypePicker] = useState(false);
   const [loading, setLoading] = useState(true);
   const [studioSeries, setStudioSeries] = useState([]);
   const [studioClasses, setStudioClasses] = useState([]);
   const [pendingSeries, setPendingSeries] = useState([]);
   const [pendingClasses, setPendingClasses] = useState([]);
+  const [rejectionLog, setRejectionLog] = useState([]);
+  const [pendingDeletion, setPendingDeletion] = useState([]);
   const [loadingContent, setLoadingContent] = useState(false);
   const [joinSlug, setJoinSlug] = useState('');
   const [joinError, setJoinError] = useState('');
   const [joining, setJoining] = useState(false);
+  const [notices, setNotices] = useState([]);
+  const [newNoticeTitle, setNewNoticeTitle] = useState('');
+  const [newNoticeBody, setNewNoticeBody] = useState('');
+  const [postingNotice, setPostingNotice] = useState(false);
+  const [pendingMembers, setPendingMembers] = useState([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [editClassTypes, setEditClassTypes] = useState([]);
   const [editZones, setEditZones] = useState([]);
   const [editClassLevels, setEditClassLevels] = useState([]);
+  const [editSeriesTypes, setEditSeriesTypes] = useState([]);
+  const [editStudioCode, setEditStudioCode] = useState('');
   const [newClassType, setNewClassType] = useState('');
   const [newZone, setNewZone] = useState('');
   const [newClassLevel, setNewClassLevel] = useState('');
+  const [newSeriesType, setNewSeriesType] = useState('');
   const [savingSettings, setSavingSettings] = useState(false);
   const [editGuidelines, setEditGuidelines] = useState('');
+  const [editStudioAiProfile, setEditStudioAiProfile] = useState(BLANK_AI);
+  const [editStudioDescription, setEditStudioDescription] = useState('');
+  const [editStudioLogoUrl, setEditStudioLogoUrl] = useState('');
+  const [editStudioContact, setEditStudioContact] = useState({email:'',phone:'',website:'',instagram:''});
   const toast_ = useToast();
   const confirm_ = useConfirm();
 
   const studio = profile?.studios;
   const isAdmin = ['admin', 'studio_owner', 'super_admin', 'backoffice_admin'].includes(profile?.role);
+  const isOwner = ['studio_owner', 'super_admin', 'backoffice_admin', 'owner'].includes(profile?.role)
+    || (profile?.studioMemberships?.find(m => m.studio_id === profile?.studio_id)?.role === 'owner');
 
   useEffect(() => {
     if (studio?.settings) {
       setEditClassTypes(studio.settings.class_types || DEFAULT_STUDIO_CLASS_TYPES);
       setEditZones(studio.settings.zones || DEFAULT_STUDIO_ZONES);
       setEditClassLevels(studio.settings.class_levels || DEFAULT_CLASS_LEVELS);
+      setEditSeriesTypes(studio.settings.series_types || DEFAULT_STUDIO_SERIES_TYPES);
       setEditGuidelines(studio.settings.guidelines || '');
+      setEditStudioAiProfile(studio.settings.ai_profile || BLANK_AI);
     } else {
       setEditClassTypes(DEFAULT_STUDIO_CLASS_TYPES);
       setEditZones(DEFAULT_STUDIO_ZONES);
       setEditClassLevels(DEFAULT_CLASS_LEVELS);
+      setEditSeriesTypes(DEFAULT_STUDIO_SERIES_TYPES);
       setEditGuidelines('');
+      setEditStudioAiProfile(BLANK_AI);
     }
+    setEditStudioCode(studio?.studio_code || '');
+    setEditStudioDescription(studio?.description || '');
+    setEditStudioLogoUrl(studio?.logo_url || '');
+    setEditStudioContact(studio?.contact || {email:'',phone:'',website:'',instagram:''});
   }, [studio]);
 
   const saveSettings = async () => {
     setSavingSettings(true);
     const { error } = await supabase.from('studios').update({
-      settings: { ...(studio?.settings || {}), class_types: editClassTypes, zones: editZones, class_levels: editClassLevels, guidelines: editGuidelines },
+      settings: { ...(studio?.settings || {}), class_types: editClassTypes, zones: editZones, class_levels: editClassLevels, series_types: editSeriesTypes, ai_profile: editStudioAiProfile, guidelines: editGuidelines },
+      description: editStudioDescription || null,
+      logo_url: editStudioLogoUrl || null,
+      contact: editStudioContact,
+      ...(editStudioCode.trim() ? { studio_code: editStudioCode.trim().toUpperCase() } : {}),
     }).eq('id', profile.studio_id);
     setSavingSettings(false);
     if (!error) {
@@ -3634,7 +4294,13 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
     if (!profile?.studio_id) { setLoading(false); return; }
     supabase.from('profiles').select('id, name, role, created_at').eq('studio_id', profile.studio_id)
       .then(({ data }) => { setMembers(data || []); setLoading(false); });
-  }, [profile?.studio_id]);
+    supabase.from('studio_notices').select('*, profiles(name)').eq('studio_id', profile.studio_id).order('created_at', { ascending: false })
+      .then(({ data }) => setNotices(data || []));
+    if (isAdmin) {
+      supabase.from('studio_memberships').select('*, profiles(id, name)').eq('studio_id', profile.studio_id).eq('status', 'pending')
+        .then(({ data }) => setPendingMembers(data || []));
+    }
+  }, [profile?.studio_id, isAdmin]);
 
   useEffect(() => {
     if (!profile?.studio_id) return;
@@ -3645,13 +4311,15 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
       ...(isAdmin ? [
         supabase.from('series').select('*, profiles(name)').eq('studio_id', profile.studio_id).eq('visibility', 'pending_studio'),
         supabase.from('classes').select('*, profiles(name)').eq('studio_id', profile.studio_id).eq('visibility', 'pending_studio'),
+        supabase.from('rejection_log').select('*').eq('studio_id', profile.studio_id).order('rejected_at', { ascending: false }),
       ] : []),
     ]).then(([serRes, clsRes, ...rest]) => {
       setStudioSeries(serRes.data || []);
       setStudioClasses(clsRes.data || []);
-      if (isAdmin && rest.length >= 2) {
+      if (isAdmin && rest.length >= 3) {
         setPendingSeries(rest[0].data || []);
         setPendingClasses(rest[1].data || []);
+        setRejectionLog(rest[2].data || []);
       }
       setLoadingContent(false);
     });
@@ -3665,13 +4333,21 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
       ...(isAdmin ? [
         supabase.from('series').select('*, profiles(name)').eq('studio_id', profile.studio_id).eq('visibility', 'pending_studio'),
         supabase.from('classes').select('*, profiles(name)').eq('studio_id', profile.studio_id).eq('visibility', 'pending_studio'),
+        supabase.from('rejection_log').select('*').eq('studio_id', profile.studio_id).order('rejected_at', { ascending: false }),
+        supabase.from('series').select('*, profiles(name)').eq('studio_id', profile.studio_id).eq('deleted_by_instructor', true),
+        supabase.from('classes').select('*, profiles(name)').eq('studio_id', profile.studio_id).eq('deleted_by_instructor', true),
       ] : []),
     ]).then(([serRes, clsRes, ...rest]) => {
       setStudioSeries(serRes.data || []);
       setStudioClasses(clsRes.data || []);
-      if (isAdmin && rest.length >= 2) {
+      if (isAdmin && rest.length >= 5) {
         setPendingSeries(rest[0].data || []);
         setPendingClasses(rest[1].data || []);
+        setRejectionLog(rest[2].data || []);
+        setPendingDeletion([
+          ...(rest[3].data||[]).map(s=>({...s,_type:'series'})),
+          ...(rest[4].data||[]).map(c=>({...c,_type:'class'})),
+        ]);
       }
     });
   };
@@ -3685,6 +4361,15 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
 
   const rejectSeries = async (s, comment) => {
     await supabase.from('series').update({ visibility: 'personal', studio_id: null, studio_comment: comment||null }).eq('id', s.id);
+    await supabase.from('rejection_log').insert({
+      studio_id: profile.studio_id,
+      item_type: 'series',
+      item_name: s.name || '(sem nome)',
+      item_type_value: s.type || null,
+      zones: s.target_zone || s.primary_zone || null,
+      level: null,
+      comment: comment || null,
+    });
     toast_?.('Série devolvida ao Instructor');
     if (s.created_by) sendNotification?.(s.created_by, 'series_rejected', 'Série devolvida', `"${s.name}" foi devolvida pelo studio${comment?': '+comment:''}`, 'series', s.id);
     setRejectingItem(null);
@@ -3700,9 +4385,79 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
 
   const rejectClass = async (c, comment) => {
     await supabase.from('classes').update({ visibility: 'personal', studio_id: null, studio_comment: comment||null }).eq('id', c.id);
+    await supabase.from('rejection_log').insert({
+      studio_id: profile.studio_id,
+      item_type: 'class',
+      item_name: c.name || '(sem nome)',
+      item_type_value: c.type || null,
+      zones: null,
+      level: c.level || null,
+      comment: comment || null,
+    });
     toast_?.('Aula devolvida ao Instructor');
     if (c.created_by) sendNotification?.(c.created_by, 'class_rejected', 'Aula devolvida', `"${c.name||'Aula'}" foi devolvida pelo studio${comment?': '+comment:''}`, 'class', c.id);
     setRejectingItem(null);
+    refreshContent();
+  };
+
+  const removeSeriesFromStudio = async seriesId => {
+    await supabase.from('series').update({ visibility: 'personal', studio_id: null }).eq('id', seriesId);
+    toast_?.('Série removida do studio');
+    refreshContent();
+  };
+
+  const removeClassFromStudio = async classId => {
+    await supabase.from('classes').update({ visibility: 'personal', studio_id: null }).eq('id', classId);
+    toast_?.('Aula removida do studio');
+    refreshContent();
+  };
+
+  const postNotice = async () => {
+    if (!newNoticeTitle.trim()) return;
+    setPostingNotice(true);
+    const { data } = await supabase.from('studio_notices').insert({
+      studio_id: profile.studio_id,
+      title: newNoticeTitle.trim(),
+      body: newNoticeBody.trim() || null,
+      created_by: user.id,
+    }).select('*, profiles(name)').single();
+    if (data) {
+      setNotices(p => [data, ...p]);
+      const { data: members } = await supabase.from('profiles').select('id').eq('studio_id', profile.studio_id);
+      for (const m of members || []) {
+        if (m.id !== user.id) {
+          await supabase.from('notifications').insert({
+            user_id: m.id, type: 'studio_notice', read: false,
+            title: 'Novo aviso do studio',
+            body: newNoticeTitle.trim(),
+            item_type: 'notice', item_id: data.id,
+            created_at: new Date().toISOString(),
+          });
+        }
+      }
+      setNewNoticeTitle('');
+      setNewNoticeBody('');
+    }
+    setPostingNotice(false);
+  };
+
+  const confirmDeleteFromStudio = async (item) => {
+    if (item._type === 'series') {
+      await supabase.from('series').delete().eq('id', item.id);
+    } else {
+      await supabase.from('classes').delete().eq('id', item.id);
+    }
+    toast_?.('Eliminado permanentemente');
+    refreshContent();
+  };
+
+  const keepInStudio = async (item) => {
+    if (item._type === 'series') {
+      await supabase.from('series').update({ deleted_by_instructor: false }).eq('id', item.id);
+    } else {
+      await supabase.from('classes').update({ deleted_by_instructor: false }).eq('id', item.id);
+    }
+    toast_?.('Mantido no studio');
     refreshContent();
   };
 
@@ -3771,7 +4526,7 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
 
   if (!profile?.studio_id) return (
     <div style={{ maxWidth: 500, margin: '40px auto' }}>
-      <h2 style={{ fontFamily:"'Clash Display',sans-serif", fontSize: 22, fontWeight: 500, color: C.crimson, marginBottom: 4 }}>Studio</h2>
+      <h2 style={{ fontFamily:"'Clash Display',sans-serif", fontSize: 26, fontWeight: 500, color: C.crimson, marginBottom: 4 }}>Studio</h2>
       <p style={{ color: C.mist, fontSize: 13, marginBottom: 24 }}>Ainda não fazes parte de um studio. Cria um novo ou junta-te a um existente.</p>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         <div style={{ background: C.white, borderRadius: 12, border: `1px solid ${C.stone}`, padding: 20 }}>
@@ -3797,8 +4552,9 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
     { key: 'series', label: 'Séries do Studio' },
     { key: 'classes', label: 'Aulas do Studio' },
     { key: 'members', label: 'Membros' },
-    ...(isAdmin ? [{ key: 'reviews', label: `Revisões${pendingSeries.length+pendingClasses.length>0?' ('+String(pendingSeries.length+pendingClasses.length)+')':''}` }] : []),
-    ...(isAdmin ? [{ key: 'settings', label: 'Definições' }] : []),
+    { key: 'notices', label: 'Avisos' },
+    ...(isAdmin ? [{ key: 'reviews', label: `Revisões${pendingSeries.length+pendingClasses.length+pendingDeletion.length>0?' ('+(pendingSeries.length+pendingClasses.length+pendingDeletion.length)+')':''}` }] : []),
+    ...(isOwner ? [{ key: 'settings', label: 'Definições' }] : []),
   ];
 
   const TabBtn = ({ tabKey, label }) => (
@@ -3817,18 +4573,25 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
         <div style={{ flex: 1 }}>
-          <h2 style={{ fontFamily:"'Clash Display',sans-serif", fontSize: 22, fontWeight: 500, color: C.crimson, margin: 0 }}>{studio?.name || 'Studio'}</h2>
+          <h2 style={{ fontFamily:"'Clash Display',sans-serif", fontSize: 26, fontWeight: 500, color: C.crimson, margin: 0 }}>{studio?.name || 'Studio'}</h2>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
             <span style={{ fontSize: 12, color: C.mist }}>Código:</span>
             <code style={{ fontSize: 12, background: C.stone, padding: '2px 8px', borderRadius: 6, color: C.ink }}>{studio?.slug}</code>
             <button onClick={copySlug} style={{ background: 'none', border: 'none', color: C.crimson, fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>Copiar</button>
           </div>
         </div>
-        {(isAdmin || profile?.role === 'studio_owner') && (
-          <button onClick={generateInvite} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: C.crimson, color: C.cream, fontWeight: 700, fontSize: 12, cursor: 'pointer', fontFamily: "'Satoshi',sans-serif", whiteSpace: 'nowrap' }}>
-            + Convidar
-          </button>
-        )}
+        <div style={{display:'flex',gap:8}}>
+          {!isAdmin&&(onPublishSeries||onPublishClass)&&(
+            <button onClick={()=>setSubmitModal(true)} style={{ padding: '8px 16px', borderRadius: 8, border: `1px solid ${C.crimson}`, background: 'transparent', color: C.crimson, fontWeight: 700, fontSize: 12, cursor: 'pointer', fontFamily: "'Satoshi',sans-serif", whiteSpace: 'nowrap' }}>
+              ↑ Submeter
+            </button>
+          )}
+          {(isAdmin || profile?.role === 'studio_owner') && (
+            <button onClick={generateInvite} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: C.crimson, color: C.cream, fontWeight: 700, fontSize: 12, cursor: 'pointer', fontFamily: "'Satoshi',sans-serif", whiteSpace: 'nowrap' }}>
+              + Convidar
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Sub-tabs */}
@@ -3840,18 +4603,26 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
       {activeTab==='series'&&(
         <div style={{display:'flex',flexDirection:'column',gap:24}}>
           {/* Create new studio series */}
-          {isAdmin&&onSaveSeries&&(
-            <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
-              {['reformer','barre','signature'].map(t=>(
-                <button key={t} onClick={async()=>{
-                  const newS = { id:`s-${Date.now()}`, name:'', type:t, movements:[], visibility:'studio', studio_id:profile.studio_id, created_by:user.id, updated_at:new Date().toISOString() };
-                  await onSaveSeries(newS);
-                  setEditingStudioSeriesId(newS.id);
-                  refreshContent();
-                }} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:'6px 14px',borderRadius:8,border:`1px solid ${t==='signature'?C.sig:t==='reformer'?C.reformer:'#c0507a'}`,background:'transparent',color:t==='signature'?'#7a4010':t==='reformer'?C.reformer:'#c0507a',cursor:'pointer'}}>
-                  + Nova série {t==='signature'?'Signature':t==='reformer'?'Reformer':'Barre'}
-                </button>
-              ))}
+          {isAdmin&&onSaveStudioSeries&&(
+            <div style={{display:'flex',flexDirection:'column',gap:8}}>
+              <button onClick={()=>setShowSeriesTypePicker(p=>!p)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:13,fontWeight:700,padding:'7px 16px',borderRadius:8,border:'none',background:C.crimson,color:C.cream,cursor:'pointer',display:'inline-flex',alignItems:'center',gap:6,alignSelf:'flex-start'}}>
+                + Nova Série
+              </button>
+              {showSeriesTypePicker&&(
+                <div style={{display:'flex',gap:8,flexWrap:'wrap',padding:'10px 14px',background:C.white,borderRadius:10,border:`1px solid ${C.stone}`,alignItems:'center'}}>
+                  <span style={{fontSize:12,fontWeight:700,color:C.mist,fontFamily:"'Satoshi',sans-serif"}}>Tipo:</span>
+                  {[['reformer','Reformer'],['barre','Barre'],['signature','✦ Signature']].map(([t,lbl])=>(
+                    <button key={t} onClick={async()=>{
+                      const newS = { id:`s-${Date.now()}`, name:'', type:t, movements:[], visibility:'studio', studioId:profile.studio_id, createdBy:user.id, updated_at:new Date().toISOString() };
+                      await onSaveStudioSeries(newS);
+                      setEditingStudioSeriesId(newS.id);
+                      setShowSeriesTypePicker(false);
+                      refreshContent();
+                    }} style={{padding:'6px 16px',borderRadius:20,border:`1px solid ${t==='signature'?C.sig:C.stone}`,background:'transparent',color:t==='signature'?'#7a4010':C.ink,fontWeight:600,fontSize:13,cursor:'pointer',fontFamily:"'Satoshi',sans-serif"}}>{lbl}</button>
+                  ))}
+                  <button onClick={()=>setShowSeriesTypePicker(false)} style={{marginLeft:'auto',background:'none',border:'none',cursor:'pointer',color:C.mist,fontSize:16,padding:'0 4px'}}>×</button>
+                </div>
+              )}
             </div>
           )}
           {/* Recently added + all */}
@@ -3873,6 +4644,7 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
                         </div>
                         {s.type&&<span style={{fontSize:10,fontWeight:700,color:typeColor(s.type),background:`${typeColor(s.type)}15`,border:`1px solid ${typeColor(s.type)}40`,borderRadius:20,padding:'2px 7px',textTransform:'uppercase',flexShrink:0}}>{s.type}</span>}
                         {onCopyToLibrary&&<button onClick={e=>{e.stopPropagation();onCopyToLibrary(s);}} style={{fontSize:10,padding:'3px 9px',borderRadius:8,border:`1px solid ${C.stone}`,background:'transparent',color:C.ink,cursor:'pointer',fontFamily:"'Satoshi',sans-serif",fontWeight:600,flexShrink:0}}>Copiar</button>}
+                        {isAdmin&&<button onClick={e=>{e.stopPropagation();removeSeriesFromStudio(s.id);}} style={{fontSize:10,padding:'3px 9px',borderRadius:8,border:`1px solid #fca5a5`,background:'transparent',color:'#b91c1c',cursor:'pointer',fontFamily:"'Satoshi',sans-serif",fontWeight:600,flexShrink:0}}>Remover</button>}
                         {isAdmin&&<button onClick={e=>{e.stopPropagation();toggleFeatured(s.id,'series');}} title={isFeat?'Remover destaque':'Destacar'} style={{fontSize:13,background:'none',border:'none',cursor:'pointer',color:isFeat?'#f59e0b':C.stone,padding:'2px',flexShrink:0}}>★</button>}
                         {isFeat&&<span style={{fontSize:10,color:'#b45309',flexShrink:0}}>Em destaque</span>}
                         <span style={{color:C.mist,fontSize:12,flexShrink:0}}>{isExpanded?'▲':'▼'}</span>
@@ -3880,9 +4652,9 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
                       {isExpanded&&(
                         <div style={{borderTop:`1px solid ${C.stone}`,padding:'0 8px 8px'}}>
                           {editingStudioSeriesId===s.id ? (
-                            <SeriesEditor series={sObj} onSave={updated=>{onSaveSeries?.(updated);setEditingStudioSeriesId(null);refreshContent();}} onCancel={()=>setEditingStudioSeriesId(null)} aiStyle="" studioSettings={studio?.settings}/>
+                            <SeriesEditor series={sObj} onSave={updated=>{onSaveStudioSeries?.(updated);setEditingStudioSeriesId(null);refreshContent();}} onCancel={()=>setEditingStudioSeriesId(null)} aiStyle="" studioSettings={studio?.settings}/>
                           ) : (
-                            <SeriesCard series={sObj} onEdit={isAdmin&&onSaveSeries?()=>setEditingStudioSeriesId(s.id):null} onDelete={isAdmin&&onDeleteSeries?()=>onDeleteSeries(s.id).then(refreshContent):null} onUpdateSeries={updated=>{onSaveSeries?.(updated);refreshContent();}} aiStyle="" hasStudio={false} currentUserId={user.id} compact={false}/>
+                            <SeriesCard series={sObj} onEdit={isAdmin&&onSaveStudioSeries?()=>setEditingStudioSeriesId(s.id):null} onDelete={isAdmin&&onDeleteSeries?()=>onDeleteSeries(s.id).then(refreshContent):null} onUpdateSeries={updated=>{onSaveStudioSeries?.(updated);refreshContent();}} aiStyle="" hasStudio={false} currentUserId={user.id} compact={false}/>
                           )}
                         </div>
                       )}
@@ -3893,7 +4665,7 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
             </div>
           )}
           {loadingContent&&<div style={{color:C.mist,fontSize:13}}>A carregar…</div>}
-          {!loadingContent&&studioSeries.length===0&&<div style={{color:C.mist,fontSize:13,padding:'24px 0'}}>Ainda não há séries no studio. {isAdmin&&onSaveSeries?'Cria a primeira série acima.':''}</div>}
+          {!loadingContent&&studioSeries.length===0&&<div style={{color:C.mist,fontSize:13,padding:'24px 0'}}>Ainda não há séries no studio. {isAdmin&&onSaveStudioSeries?'Cria a primeira série acima.':''}</div>}
         </div>
       )}
 
@@ -3901,18 +4673,26 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
       {activeTab==='classes'&&(
         <div style={{display:'flex',flexDirection:'column',gap:24}}>
           {/* Create new studio class */}
-          {isAdmin&&onSaveClass&&onViewAula&&(
-            <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
-              {['reformer','barre','signature'].map(t=>(
-                <button key={t} onClick={async()=>{
-                  const now=new Date().toISOString().split('T')[0];
-                  const newC = { id:`c-${Date.now()}`, name:'', type:t, seriesIds:[], date:now, visibility:'studio', studio_id:profile.studio_id, created_by:user.id };
-                  await onSaveClass(newC);
-                  onViewAula(newC);
-                }} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:'6px 14px',borderRadius:8,border:`1px solid ${t==='signature'?C.sig:t==='reformer'?C.reformer:'#c0507a'}`,background:'transparent',color:t==='signature'?'#7a4010':t==='reformer'?C.reformer:'#c0507a',cursor:'pointer'}}>
-                  + Nova aula {t==='signature'?'Signature':t==='reformer'?'Reformer':'Barre'}
-                </button>
-              ))}
+          {isAdmin&&onSaveStudioClass&&onViewAula&&(
+            <div style={{display:'flex',flexDirection:'column',gap:8}}>
+              <button onClick={()=>setShowClassTypePicker(p=>!p)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:13,fontWeight:700,padding:'7px 16px',borderRadius:8,border:'none',background:C.crimson,color:C.cream,cursor:'pointer',display:'inline-flex',alignItems:'center',gap:6,alignSelf:'flex-start'}}>
+                + Nova Aula
+              </button>
+              {showClassTypePicker&&(
+                <div style={{display:'flex',gap:8,flexWrap:'wrap',padding:'10px 14px',background:C.white,borderRadius:10,border:`1px solid ${C.stone}`,alignItems:'center'}}>
+                  <span style={{fontSize:12,fontWeight:700,color:C.mist,fontFamily:"'Satoshi',sans-serif"}}>Tipo:</span>
+                  {[['reformer','Reformer'],['barre','Barre'],['signature','✦ Signature']].map(([t,lbl])=>(
+                    <button key={t} onClick={async()=>{
+                      const now=new Date().toISOString().split('T')[0];
+                      const newC = { id:`c-${Date.now()}`, name:'', type:t, seriesIds:[], date:now, visibility:'studio', studio_id:profile.studio_id, created_by:user.id };
+                      await onSaveStudioClass(newC);
+                      onViewAula(newC);
+                      setShowClassTypePicker(false);
+                    }} style={{padding:'6px 16px',borderRadius:20,border:`1px solid ${t==='signature'?C.sig:C.stone}`,background:'transparent',color:t==='signature'?'#7a4010':C.ink,fontWeight:600,fontSize:13,cursor:'pointer',fontFamily:"'Satoshi',sans-serif"}}>{lbl}</button>
+                  ))}
+                  <button onClick={()=>setShowClassTypePicker(false)} style={{marginLeft:'auto',background:'none',border:'none',cursor:'pointer',color:C.mist,fontSize:16,padding:'0 4px'}}>×</button>
+                </div>
+              )}
             </div>
           )}
           {/* All classes */}
@@ -3933,6 +4713,7 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
                       {c.level&&<span style={{fontSize:10,color:C.mist,background:C.stone,borderRadius:20,padding:'2px 8px',flexShrink:0}}>{c.level}</span>}
                       {onCopyToLibrary&&<button onClick={()=>onCopyToLibrary(c)} style={{fontSize:10,padding:'3px 9px',borderRadius:8,border:`1px solid ${C.stone}`,background:'transparent',color:C.ink,cursor:'pointer',fontFamily:"'Satoshi',sans-serif",fontWeight:600,flexShrink:0}}>Copiar</button>}
                       {onViewAula&&<button onClick={()=>onViewAula(classFromDB(c))} style={{fontSize:10,padding:'3px 9px',borderRadius:8,border:`1px solid ${C.neutral}`,background:'transparent',color:C.neutral,cursor:'pointer',fontFamily:"'Satoshi',sans-serif",fontWeight:600,flexShrink:0}}>Ver →</button>}
+                      {isAdmin&&<button onClick={()=>removeClassFromStudio(c.id)} style={{fontSize:10,padding:'3px 9px',borderRadius:8,border:`1px solid #fca5a5`,background:'transparent',color:'#b91c1c',cursor:'pointer',fontFamily:"'Satoshi',sans-serif",fontWeight:600,flexShrink:0}}>Remover</button>}
                       {isAdmin&&<button onClick={()=>toggleFeatured(c.id,'class')} title={isFeat?'Remover destaque':'Destacar'} style={{fontSize:13,background:'none',border:'none',cursor:'pointer',color:isFeat?'#f59e0b':C.stone,padding:'2px',flexShrink:0}}>★</button>}
                       {isFeat&&<span style={{fontSize:10,color:'#b45309',flexShrink:0}}>Em destaque</span>}
                     </div>
@@ -3949,6 +4730,30 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
       {/* ── Membros ── */}
       {activeTab==='members'&&(
         <div>
+          {isAdmin && pendingMembers.length > 0 && (
+            <div style={{ background: '#fefce8', border: '1px solid #fde047', borderRadius: 10, padding: '14px 16px', marginBottom: 16 }}>
+              <div style={{ fontFamily: "'Clash Display',sans-serif", fontSize: 14, fontWeight: 600, color: '#854d0e', marginBottom: 10 }}>
+                Pedidos de entrada ({pendingMembers.length})
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {pendingMembers.map(m => (
+                  <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{ flex: 1, fontFamily: "'Satoshi',sans-serif", fontSize: 14, color: C.ink, fontWeight: 600 }}>{m.profiles?.name || 'Sem nome'}</div>
+                    <button onClick={async () => {
+                      await supabase.from('studio_memberships').update({ status: 'active' }).eq('id', m.id);
+                      await supabase.from('profiles').update({ studio_id: profile.studio_id }).eq('id', m.profiles?.id || m.user_id);
+                      setPendingMembers(p => p.filter(x => x.id !== m.id));
+                      await supabase.from('notifications').insert({ user_id: m.user_id, type: 'join_approved', read: false, title: 'Pedido aprovado', body: `O teu pedido para entrar no studio foi aprovado.`, item_type: 'studio', item_id: profile.studio_id, created_at: new Date().toISOString() });
+                    }} style={{ padding: '5px 14px', borderRadius: 8, border: 'none', background: '#16a34a', color: '#fff', fontWeight: 700, fontSize: 12, cursor: 'pointer', fontFamily: "'Satoshi',sans-serif" }}>Aprovar</button>
+                    <button onClick={async () => {
+                      await supabase.from('studio_memberships').delete().eq('id', m.id);
+                      setPendingMembers(p => p.filter(x => x.id !== m.id));
+                    }} style={{ padding: '5px 14px', borderRadius: 8, border: `1px solid ${C.stone}`, background: 'transparent', color: C.mist, fontWeight: 600, fontSize: 12, cursor: 'pointer', fontFamily: "'Satoshi',sans-serif" }}>Rejeitar</button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           <div style={{ background: C.white, borderRadius: 12, border: `1px solid ${C.stone}`, overflow: 'hidden' }}>
             <div style={{ padding: '14px 20px', borderBottom: `1px solid ${C.stone}`, fontWeight: 700, fontSize: 13, color: C.mist, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
               Membros ({members.length})
@@ -3971,6 +4776,53 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* ── Avisos ── */}
+      {activeTab==='notices'&&(
+        <div>
+          {isAdmin && (
+            <div style={{ background: C.white, borderRadius: 12, border: `1px solid ${C.stone}`, padding: '20px', marginBottom: 20 }}>
+              <div style={{ fontFamily: "'Clash Display',sans-serif", fontSize: 16, fontWeight: 600, color: C.ink, marginBottom: 14 }}>Publicar aviso</div>
+              <input
+                value={newNoticeTitle}
+                onChange={e => setNewNoticeTitle(e.target.value)}
+                placeholder="Título do aviso…"
+                style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: `1px solid ${C.stone}`, fontFamily: "'Satoshi',sans-serif", fontSize: 14, outline: 'none', boxSizing: 'border-box', marginBottom: 10 }}
+              />
+              <textarea
+                value={newNoticeBody}
+                onChange={e => setNewNoticeBody(e.target.value)}
+                placeholder="Corpo do aviso (opcional)…"
+                rows={3}
+                style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: `1px solid ${C.stone}`, fontFamily: "'Satoshi',sans-serif", fontSize: 13, outline: 'none', resize: 'vertical', boxSizing: 'border-box', marginBottom: 12 }}
+              />
+              <button onClick={postNotice} disabled={postingNotice || !newNoticeTitle.trim()} style={{ padding: '9px 22px', borderRadius: 8, border: 'none', background: postingNotice || !newNoticeTitle.trim() ? C.stone : C.crimson, color: C.cream, fontWeight: 700, fontSize: 13, cursor: postingNotice || !newNoticeTitle.trim() ? 'not-allowed' : 'pointer', fontFamily: "'Satoshi',sans-serif" }}>
+                {postingNotice ? 'A publicar…' : 'Publicar aviso'}
+              </button>
+            </div>
+          )}
+          {notices.length === 0 ? (
+            <div style={{ fontSize: 13, color: C.mist, textAlign: 'center', padding: 32 }}>Nenhum aviso publicado.</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {notices.map(n => (
+                <div key={n.id} style={{ background: C.white, borderRadius: 10, border: `1px solid ${C.stone}`, padding: '14px 16px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                    <div style={{ fontFamily: "'Clash Display',sans-serif", fontSize: 15, fontWeight: 600, color: C.ink }}>{n.title}</div>
+                    {isAdmin && (
+                      <button onClick={async () => { await supabase.from('studio_notices').delete().eq('id', n.id); setNotices(p => p.filter(x => x.id !== n.id)); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.mist, fontSize: 16, lineHeight: 1, padding: 0, flexShrink: 0 }}>×</button>
+                    )}
+                  </div>
+                  {n.body && <div style={{ fontSize: 13, color: C.mist, marginTop: 6, lineHeight: 1.5 }}>{n.body}</div>}
+                  <div style={{ fontSize: 11, color: C.mist, marginTop: 8 }}>
+                    {n.profiles?.name} · {new Date(n.created_at).toLocaleDateString('pt-PT')}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -4036,7 +4888,7 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
                         </div>
                         {c.type&&<span style={{fontSize:10,fontWeight:700,color:typeColor(c.type),background:`${typeColor(c.type)}15`,border:`1px solid ${typeColor(c.type)}40`,borderRadius:20,padding:'2px 8px',textTransform:'uppercase'}}>{c.type}</span>}
                         {c.level&&<span style={{fontSize:10,color:C.mist,background:C.stone,borderRadius:20,padding:'2px 8px'}}>{c.level}</span>}
-                        {onViewAula&&<button onClick={()=>onViewAula(classFromDB(c))} style={{fontSize:12,padding:'5px 12px',borderRadius:8,border:`1px solid ${C.neutral}`,background:'transparent',color:C.neutral,cursor:'pointer',fontFamily:"'Satoshi',sans-serif",fontWeight:600}}>Ver →</button>}
+                        {onViewAula&&<button onClick={()=>onViewAula(classFromDB(c),{readOnly:true})} style={{fontSize:12,padding:'5px 12px',borderRadius:8,border:`1px solid ${C.neutral}`,background:'transparent',color:C.neutral,cursor:'pointer',fontFamily:"'Satoshi',sans-serif",fontWeight:600}}>Ver →</button>}
                         {isAdmin&&<button onClick={()=>toggleFeatured(c.id,'class')} title={(studio?.settings?.featured_classes||[]).includes(c.id)?'Remover destaque':'Destacar'} style={{fontSize:13,background:'none',border:'none',cursor:'pointer',color:(studio?.settings?.featured_classes||[]).includes(c.id)?'#f59e0b':C.stone,padding:'2px'}}>★</button>}
                         <button onClick={()=>approveClass(c)} style={{fontSize:12,padding:'5px 12px',borderRadius:8,border:'none',background:'#ecfdf5',color:'#059669',fontWeight:700,cursor:'pointer',fontFamily:"'Satoshi',sans-serif"}}>✓ Aprovar</button>
                         {rejectingItem?.id===c.id ? (
@@ -4061,16 +4913,96 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
                 </div>
               </div>
             )}
+          {/* Pending deletion */}
+          {pendingDeletion.length>0&&(
+            <div style={{marginBottom:24,background:"#fff7f7",borderRadius:12,border:"1px solid #fca5a5",padding:"16px 20px"}}>
+              <div style={{fontSize:12,fontWeight:700,color:"#b91c1c",textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:12}}>Pedidos de eliminação ({pendingDeletion.length})</div>
+              <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                {pendingDeletion.map(item=>(
+                  <div key={item.id} style={{background:C.white,borderRadius:10,border:`1px solid #fca5a5`,padding:'10px 14px',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontWeight:700,fontSize:13,color:C.ink}}>{item.name||'(sem nome)'}</div>
+                      <div style={{fontSize:11,color:C.mist,marginTop:1}}>{item.profiles?.name||'Instructor'} · {item._type==='series'?'Série':'Aula'}{item.type?` · ${item.type}`:''}</div>
+                    </div>
+                    <button onClick={()=>keepInStudio(item)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:700,padding:'4px 12px',borderRadius:8,border:`1px solid #16a34a`,background:'#f0fdf4',color:'#15803d',cursor:'pointer',flexShrink:0}}>Manter no studio</button>
+                    <button onClick={()=>confirmDeleteFromStudio(item)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:700,padding:'4px 12px',borderRadius:8,border:'none',background:'#b91c1c',color:'#fff',cursor:'pointer',flexShrink:0}}>Eliminar</button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Rejection history */}
+          {isAdmin&&(
+            <div style={{marginTop:32}}>
+              <div style={{fontSize:10,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:12}}>Histórico de Rejeições</div>
+              {rejectionLog.length===0 ? (
+                <div style={{fontSize:13,color:C.mist,padding:"16px 0"}}>Nenhuma rejeição registada.</div>
+              ) : (
+                <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                  {rejectionLog.map(entry=>{
+                    const typeColors = { reformer: C.reformer, barre: C.barre, signature: '#7a4010' };
+                    return (
+                      <div key={entry.id} style={{background:C.white,border:`1px solid ${C.stone}`,borderRadius:10,padding:"12px 16px",display:"flex",gap:12,alignItems:"flex-start"}}>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:4}}>
+                            {entry.item_type_value&&<span style={{fontSize:10,fontWeight:700,color:C.white,background:typeColors[entry.item_type_value]||C.mist,borderRadius:20,padding:"1px 8px"}}>{entry.item_type_value}</span>}
+                            <span style={{fontFamily:"'Clash Display',sans-serif",fontSize:14,fontWeight:600,color:C.ink}}>{entry.item_name}</span>
+                            {entry.zones&&<span style={{fontSize:11,color:C.mist}}>{entry.zones}</span>}
+                            {entry.level&&<span style={{fontSize:11,color:C.mist}}>{entry.level}</span>}
+                            <span style={{fontSize:11,color:C.mist,marginLeft:"auto"}}>{new Date(entry.rejected_at).toLocaleDateString('pt-PT',{day:'2-digit',month:'short',year:'numeric'})}</span>
+                          </div>
+                          {entry.comment&&<div style={{fontSize:12,color:"#7f1d1d",background:"#fef2f2",border:"1px solid #fca5a5",borderRadius:6,padding:"4px 10px"}}>{entry.comment}</div>}
+                        </div>
+                        <button onClick={async()=>{ await supabase.from('rejection_log').delete().eq('id',entry.id); setRejectionLog(p=>p.filter(e=>e.id!==entry.id)); }} title="Apagar entrada" style={{background:"none",border:"none",cursor:"pointer",color:C.mist,fontSize:16,lineHeight:1,padding:0,flexShrink:0}}>×</button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
           </>)}
         </div>
       )}
 
-      {/* ── Definições (admin only) ── */}
-      {activeTab==='settings'&&isAdmin&&(
-        <div style={{ background: C.white, borderRadius: 12, border: `1px solid ${C.stone}`, padding: '20px 20px 24px' }}>
-          {/* Class Types */}
-          <div style={{ marginBottom: 20 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: C.mist, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Tipos de Aula</div>
+      {/* ── Definições (owner only) ── */}
+      {activeTab==='settings'&&isOwner&&(
+        <div style={{ background: C.white, borderRadius: 12, border: `1px solid ${C.stone}`, padding: '4px 20px 20px' }}>
+          {/* 1. Perfil do Studio */}
+          <CollapsibleSection title="Perfil do Studio" defaultOpen={false}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div style={{display:'flex',gap:16,alignItems:'flex-start'}}>
+                {editStudioLogoUrl&&<img src={editStudioLogoUrl} alt="" style={{width:64,height:64,borderRadius:'50%',objectFit:'cover',flexShrink:0,border:`2px solid ${C.stone}`}} onError={e=>{e.target.style.display='none';}}/>}
+                <div style={{flex:1}}>
+                  <div style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:6}}>Logo (URL)</div>
+                  <input value={editStudioLogoUrl} onChange={e=>setEditStudioLogoUrl(e.target.value)} placeholder="https://…" style={{width:'100%',padding:'7px 12px',borderRadius:8,border:`1px solid ${C.stone}`,fontFamily:"'Satoshi',sans-serif",fontSize:13,outline:'none',boxSizing:'border-box'}}/>
+                </div>
+              </div>
+              <div>
+                <div style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:6}}>Descrição</div>
+                <textarea value={editStudioDescription} onChange={e=>setEditStudioDescription(e.target.value)} placeholder="Descreve o studio…" rows={3} style={{width:'100%',padding:'8px 12px',borderRadius:8,border:`1px solid ${C.stone}`,fontFamily:"'Satoshi',sans-serif",fontSize:13,outline:'none',resize:'vertical',boxSizing:'border-box'}}/>
+              </div>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+                {[['email','Email'],['phone','Telefone'],['website','Website'],['instagram','Instagram']].map(([key,label])=>(
+                  <div key={key}>
+                    <div style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:4}}>{label}</div>
+                    <input value={editStudioContact[key]||''} onChange={e=>setEditStudioContact(p=>({...p,[key]:e.target.value}))} placeholder={key==='instagram'?'@studio':key==='website'?'https://…':''} style={{width:'100%',padding:'7px 12px',borderRadius:8,border:`1px solid ${C.stone}`,fontFamily:"'Satoshi',sans-serif",fontSize:13,outline:'none',boxSizing:'border-box'}}/>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </CollapsibleSection>
+          {/* 2. Código de convite */}
+          <CollapsibleSection title="Código de convite" defaultOpen={false}>
+            <div style={{fontSize:12,color:C.mist,marginBottom:10}}>Partilha este código com instrutores para entrarem no studio. Podes alterá-lo manualmente (só letras e números, máx. 8 caracteres).</div>
+            <div style={{display:'flex',gap:8,alignItems:'center'}}>
+              <input value={editStudioCode} onChange={e=>setEditStudioCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,8))} placeholder="ex. HVN4KR" style={{flex:1,padding:'8px 14px',borderRadius:8,border:`1px solid ${C.stone}`,fontFamily:"'Satoshi',sans-serif",fontSize:15,fontWeight:700,letterSpacing:'0.12em',outline:'none',background:C.cream,color:C.crimson}}/>
+              <span style={{fontSize:12,color:C.mist}}>{editStudioCode.length}/8</span>
+            </div>
+          </CollapsibleSection>
+          {/* 3. Tipos de Aula */}
+          <CollapsibleSection title="Tipos de Aula" defaultOpen={false}>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
               {editClassTypes.map(t => (
                 <span key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 12px', borderRadius: 20, background: C.cream, border: `1px solid ${C.stone}`, fontSize: 13, fontWeight: 500, color: C.ink, fontFamily: "'Satoshi',sans-serif" }}>
@@ -4086,29 +5018,9 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
               <button onClick={() => { const v = newClassType.trim(); if (v && !editClassTypes.map(x => x.toLowerCase()).includes(v.toLowerCase())) { setEditClassTypes(p => [...p, v]); setNewClassType(''); } }}
                 style={{ padding: '7px 14px', borderRadius: 8, border: `1px solid ${C.stone}`, background: 'transparent', color: C.ink, fontWeight: 600, fontSize: 13, cursor: 'pointer', fontFamily: "'Satoshi',sans-serif" }}>+ Adicionar</button>
             </div>
-          </div>
-          {/* Zones */}
-          <div style={{ marginBottom: 20 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: C.mist, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Zonas</div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
-              {editZones.map(z => (
-                <span key={z} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 12px', borderRadius: 20, background: C.cream, border: `1px solid ${C.stone}`, fontSize: 13, fontWeight: 500, color: C.ink, fontFamily: "'Satoshi',sans-serif" }}>
-                  {z}
-                  <button onClick={() => setEditZones(p => p.filter(x => x !== z))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.mist, fontSize: 13, lineHeight: 1, padding: 0, display: 'flex', alignItems: 'center' }}>×</button>
-                </span>
-              ))}
-            </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input value={newZone} onChange={e => setNewZone(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') { const v = newZone.trim(); if (v && !editZones.map(x => x.toLowerCase()).includes(v.toLowerCase())) { setEditZones(p => [...p, v]); setNewZone(''); } } }}
-                placeholder="Adicionar zona…" style={{ flex: 1, padding: '7px 12px', borderRadius: 8, border: `1px solid ${C.stone}`, fontFamily: "'Satoshi',sans-serif", fontSize: 13, outline: 'none' }} />
-              <button onClick={() => { const v = newZone.trim(); if (v && !editZones.map(x => x.toLowerCase()).includes(v.toLowerCase())) { setEditZones(p => [...p, v]); setNewZone(''); } }}
-                style={{ padding: '7px 14px', borderRadius: 8, border: `1px solid ${C.stone}`, background: 'transparent', color: C.ink, fontWeight: 600, fontSize: 13, cursor: 'pointer', fontFamily: "'Satoshi',sans-serif" }}>+ Adicionar</button>
-            </div>
-          </div>
-          {/* Class Levels */}
-          <div style={{ marginBottom: 20 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: C.mist, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Níveis de Aula</div>
+          </CollapsibleSection>
+          {/* 4. Níveis de Aula */}
+          <CollapsibleSection title="Níveis de Aula" defaultOpen={false}>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
               {editClassLevels.map(lvl => (
                 <span key={lvl} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 12px', borderRadius: 20, background: C.cream, border: `1px solid ${C.stone}`, fontSize: 13, fontWeight: 500, color: C.ink, fontFamily: "'Satoshi',sans-serif" }}>
@@ -4124,21 +5036,115 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
               <button onClick={() => { const v = newClassLevel.trim(); if (v && !editClassLevels.map(x => x.toLowerCase()).includes(v.toLowerCase())) { setEditClassLevels(p => [...p, v]); setNewClassLevel(''); } }}
                 style={{ padding: '7px 14px', borderRadius: 8, border: `1px solid ${C.stone}`, background: 'transparent', color: C.ink, fontWeight: 600, fontSize: 13, cursor: 'pointer', fontFamily: "'Satoshi',sans-serif" }}>+ Adicionar</button>
             </div>
+          </CollapsibleSection>
+          {/* 5. Tipos de Série */}
+          <CollapsibleSection title="Tipos de Série" defaultOpen={false}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+              {editSeriesTypes.map(t => (
+                <span key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 12px', borderRadius: 20, background: C.cream, border: `1px solid ${C.stone}`, fontSize: 13, fontWeight: 500, color: C.ink, fontFamily: "'Satoshi',sans-serif" }}>
+                  {t}
+                  <button onClick={() => setEditSeriesTypes(p => p.filter(x => x !== t))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.mist, fontSize: 13, lineHeight: 1, padding: 0, display: 'flex', alignItems: 'center' }}>×</button>
+                </span>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input value={newSeriesType} onChange={e => setNewSeriesType(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') { const v = newSeriesType.trim(); if (v && !editSeriesTypes.map(x => x.toLowerCase()).includes(v.toLowerCase())) { setEditSeriesTypes(p => [...p, v]); setNewSeriesType(''); } } }}
+                placeholder="Adicionar tipo de série…" style={{ flex: 1, padding: '7px 12px', borderRadius: 8, border: `1px solid ${C.stone}`, fontFamily: "'Satoshi',sans-serif", fontSize: 13, outline: 'none' }} />
+              <button onClick={() => { const v = newSeriesType.trim(); if (v && !editSeriesTypes.map(x => x.toLowerCase()).includes(v.toLowerCase())) { setEditSeriesTypes(p => [...p, v]); setNewSeriesType(''); } }}
+                style={{ padding: '7px 14px', borderRadius: 8, border: `1px solid ${C.stone}`, background: 'transparent', color: C.ink, fontWeight: 600, fontSize: 13, cursor: 'pointer', fontFamily: "'Satoshi',sans-serif" }}>+ Adicionar</button>
+            </div>
+          </CollapsibleSection>
+          {/* 6. Zonas */}
+          <CollapsibleSection title="Zonas" defaultOpen={false}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+              {editZones.map(z => (
+                <span key={z} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 12px', borderRadius: 20, background: C.cream, border: `1px solid ${C.stone}`, fontSize: 13, fontWeight: 500, color: C.ink, fontFamily: "'Satoshi',sans-serif" }}>
+                  {z}
+                  <button onClick={() => setEditZones(p => p.filter(x => x !== z))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.mist, fontSize: 13, lineHeight: 1, padding: 0, display: 'flex', alignItems: 'center' }}>×</button>
+                </span>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input value={newZone} onChange={e => setNewZone(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') { const v = newZone.trim(); if (v && !editZones.map(x => x.toLowerCase()).includes(v.toLowerCase())) { setEditZones(p => [...p, v]); setNewZone(''); } } }}
+                placeholder="Adicionar zona…" style={{ flex: 1, padding: '7px 12px', borderRadius: 8, border: `1px solid ${C.stone}`, fontFamily: "'Satoshi',sans-serif", fontSize: 13, outline: 'none' }} />
+              <button onClick={() => { const v = newZone.trim(); if (v && !editZones.map(x => x.toLowerCase()).includes(v.toLowerCase())) { setEditZones(p => [...p, v]); setNewZone(''); } }}
+                style={{ padding: '7px 14px', borderRadius: 8, border: `1px solid ${C.stone}`, background: 'transparent', color: C.ink, fontWeight: 600, fontSize: 13, cursor: 'pointer', fontFamily: "'Satoshi',sans-serif" }}>+ Adicionar</button>
+            </div>
+          </CollapsibleSection>
+          {/* 7. IA do Studio */}
+          <CollapsibleSection title="IA do Studio" defaultOpen={false}>
+            {/* Studio AI Profile */}
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: C.mist, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Perfil de instrução para IA</div>
+              <div style={{ fontSize: 12, color: C.mist, marginBottom: 12 }}>Define a abordagem do studio. Usado em todos os prompts de IA dos instrutores do studio.</div>
+              <AiForm ai={editStudioAiProfile} setAi={setEditStudioAiProfile} forStudio={true} />
+            </div>
+            {/* Studio Guidelines (free text) */}
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: C.mist, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Diretrizes adicionais</div>
+              <div style={{ fontSize: 12, color: C.mist, marginBottom: 8 }}>Regras específicas do studio, equipamento, terminologia. Injectadas em todos os prompts de IA.</div>
+              <AutoTextarea
+                value={editGuidelines}
+                onChange={e => setEditGuidelines(e.target.value)}
+                placeholder="ex. Usamos método STOTT Pilates. Sempre cue em português europeu. Nunca mencionar perda de peso. O studio tem reformers Balanced Body..."
+                style={{ width: '100%', fontSize: 13, minHeight: 80, resize: 'vertical', borderRadius: 8, border: `1px solid ${C.stone}`, padding: '8px 12px', fontFamily: "'Satoshi',sans-serif", color: C.ink, background: C.cream, outline: 'none', boxSizing: 'border-box' }}
+              />
+            </div>
+          </CollapsibleSection>
+          <div style={{ paddingTop: 8 }}>
+            <button onClick={saveSettings} disabled={savingSettings} style={{ padding: '9px 24px', borderRadius: 8, border: 'none', background: savingSettings ? C.stone : C.crimson, color: C.cream, fontWeight: 700, fontSize: 13, cursor: savingSettings ? 'not-allowed' : 'pointer', fontFamily: "'Satoshi',sans-serif" }}>
+              {savingSettings ? 'A guardar…' : 'Guardar definições'}
+            </button>
           </div>
-          {/* Studio AI Guidelines */}
-          <div style={{ marginBottom: 20 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: C.mist, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Diretrizes para IA</div>
-            <div style={{ fontSize: 12, color: C.mist, marginBottom: 8 }}>Descreve o método, equipamento, terminologia e regras do studio. Estas diretrizes são injetadas em todos os prompts de IA dos Instructors do studio.</div>
-            <AutoTextarea
-              value={editGuidelines}
-              onChange={e => setEditGuidelines(e.target.value)}
-              placeholder="ex. Usamos método STOTT Pilates. Sempre cue en português europeu. Nunca mencionar perda de peso. O studio tem reformers Balanced Body..."
-              style={{ width: '100%', fontSize: 13, minHeight: 100, resize: 'vertical', borderRadius: 8, border: `1px solid ${C.stone}`, padding: '8px 12px', fontFamily: "'Satoshi',sans-serif", color: C.ink, background: C.cream, outline: 'none', boxSizing: 'border-box' }}
-            />
+        </div>
+      )}
+
+      {/* ── SUBMIT MODAL ── */}
+      {submitModal&&(
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:800}} onClick={()=>setSubmitModal(false)}>
+          <div style={{background:C.white,borderRadius:16,padding:'24px',width:'calc(100% - 48px)',maxWidth:520,maxHeight:'80vh',display:'flex',flexDirection:'column',boxShadow:'0 12px 40px rgba(0,0,0,0.18)'}} onClick={e=>e.stopPropagation()}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
+              <h3 style={{fontFamily:"'Clash Display',sans-serif",fontSize:18,fontWeight:600,color:C.ink,margin:0}}>Submeter para o studio</h3>
+              <button onClick={()=>setSubmitModal(false)} style={{background:'none',border:'none',fontSize:20,cursor:'pointer',color:C.mist,lineHeight:1}}>×</button>
+            </div>
+            <div style={{display:'flex',gap:16,borderBottom:`1px solid ${C.stone}`,marginBottom:16}}>
+              {['series','classes'].map(t=>(
+                <button key={t} onClick={()=>setSubmitTab(t)} style={{background:'none',border:'none',fontFamily:"'Satoshi',sans-serif",fontWeight:submitTab===t?700:500,fontSize:13,color:submitTab===t?C.crimson:C.mist,borderBottom:`2px solid ${submitTab===t?C.crimson:'transparent'}`,padding:'6px 2px',cursor:'pointer'}}>
+                  {t==='series'?'Séries':'Aulas'}
+                </button>
+              ))}
+            </div>
+            <div style={{overflowY:'auto',flex:1,display:'flex',flexDirection:'column',gap:8}}>
+              {submitTab==='series'&&(()=>{
+                const myPersonal=allSeries.filter(s=>s.createdBy===user.id&&(s.visibility==='personal'||!s.visibility));
+                if(!myPersonal.length) return <div style={{fontSize:13,color:C.mist,textAlign:'center',padding:24}}>Não tens séries pessoais para submeter.</div>;
+                return myPersonal.map(s=>(
+                  <div key={s.id} style={{display:'flex',alignItems:'center',gap:12,padding:'10px 12px',borderRadius:8,border:`1px solid ${C.stone}`,cursor:'pointer'}} onClick={async()=>{if(onPublishSeries){await onPublishSeries(s);setSubmitModal(false);}}}>
+                    <div style={{flex:1}}>
+                      <div style={{fontFamily:"'Satoshi',sans-serif",fontWeight:600,fontSize:14,color:C.ink}}>{s.name||'(sem nome)'}</div>
+                      <div style={{fontSize:12,color:C.mist,marginTop:2}}>{s.type}{s.primaryZone?` · ${s.primaryZone}`:''}</div>
+                    </div>
+                    <span style={{fontSize:12,color:C.crimson,fontWeight:700,whiteSpace:'nowrap'}}>Submeter ↑</span>
+                  </div>
+                ));
+              })()}
+              {submitTab==='classes'&&(()=>{
+                const myPersonal=allClasses.filter(c=>c.createdBy===user.id&&(c.visibility==='personal'||!c.visibility));
+                if(!myPersonal.length) return <div style={{fontSize:13,color:C.mist,textAlign:'center',padding:24}}>Não tens aulas pessoais para submeter.</div>;
+                return myPersonal.map(c=>(
+                  <div key={c.id} style={{display:'flex',alignItems:'center',gap:12,padding:'10px 12px',borderRadius:8,border:`1px solid ${C.stone}`,cursor:'pointer'}} onClick={async()=>{if(onPublishClass){await onPublishClass(c);setSubmitModal(false);}}}>
+                    <div style={{flex:1}}>
+                      <div style={{fontFamily:"'Satoshi',sans-serif",fontWeight:600,fontSize:14,color:C.ink}}>{c.name||'(sem nome)'}</div>
+                      <div style={{fontSize:12,color:C.mist,marginTop:2}}>{c.type}{c.level?` · ${c.level}`:''}</div>
+                    </div>
+                    <span style={{fontSize:12,color:C.crimson,fontWeight:700,whiteSpace:'nowrap'}}>Submeter ↑</span>
+                  </div>
+                ));
+              })()}
+            </div>
           </div>
-          <button onClick={saveSettings} disabled={savingSettings} style={{ padding: '9px 24px', borderRadius: 8, border: 'none', background: savingSettings ? C.stone : C.crimson, color: C.cream, fontWeight: 700, fontSize: 13, cursor: savingSettings ? 'not-allowed' : 'pointer', fontFamily: "'Satoshi',sans-serif" }}>
-            {savingSettings ? 'A guardar…' : 'Guardar definições'}
-          </button>
         </div>
       )}
     </div>
@@ -4363,13 +5369,75 @@ const ClientPortal = ({ user, profile }) => {
   );
 };
 
+// ─── MARKDOWN RENDERER ────────────────────────────────────────────────────────
+const renderMarkdown = (text) => {
+  if (!text) return null;
+  const lines = text.split('\n');
+  const elements = [];
+  let listItems = [];
+
+  const flushList = () => {
+    if (listItems.length > 0) {
+      elements.push(
+        <ul key={`ul-${elements.length}`} style={{ margin: '4px 0', paddingLeft: 18 }}>
+          {listItems.map((item, i) => (
+            <li key={i} style={{ marginBottom: 2, lineHeight: 1.5 }}>{parseInline(item)}</li>
+          ))}
+        </ul>
+      );
+      listItems = [];
+    }
+  };
+
+  const parseInline = (str) => {
+    const parts = [];
+    let remaining = str;
+    let key = 0;
+    const re = /(\*\*(.+?)\*\*|\*(.+?)\*|`(.+?)`)/g;
+    let lastIndex = 0;
+    let match;
+    while ((match = re.exec(str)) !== null) {
+      if (match.index > lastIndex) parts.push(<span key={key++}>{str.slice(lastIndex, match.index)}</span>);
+      if (match[2]) parts.push(<strong key={key++}>{match[2]}</strong>);
+      else if (match[3]) parts.push(<em key={key++}>{match[3]}</em>);
+      else if (match[4]) parts.push(<code key={key++} style={{ background: '#f0f0f0', borderRadius: 3, padding: '1px 4px', fontSize: '0.9em' }}>{match[4]}</code>);
+      lastIndex = match.index + match[0].length;
+    }
+    if (lastIndex < str.length) parts.push(<span key={key++}>{str.slice(lastIndex)}</span>);
+    return parts.length > 0 ? parts : str;
+  };
+
+  lines.forEach((line, i) => {
+    if (line.startsWith('### ')) {
+      flushList();
+      elements.push(<div key={i} style={{ fontWeight: 700, fontSize: 13, marginTop: 8, marginBottom: 2 }}>{line.slice(4)}</div>);
+    } else if (line.startsWith('## ')) {
+      flushList();
+      elements.push(<div key={i} style={{ fontWeight: 700, fontSize: 14, marginTop: 10, marginBottom: 3 }}>{line.slice(3)}</div>);
+    } else if (line.startsWith('# ')) {
+      flushList();
+      elements.push(<div key={i} style={{ fontWeight: 700, fontSize: 15, marginTop: 10, marginBottom: 4 }}>{line.slice(2)}</div>);
+    } else if (line.startsWith('- ') || line.startsWith('* ')) {
+      listItems.push(line.slice(2));
+    } else if (line.trim() === '') {
+      flushList();
+      if (elements.length > 0) elements.push(<div key={`br-${i}`} style={{ height: 4 }} />);
+    } else {
+      flushList();
+      elements.push(<div key={i} style={{ marginBottom: 2, lineHeight: 1.5 }}>{parseInline(line)}</div>);
+    }
+  });
+  flushList();
+  return elements;
+};
+
 // ─── CONTEXT AI PANEL ─────────────────────────────────────────────────────────
 const CHATS_KEY = 'haven_ai_chats';
 const loadChats = () => { try { return JSON.parse(localStorage.getItem(CHATS_KEY)||'[]'); } catch(e) { return []; } };
 const deleteChat = id => { try { localStorage.setItem(CHATS_KEY, JSON.stringify(loadChats().filter(c=>c.id!==id))); } catch(e) {} };
 const newChatId = () => 'chat_'+(crypto.randomUUID?.()??Math.random().toString(36).slice(2)+Math.random().toString(36).slice(2));
 
-const ContextAIPanel = ({ open, onToggle, screen, editingSeries, series, classes, aiStyle, onUpdateSeries, onNavigate, profile }) => {
+const ContextAIPanel = ({ open, onToggle, screen, editingSeries, series, classes, aiStyle, onUpdateSeries, onNavigate, profile, onSaveToProfile, onUpdateClass }) => {
   const [messages, setMessages] = React.useState([]);
   const [input, setInput] = React.useState("");
   const [loading, setLoading] = React.useState(false);
@@ -4432,12 +5500,12 @@ const ContextAIPanel = ({ open, onToggle, screen, editingSeries, series, classes
   const getSystemPrompt = () => {
     const styleCtx = aiStyle ? `\n\nEstilo de ensino do instructor: ${aiStyle}` : "";
     if (editingSeries) {
-      return `És um expert STOTT Pilates a ajudar um instructor a melhorar as suas séries. Dá sugestões específicas sobre sequência, flow biomecânico, princípios STOTT, escolha de springs/props, e cues. Explica sempre o porquê. Não reescreves a série — ofereces sugestões que o instructor pode escolher aplicar ou ignorar. Responde em português (Portugal).${styleCtx}`;
+      return `${PLATFORM_CONTEXT}\n\nÉs um expert Pilates a ajudar um instructor a melhorar as suas séries. Dá sugestões específicas sobre sequência, flow biomecânico, princípios Pilates, escolha de springs/props, e cues. Explica sempre o porquê. Não reescreves a série — ofereces sugestões que o instructor pode escolher aplicar ou ignorar. Responde em português (Portugal).${styleCtx}`;
     }
     if (screen.mode==="builder" || screen.mode==="aula") {
-      return `És um expert STOTT Pilates a ajudar um instructor a estruturar e melhorar as suas aulas. Podes ajudar com: estrutura da aula, fluxo da aula, progressão de séries, equilíbrio de trabalho muscular, e sugestões de warm-up/cool-down. Responde em português (Portugal).${styleCtx}`;
+      return `${PLATFORM_CONTEXT}\n\nÉs um expert Pilates a ajudar um instructor a estruturar e melhorar as suas aulas. Podes ajudar com: estrutura da aula, fluxo da aula, progressão de séries, equilíbrio de trabalho muscular, e sugestões de warm-up/cool-down. Responde em português (Portugal).${styleCtx}`;
     }
-    return `És um expert STOTT Pilates a ajudar um instructor. Podes responder a perguntas sobre técnica, metodologia STOTT, programação de aulas, e equipamento. Responde em português (Portugal).${styleCtx}`;
+    return `${PLATFORM_CONTEXT}\n\nÉs um assistente especialista do The Haven Instructor Studio a ajudar um instructor. Podes responder a perguntas sobre a plataforma, técnica Pilates, programação de aulas, e equipamento. Responde em português (Portugal) a menos que o utilizador escreva noutra língua.${styleCtx}`;
   };
 
   const getLabel = () => {
@@ -4449,9 +5517,30 @@ const ContextAIPanel = ({ open, onToggle, screen, editingSeries, series, classes
     return "Assistente IA";
   };
 
+  const SAVE_PATTERNS = [
+    /guarda?\s+(isto\s+)?(?:no|no meu|ao meu)\s+(?:estilo|perfil)(?:\s+de\s+ia)?/i,
+    /salva?\s+(isto\s+)?(?:no|ao)\s+(?:meu\s+)?(?:estilo|perfil)(?:\s+de\s+ia)?/i,
+    /adiciona?\s+(isto\s+)?(?:ao|no)\s+(?:meu\s+)?(?:estilo|perfil)(?:\s+de\s+ia)?/i,
+    /anota?\s+(isto\s+)?(?:no|ao)\s+(?:meu\s+)?(?:estilo|perfil)(?:\s+de\s+ia)?/i,
+    /acrescenta?\s+(isto\s+)?(?:ao|no)\s+(?:meu\s+)?(?:estilo|perfil)(?:\s+de\s+ia)?/i,
+  ];
+
   const send = async (userMsg, actionType) => {
     const text = userMsg || input.trim();
     if (!text) return;
+
+    // Check if user wants to save something to their AI profile
+    if (!userMsg && onSaveToProfile) {
+      const wantsToSave = SAVE_PATTERNS.some(p => p.test(text));
+      if (wantsToSave) {
+        const noteContent = text.replace(/^(guarda|salva|adiciona|anota|acrescenta)[^\s]*\s+(?:isto\s+)?(?:no|ao)\s+(?:meu\s+)?(?:estilo|perfil)(?:\s+de\s+ia)?\s*[^\s]*\s*(?:que\s+)?/i, '').trim() || text.trim();
+        await onSaveToProfile(noteContent);
+        setMessages(p => [...p, { role: 'user', text }, { role: 'assistant', text: `✓ Guardado no teu perfil de IA: "${noteContent}"` }]);
+        setInput('');
+        return;
+      }
+    }
+
     setLastQuickAction(actionType||null);
     const newMessages = [...messages, { role:"user", text }];
     setMessages(newMessages);
@@ -4484,9 +5573,42 @@ const ContextAIPanel = ({ open, onToggle, screen, editingSeries, series, classes
     setLoading(false);
   };
 
+  const [generatingWC, setGeneratingWC] = React.useState(false);
+  const generateWC = async () => {
+    if (generatingWC) return;
+    const cls = classes.find(c=>c.id===screen.cls?.id) || screen.cls;
+    if (!cls) return;
+    const seriesInClass = (cls.seriesIds||[]).map(id=>series.find(s=>s.id===id)).filter(Boolean);
+    const mainSeries = seriesInClass.filter(s=>!(s.primaryZone||s.targetZone||"").toLowerCase().includes("warm")&&!(s.primaryZone||s.targetZone||"").toLowerCase().includes("cool"));
+    const seriesData = mainSeries.map(s=>({ name:s.name, zone:s.primaryZone||s.targetZone?.split(',').slice(0,2).join(',')||"-", muscles:s.muscles?.slice(0,4).join(", ")||"-" }));
+    const classInfo = `Aula: "${cls.name}" (${cls.type||"geral"})\nSéries principais:\n${seriesData.map((s,i)=>`${i+1}. ${s.name} — zona: ${s.zone}, músculos: ${s.muscles}`).join("\n")}`;
+    const prompt = `És um expert Pilates. Com base nesta aula:\n\n${classInfo}\n\nSugere exercícios ESPECÍFICOS de warm-up e cool-down para esta aula. Foca nas zonas e músculos que a aula trabalha. Sê concreto: nomeia exercícios reais (ex: "cat-cow, hip flexor stretch, thoracic rotation"). Não escrevas texto longo — dá listas curtas e diretas.\n\nResponde APENAS com JSON: {"warmup":["exercício 1","exercício 2","exercício 3"],"cooldown":["exercício 1","exercício 2","exercício 3"]}`;
+    setGeneratingWC(true);
+    setMessages(prev=>[...prev, { role:"user", text:"Gerar warm-up e cool-down para esta aula" }]);
+    setLoading(true);
+    try {
+      const resp = await fetch("/api/ai", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ system:getSystemPrompt(), messages:[{ role:"user", content:`${getContext()}\n\n---\n${prompt}` }], max_tokens:600 }) });
+      const data = await resp.json();
+      const reply = data?.content?.[0]?.text || "Sem resposta.";
+      let warmup = "", cooldown = "";
+      try {
+        const parsed = JSON.parse(reply);
+        warmup = Array.isArray(parsed.warmup) ? parsed.warmup.join("\n") : (parsed.warmup||"");
+        cooldown = Array.isArray(parsed.cooldown) ? parsed.cooldown.join("\n") : (parsed.cooldown||"");
+      } catch(e) { warmup = reply; }
+      const displayText = `**Warm-up:**\n${warmup||"—"}\n\n**Cool-down:**\n${cooldown||"—"}`;
+      setMessages(prev=>{ const next=[...prev, { role:"assistant", text:displayText }]; saveChat(chatId, next, getLabel(), contextKey); return next; });
+      if (onUpdateClass && cls) onUpdateClass({...cls, warmupNotes:warmup, cooldownNotes:cooldown});
+    } catch(e) {
+      console.error(e);
+      setMessages(prev=>[...prev, { role:"assistant", text:"Erro ao gerar warm-up/cool-down." }]);
+    }
+    setLoading(false);
+    setGeneratingWC(false);
+  };
+
   const QUICK_ACTIONS = editingSeries ? [
     { label:"✦ Músculos", actionType:"muscles", prompt:"Analisa a série e lista os 5 músculos principais trabalhados. Responde APENAS com JSON: {\"muscles\":[\"m1\",\"m2\",...]}" },
-    { label:"✦ Notas", actionType:"notes", prompt:"Escreve notas de instructor para esta série: técnica, erros comuns, e cues verbais em português (2-3 frases). Responde APENAS com o texto das notas." },
     { label:"✦ Modificações", actionType:"mods", prompt:"Sugere modificações, progressões e regressões para diferentes níveis e limitações físicas. Responde em português." },
   ] : [];
 
@@ -4498,9 +5620,9 @@ const ContextAIPanel = ({ open, onToggle, screen, editingSeries, series, classes
       background: C.white,
       display: "flex",
       flexDirection: "column",
-      minHeight: "calc(100vh - 54px)",
+      minHeight: "100vh",
       position: "sticky",
-      top: 54,
+      top: 0,
       transition: "width 0.2s",
       overflow: "hidden",
     }}>
@@ -4548,7 +5670,7 @@ const ContextAIPanel = ({ open, onToggle, screen, editingSeries, series, classes
           )}
 
           {/* Quick actions */}
-          {!showHistory && QUICK_ACTIONS.length > 0 && (
+          {!showHistory && (QUICK_ACTIONS.length > 0 || (screen.mode==="aula" && !editingSeries)) && (
             <div style={{padding:"8px 12px",borderBottom:`1px solid ${C.stone}`,display:"flex",gap:5,flexWrap:"wrap",flexShrink:0}}>
               {QUICK_ACTIONS.map(qa=>(
                 <button key={qa.actionType} onClick={()=>send(qa.prompt, qa.actionType)} disabled={loading}
@@ -4556,6 +5678,12 @@ const ContextAIPanel = ({ open, onToggle, screen, editingSeries, series, classes
                   {qa.label}
                 </button>
               ))}
+              {screen.mode==="aula"&&!editingSeries&&(
+                <button onClick={generateWC} disabled={loading||generatingWC}
+                  style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"3px 9px",borderRadius:12,border:`1px solid ${C.stone}`,background:`${C.stone}60`,color:C.ink,cursor:(loading||generatingWC)?"not-allowed":"pointer"}}>
+                  {generatingWC?"⏳ A gerar…":"Gerar warm-up e cool-down"}
+                </button>
+              )}
               {messages.length>0&&<button onClick={()=>{setMessages([]);setLastQuickAction(null);}} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,color:C.mist,background:"none",border:"none",cursor:"pointer",padding:"3px 6px"}}>Limpar</button>}
             </div>
           )}
@@ -4576,9 +5704,10 @@ const ContextAIPanel = ({ open, onToggle, screen, editingSeries, series, classes
                     borderRadius:m.role==="user"?"10px 10px 3px 10px":"10px 10px 10px 3px",
                     background:m.role==="user"?C.crimson:`${C.neutral}12`,
                     color:m.role==="user"?C.white:C.ink,
-                    fontSize:12,lineHeight:1.5,whiteSpace:"pre-wrap",
+                    fontSize:12,lineHeight:1.5,
+                    whiteSpace:m.role==="user"?"pre-wrap":"normal",
                     fontFamily:"'Satoshi',sans-serif",
-                  }}>{m.text}</div>
+                  }}>{m.role==="assistant" ? renderMarkdown(m.text) : m.text}</div>
                   {isLastAssistant && lastQuickAction && onUpdateSeries && editingSeries && (
                     <div style={{display:"flex",gap:5,marginTop:2}}>
                       {lastQuickAction==="muscles"&&(
@@ -4616,17 +5745,27 @@ const ContextAIPanel = ({ open, onToggle, screen, editingSeries, series, classes
           </div>}
 
           {/* Input */}
-          {!showHistory&&<div style={{padding:"8px 12px",borderTop:`1px solid ${C.stone}`,display:"flex",gap:6,alignItems:"flex-end",flexShrink:0}}>
-            <AutoTextarea
-              value={input}
-              onChange={e=>setInput(e.target.value)}
-              placeholder="Pergunta ou pedido…"
-              onKeyDown={e=>{ if(e.key==="Enter"&&!e.shiftKey&&input.trim()){e.preventDefault();send();} }}
-              style={{flex:1,fontSize:12,minHeight:32,resize:"none",borderRadius:8,border:`1px solid ${C.stone}`,padding:"6px 10px",fontFamily:"'Satoshi',sans-serif",outline:"none"}}
-            />
-            <button onClick={()=>send()} disabled={loading||!input.trim()} style={{padding:"6px 10px",borderRadius:8,border:"none",background:input.trim()&&!loading?C.crimson:C.stone,color:C.cream,cursor:input.trim()&&!loading?"pointer":"default",flexShrink:0}}>
-              <Icon name="send" size={12}/>
-            </button>
+          {!showHistory&&<div style={{padding:"8px 12px",borderTop:`1px solid ${C.stone}`,display:"flex",flexDirection:"column",gap:4,flexShrink:0}}>
+            <div style={{display:"flex",gap:6,alignItems:"flex-end"}}>
+              <AutoTextarea
+                value={input}
+                onChange={e=>setInput(e.target.value)}
+                placeholder="Pergunta ou pedido…"
+                onKeyDown={e=>{ if(e.key==="Enter"&&!e.shiftKey&&input.trim()){e.preventDefault();send();} }}
+                style={{flex:1,fontSize:12,minHeight:32,resize:"none",borderRadius:8,border:`1px solid ${C.stone}`,padding:"6px 10px",fontFamily:"'Satoshi',sans-serif",outline:"none"}}
+              />
+              <button onClick={()=>send()} disabled={loading||!input.trim()} style={{padding:"6px 10px",borderRadius:8,border:"none",background:input.trim()&&!loading?C.crimson:C.stone,color:C.cream,cursor:input.trim()&&!loading?"pointer":"default",flexShrink:0}}>
+                <Icon name="send" size={12}/>
+              </button>
+            </div>
+            {onSaveToProfile&&<button onClick={async()=>{
+              const text = input.trim();
+              if(!text) return;
+              await onSaveToProfile(text);
+              setInput("");
+            }} disabled={!input.trim()} style={{fontFamily:"'Satoshi',sans-serif",fontSize:10,color:input.trim()?C.neutral:C.stone,background:"none",border:"none",cursor:input.trim()?"pointer":"default",padding:"0 2px",textAlign:"left",textDecoration:"underline",alignSelf:"flex-start"}}>
+              💾 Guardar no perfil
+            </button>}
           </div>}
         </>
       )}
@@ -4635,11 +5774,13 @@ const ContextAIPanel = ({ open, onToggle, screen, editingSeries, series, classes
 };
 
 // ─── HOME PAGE ─────────────────────────────────────────────────────────────────
-const HomePage = ({ series, classes, profile, onNewSeries, onNewClass, onViewSeries, onViewClass, onGoStudio, shares=[], onAcceptShare, onDismissShare, notifications=[], onDismissNotif, onMarkAllRead, studioHighlights=[], studioRecent=[], recentPublic=[], onGoDiscover }) => {
-  const recentSeries = [...series].sort((a,b)=>(b.updatedAt||b.createdAt||"").localeCompare(a.updatedAt||a.createdAt||"")).slice(0,5);
-  const recentClasses = [...classes].sort((a,b)=>(b.date||"").localeCompare(a.date||"")||0).slice(0,5);
-  const pendingCount = series.filter(s=>s.visibility==='pending_studio').length + classes.filter(c=>c.visibility==='pending_studio').length;
-  const hasStudio = !!profile?.studio_id;
+const HomePage = ({ series, classes, profile, onNewSeries, onNewClass, onViewSeries, onViewClass, onGoStudio, shares=[], onAcceptShare, onDismissShare, notifications=[], onDismissNotif, onMarkAllRead, studioHighlights=[], studioRecent=[], recentPublic=[], onGoDiscover, notices=[] }) => {
+  const activeSeries = series.filter(s=>!s.isArchived);
+  const activeClasses = classes.filter(c=>!c.isArchived);
+  const recentSeries = [...activeSeries].sort((a,b)=>(b.updatedAt||b.createdAt||"").localeCompare(a.updatedAt||a.createdAt||"")).slice(0,5);
+  const recentClasses = [...activeClasses].sort((a,b)=>(b.date||"").localeCompare(a.date||"")||0).slice(0,5);
+  const pendingCount = activeSeries.filter(s=>s.visibility==='pending_studio').length + activeClasses.filter(c=>c.visibility==='pending_studio').length;
+  const hasStudio = !!(profile?.studio_id || profile?.studioMemberships?.length);
 
   const StatCard = ({ label, value, sub, onClick }) => (
     <div onClick={onClick} style={{background:C.white,borderRadius:14,border:`1px solid ${C.stone}`,padding:"18px 20px",cursor:onClick?"pointer":"default",flex:1,minWidth:0}}>
@@ -4667,8 +5808,8 @@ const HomePage = ({ series, classes, profile, onNewSeries, onNewClass, onViewSer
 
       {/* Stat cards */}
       <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
-        <StatCard label="Séries" value={series.length} sub={`${series.filter(s=>s.status==='approved').length} aprovadas`}/>
-        <StatCard label="Aulas" value={classes.length}/>
+        <StatCard label="Séries" value={activeSeries.length} sub={`${activeSeries.filter(s=>s.status==='Pronta').length} prontas`}/>
+        <StatCard label="Aulas" value={activeClasses.length}/>
         {hasStudio&&<StatCard label="Em revisão" value={pendingCount} sub="no studio" onClick={onGoStudio}/>}
       </div>
 
@@ -4696,7 +5837,7 @@ const HomePage = ({ series, classes, profile, onNewSeries, onNewClass, onViewSer
                   <div style={{fontSize:11,color:C.mist,marginTop:1}}>{s.type==="signature"?"Signature":s.type==="barre"?"Barre":"Reformer"}{s.primaryZone||s.targetZone?` · ${(s.primaryZone||s.targetZone.split(',')[0]).trim()}`:""}
                   </div>
                 </div>
-                <span style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:20,background:s.status==="approved"?"#e8f5e9":"#fef9ec",color:s.status==="approved"?"#2e7d32":"#b45309",flexShrink:0}}>{s.status==="approved"?"✓":""}</span>
+                <span style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:20,background:s.status==="Pronta"?"#e8f5e9":"#fef9ec",color:s.status==="Pronta"?"#2e7d32":"#b45309",flexShrink:0}}>{s.status==="Pronta"?"✓":""}</span>
               </div>
             ))}
           </div>
@@ -4722,106 +5863,125 @@ const HomePage = ({ series, classes, profile, onNewSeries, onNewClass, onViewSer
         </div>
       </div>
 
-      {/* Notifications */}
-      {notifications.length > 0 && (
-        <div>
-          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
-            <div style={{fontFamily:"'Clash Display',sans-serif",fontSize:14,fontWeight:600,color:C.ink,textTransform:"uppercase",letterSpacing:"0.06em",flex:1}}>Notificações</div>
-            <button onClick={onMarkAllRead} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,color:C.mist,background:"none",border:"none",cursor:"pointer",padding:0,textDecoration:"underline"}}>Marcar tudo como lido</button>
-          </div>
-          <div style={{display:"flex",flexDirection:"column",gap:6}}>
-            {notifications.slice(0,8).map(n=>(
-              <div key={n.id} style={{background:C.white,border:`1px solid ${!n.read?C.crimson+'40':C.stone}`,borderLeft:`3px solid ${!n.read?C.crimson:C.stone}`,borderRadius:10,padding:"10px 14px",display:"flex",alignItems:"flex-start",gap:10}}>
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontSize:13,fontWeight:n.read?500:700,color:C.ink}}>{n.title}</div>
-                  {n.body&&<div style={{fontSize:12,color:C.mist,marginTop:2}}>{n.body}</div>}
-                  <div style={{fontSize:10,color:C.mist,marginTop:4}}>{new Date(n.created_at).toLocaleDateString('pt-PT',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</div>
-                </div>
-                <button onClick={()=>onDismissNotif?.(n.id)} style={{background:"none",border:"none",cursor:"pointer",color:C.mist,fontSize:14,padding:"0 2px",flexShrink:0}}>×</button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      {/* Studio zone */}
+      {(studioRecent.length > 0 || studioHighlights.length > 0 || notices.length > 0) && (
+        <div style={{background:"#fdf4f4",borderRadius:14,border:"1px solid #e8d0d0",padding:"16px 20px",display:"flex",flexDirection:"column",gap:16}}>
+          <div style={{fontSize:10,fontWeight:700,color:C.crimson,textTransform:"uppercase",letterSpacing:"0.1em"}}>🏛 Studio</div>
 
-      {/* Studio: recently added */}
-      {studioRecent.length > 0 && (
-        <div>
-          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
-            <div style={{fontFamily:"'Clash Display',sans-serif",fontSize:14,fontWeight:600,color:C.ink,textTransform:"uppercase",letterSpacing:"0.06em",flex:1}}>Recentemente adicionadas ao Studio</div>
-            <button onClick={onGoStudio} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,color:C.mist,background:"none",border:"none",cursor:"pointer",textDecoration:"underline"}}>Ver studio →</button>
-          </div>
-          <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-            {studioRecent.map(item=>(
-              <div key={item.id} onClick={item._hType==='series'?()=>onViewSeries(item):()=>onViewClass(item)}
-                style={{background:C.white,border:`1px solid ${C.stone}`,borderRadius:10,padding:"10px 14px",cursor:"pointer",minWidth:160,flex:"0 0 auto",maxWidth:240}}>
-                <div style={{fontSize:12,fontWeight:700,color:C.ink,marginBottom:3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.name}</div>
-                <div style={{fontSize:10,color:C.mist}}>{item._hType==='series'?(item.type||'Série'):(item.type||'Aula')}{item._hType==='series'&&item.primaryZone?` · ${item.primaryZone}`:''}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Studio: featured / destaques */}
-      {studioHighlights.length > 0 && (
-        <div>
-          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
-            <div style={{fontFamily:"'Clash Display',sans-serif",fontSize:14,fontWeight:600,color:C.ink,textTransform:"uppercase",letterSpacing:"0.06em",flex:1}}>Em destaque no Studio</div>
-            <button onClick={onGoStudio} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,color:C.mist,background:"none",border:"none",cursor:"pointer",textDecoration:"underline"}}>Ver studio →</button>
-          </div>
-          <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-            {studioHighlights.map(item=>(
-              <div key={item.id} onClick={item._hType==='series'?()=>onViewSeries(item):()=>onViewClass(item)}
-                style={{background:C.white,border:`1px solid ${C.stone}`,borderRadius:10,padding:"10px 14px",cursor:"pointer",minWidth:160,flex:"0 0 auto",maxWidth:240}}>
-                <div style={{fontSize:12,fontWeight:700,color:C.ink,marginBottom:3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.name}</div>
-                <div style={{fontSize:10,color:C.mist}}>{item._hType==='series'?(item.type||'Série'):(item.type||'Aula')}{item._hType==='series'&&item.primaryZone?` · ${item.primaryZone}`:''}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Novo na plataforma */}
-      {recentPublic.length > 0 && (
-        <div>
-          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
-            <div style={{fontFamily:"'Clash Display',sans-serif",fontSize:14,fontWeight:600,color:C.ink,textTransform:"uppercase",letterSpacing:"0.06em",flex:1}}>Novo na plataforma</div>
-            {onGoDiscover&&<button onClick={onGoDiscover} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,color:C.mist,background:"none",border:"none",cursor:"pointer",textDecoration:"underline"}}>Ver tudo →</button>}
-          </div>
-          <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-            {recentPublic.map(item=>(
-              <div key={item.id} onClick={onGoDiscover}
-                style={{background:C.white,border:`1px solid ${C.stone}`,borderRadius:10,padding:"10px 14px",cursor:"pointer",minWidth:160,flex:"0 0 auto",maxWidth:240}}>
-                <div style={{fontSize:12,fontWeight:700,color:C.ink,marginBottom:3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.name}</div>
-                <div style={{fontSize:10,color:C.mist}}>{item._hType==='series'?'Série':'Aula'}{item._author?.name?` · ${item._author.name}`:''}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Shares inbox */}
-      {shares.length > 0 && (
-        <div>
-          <div style={{fontFamily:"'Clash Display',sans-serif",fontSize:14,fontWeight:600,color:C.ink,marginBottom:10,textTransform:"uppercase",letterSpacing:"0.06em"}}>Partilhas recebidas</div>
-          <div style={{display:"flex",flexDirection:"column",gap:8}}>
-            {shares.map(share=>(
-              <div key={share.id} style={{background:C.white,border:`2px solid ${C.crimson}30`,borderRadius:12,padding:"12px 16px",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontSize:13,fontWeight:700,color:C.ink,fontFamily:"'Clash Display',sans-serif"}}>{share.item_snapshot?.name||'Item'}</div>
-                  <div style={{fontSize:11,color:C.mist,marginTop:2,display:"flex",gap:8}}>
-                    <span>{share.item_type==='series'?'Série':'Aula'}</span>
-                    {share.message&&<span>· {share.message}</span>}
+          {/* Studio: recently added + featured — side by side */}
+          {(studioRecent.length > 0 || studioHighlights.length > 0) && (
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
+              {studioRecent.length > 0 && (
+                <div>
+                  <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+                    <div style={{fontFamily:"'Clash Display',sans-serif",fontSize:14,fontWeight:600,color:C.ink,textTransform:"uppercase",letterSpacing:"0.06em",flex:1}}>Novo no Studio</div>
+                    <button onClick={onGoStudio} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,color:C.mist,background:"none",border:"none",cursor:"pointer",textDecoration:"underline"}}>Ver →</button>
+                  </div>
+                  <div style={{display:"flex",flexDirection:"column",gap:5}}>
+                    {studioRecent.map(item=>(
+                      <div key={item.id} onClick={item._hType==='series'?()=>onViewSeries(item):()=>onViewClass(item)}
+                        style={{background:C.white,border:`1px solid ${C.stone}`,borderRadius:10,padding:"9px 14px",cursor:"pointer",display:"flex",alignItems:"center",gap:8}}
+                        onMouseEnter={e=>e.currentTarget.style.borderColor=C.neutral}
+                        onMouseLeave={e=>e.currentTarget.style.borderColor=C.stone}>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontSize:12,fontWeight:700,color:C.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.name}</div>
+                          <div style={{fontSize:10,color:C.mist}}>{item._hType==='series'?(item.type||'Série'):(item.type||'Aula')}{item._hType==='series'&&item.primaryZone?` · ${item.primaryZone}`:''}</div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
-                <div style={{display:"flex",gap:8,flexShrink:0}}>
-                  <button onClick={()=>onAcceptShare?.(share)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:700,padding:"6px 14px",borderRadius:8,border:"none",background:C.crimson,color:C.cream,cursor:"pointer"}}>Adicionar à biblioteca</button>
-                  <button onClick={()=>onDismissShare?.(share.id)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"6px 12px",borderRadius:8,border:`1px solid ${C.stone}`,background:"transparent",color:C.mist,cursor:"pointer"}}>Ignorar</button>
+              )}
+              {studioHighlights.length > 0 && (
+                <div>
+                  <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+                    <div style={{fontFamily:"'Clash Display',sans-serif",fontSize:14,fontWeight:600,color:C.ink,textTransform:"uppercase",letterSpacing:"0.06em",flex:1}}>Em Destaque no Studio</div>
+                    <button onClick={onGoStudio} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,color:C.mist,background:"none",border:"none",cursor:"pointer",textDecoration:"underline"}}>Ver →</button>
+                  </div>
+                  <div style={{display:"flex",flexDirection:"column",gap:5}}>
+                    {studioHighlights.map(item=>(
+                      <div key={item.id} onClick={item._hType==='series'?()=>onViewSeries(item):()=>onViewClass(item)}
+                        style={{background:"#fffbf0",border:`1px solid #f59e0b40`,borderRadius:10,padding:"9px 14px",cursor:"pointer",display:"flex",alignItems:"center",gap:8}}
+                        onMouseEnter={e=>e.currentTarget.style.borderColor="#f59e0b"}
+                        onMouseLeave={e=>e.currentTarget.style.borderColor="#f59e0b40"}>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontSize:12,fontWeight:700,color:C.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.name}</div>
+                          <div style={{fontSize:10,color:C.mist}}>{item._hType==='series'?(item.type||'Série'):(item.type||'Aula')}{item._hType==='series'&&item.primaryZone?` · ${item.primaryZone}`:''}</div>
+                        </div>
+                        <span style={{fontSize:11,color:"#b45309"}}>★</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
+              )}
+            </div>
+          )}
+
+          {/* Avisos do Studio */}
+          {notices.length > 0 && (
+            <div>
+              <div style={{ fontFamily: "'Clash Display',sans-serif", fontSize: 14, fontWeight: 600, color: C.ink, marginBottom: 10, textTransform:"uppercase", letterSpacing:"0.06em" }}>Avisos do Studio</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {notices.slice(0, 3).map(n => (
+                  <div key={n.id} style={{ background: C.white, borderRadius: 10, border: `1px solid ${C.stone}`, padding: '12px 16px' }}>
+                    <div style={{ fontFamily: "'Satoshi',sans-serif", fontWeight: 700, fontSize: 14, color: C.ink }}>{n.title}</div>
+                    {n.body && <div style={{ fontSize: 12, color: C.mist, marginTop: 4, lineHeight: 1.5 }}>{n.body}</div>}
+                    <div style={{ fontSize: 11, color: C.mist, marginTop: 6 }}>{new Date(n.created_at).toLocaleDateString('pt-PT')}</div>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Discover zone */}
+      {(recentPublic.length > 0 || shares.length > 0) && (
+        <div style={{background:"#f4f6fd",borderRadius:14,border:"1px solid #d0d4e8",padding:"16px 20px",display:"flex",flexDirection:"column",gap:16}}>
+          <div style={{fontSize:10,fontWeight:700,color:"#2563eb",textTransform:"uppercase",letterSpacing:"0.1em"}}>🔍 Descobrir</div>
+
+          {/* Novo na plataforma */}
+          {recentPublic.length > 0 && (
+            <div>
+              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+                <div style={{fontFamily:"'Clash Display',sans-serif",fontSize:14,fontWeight:600,color:C.ink,textTransform:"uppercase",letterSpacing:"0.06em",flex:1}}>Novo no Descobrir</div>
+                {onGoDiscover&&<button onClick={onGoDiscover} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,color:C.mist,background:"none",border:"none",cursor:"pointer",textDecoration:"underline"}}>Ver tudo →</button>}
+              </div>
+              <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+                {recentPublic.map(item=>(
+                  <div key={item.id} onClick={onGoDiscover}
+                    style={{background:C.white,border:`1px solid ${C.stone}`,borderRadius:10,padding:"10px 14px",cursor:"pointer",minWidth:160,flex:"0 0 auto",maxWidth:240}}>
+                    <div style={{fontSize:12,fontWeight:700,color:C.ink,marginBottom:3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.name}</div>
+                    <div style={{fontSize:10,color:C.mist}}>{item._hType==='series'?'Série':'Aula'}{item._author?.name?` · ${item._author.name}`:''}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Shares inbox */}
+          {shares.length > 0 && (
+            <div>
+              <div style={{fontFamily:"'Clash Display',sans-serif",fontSize:14,fontWeight:600,color:C.ink,marginBottom:10,textTransform:"uppercase",letterSpacing:"0.06em"}}>Partilhas recebidas</div>
+              <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                {shares.map(share=>(
+                  <div key={share.id} style={{background:C.white,border:`2px solid ${C.crimson}30`,borderRadius:12,padding:"12px 16px",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:13,fontWeight:700,color:C.ink,fontFamily:"'Clash Display',sans-serif"}}>{share.item_snapshot?.name||'Item'}</div>
+                      <div style={{fontSize:11,color:C.mist,marginTop:2,display:"flex",gap:8}}>
+                        <span>{share.item_type==='series'?'Série':'Aula'}</span>
+                        {share.message&&<span>· {share.message}</span>}
+                      </div>
+                    </div>
+                    <div style={{display:"flex",gap:8,flexShrink:0}}>
+                      <button onClick={()=>onAcceptShare?.(share)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:700,padding:"6px 14px",borderRadius:8,border:"none",background:C.crimson,color:C.cream,cursor:"pointer"}}>Adicionar à biblioteca</button>
+                      <button onClick={()=>onDismissShare?.(share.id)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"6px 12px",borderRadius:8,border:`1px solid ${C.stone}`,background:"transparent",color:C.mist,cursor:"pointer"}}>Ignorar</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -4829,7 +5989,7 @@ const HomePage = ({ series, classes, profile, onNewSeries, onNewClass, onViewSer
 };
 
 // ─── NOTIFICATION PANEL (dropdown from bell) ──────────────────────────────────
-const NotifPanel = ({ notifications, onDismiss, onMarkAllRead, onViewAll, onClose }) => {
+const NotifPanel = ({ notifications, onDismiss, onMarkAllRead, onClose, onNotifClick }) => {
   const ref = React.useRef(null);
   const unseenCount = notifications.filter(n=>!n.read).length;
 
@@ -4847,7 +6007,7 @@ const NotifPanel = ({ notifications, onDismiss, onMarkAllRead, onViewAll, onClos
   };
 
   return (
-    <div ref={ref} style={{position:"absolute",top:"calc(100% + 8px)",right:0,zIndex:400,width:320,background:C.white,border:`1px solid ${C.stone}`,borderRadius:12,boxShadow:"0 8px 32px rgba(0,0,0,0.14)",overflow:"hidden"}}>
+    <div ref={ref} style={{zIndex:400,width:320,background:C.white,border:`1px solid ${C.stone}`,borderRadius:12,boxShadow:"0 8px 32px rgba(0,0,0,0.14)",overflow:"hidden"}}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 16px",borderBottom:`1px solid ${C.stone}`}}>
         <div style={{fontFamily:"'Clash Display',sans-serif",fontWeight:600,fontSize:14,color:C.ink}}>Notificações</div>
         <div style={{display:"flex",gap:8,alignItems:"center"}}>
@@ -4860,28 +6020,115 @@ const NotifPanel = ({ notifications, onDismiss, onMarkAllRead, onViewAll, onClos
           <div style={{padding:"20px 16px",color:C.mist,fontSize:13,textAlign:"center"}}>Sem notificações.</div>
         )}
         {notifications.slice(0,15).map(n=>(
-          <div key={n.id} style={{display:"flex",gap:10,alignItems:"flex-start",padding:"10px 16px",borderBottom:`1px solid ${C.stone}`,background:n.read?"transparent":`${C.crimson}06`}}>
+          <div key={n.id} onClick={()=>onNotifClick&&onNotifClick(n)} style={{display:"flex",gap:10,alignItems:"flex-start",padding:"10px 16px",borderBottom:`1px solid ${C.stone}`,background:n.read?"transparent":`${C.crimson}06`,cursor:onNotifClick?"pointer":"default"}}>
             <span style={{fontSize:16,flexShrink:0,marginTop:1}}>{typeIcon(n.type)}</span>
             <div style={{flex:1,minWidth:0}}>
               <div style={{fontWeight:n.read?500:700,fontSize:13,color:C.ink,lineHeight:1.3}}>{n.title}</div>
               {n.body&&<div style={{fontSize:12,color:C.mist,marginTop:2,lineHeight:1.4}}>{n.body}</div>}
               <div style={{fontSize:10,color:C.mist,marginTop:3}}>{new Date(n.created_at).toLocaleDateString('pt-PT',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</div>
             </div>
-            <button onClick={()=>onDismiss(n.id)} style={{background:"none",border:"none",cursor:"pointer",color:C.mist,fontSize:14,flexShrink:0,padding:"0 2px",marginTop:1}}>×</button>
+            <button onClick={e=>{e.stopPropagation();onDismiss(n.id);}} style={{background:"none",border:"none",cursor:"pointer",color:C.mist,fontSize:14,flexShrink:0,padding:"0 2px",marginTop:1}}>×</button>
           </div>
         ))}
-      </div>
-      <div style={{padding:"10px 16px",borderTop:`1px solid ${C.stone}`}}>
-        <button onClick={onViewAll} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,color:C.mist,background:"none",border:"none",cursor:"pointer",width:"100%",textAlign:"center"}}>Ver todas no início →</button>
       </div>
     </div>
   );
 };
 
+// ─── INSTRUCTOR PROFILE VIEW ──────────────────────────────────────────────────
+const InstructorProfileView = ({ profileId, onBack, onCopy, onSend }) => {
+  const [prof, setProf] = React.useState(null);
+  const [pubSeries, setPubSeries] = React.useState([]);
+  const [pubClasses, setPubClasses] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
+
+  React.useEffect(()=>{
+    if (!profileId) return;
+    (async()=>{
+      const [{ data: p }, { data: s }, { data: c }] = await Promise.all([
+        supabase.from('profiles').select('*, studios(name)').eq('id', profileId).maybeSingle(),
+        supabase.from('series').select('*').eq('created_by', profileId).eq('is_public',true).order('updated_at',{ascending:false}),
+        supabase.from('classes').select('*').eq('created_by', profileId).eq('is_public',true).order('updated_at',{ascending:false}),
+      ]);
+      setProf(p);
+      setPubSeries((s||[]).map(r=>({...seriesFromDB(r),_discoverType:'series',_author:p})));
+      setPubClasses((c||[]).map(r=>({...classFromDB(r),_discoverType:'class',_author:p})));
+      setLoading(false);
+    })();
+  },[profileId]);
+
+  if(loading) return <div style={{padding:40,color:C.mist,textAlign:'center'}}>A carregar…</div>;
+  if(!prof) return <div style={{padding:40,color:C.mist}}>Perfil não encontrado.</div>;
+
+  const typeColors = { reformer: C.reformer, barre: C.barre, signature: '#7a4010' };
+
+  return (
+    <div style={{maxWidth:720}}>
+      <button onClick={onBack} style={{fontFamily:"'Satoshi',sans-serif",fontSize:13,fontWeight:600,padding:"6px 12px",borderRadius:8,border:`1px solid ${C.stone}`,background:"transparent",color:C.ink,cursor:"pointer",display:"inline-flex",alignItems:"center",gap:6,marginBottom:24}}>← Voltar</button>
+      {/* Profile header */}
+      <div style={{display:'flex',gap:20,alignItems:'flex-start',marginBottom:32}}>
+        {prof.avatar_url&&<img src={prof.avatar_url} alt="" style={{width:80,height:80,borderRadius:'50%',objectFit:'cover',flexShrink:0,border:`2px solid ${C.stone}`}} onError={e=>{e.target.style.display='none';}}/>}
+        <div>
+          <div style={{fontFamily:"'Clash Display',sans-serif",fontSize:24,fontWeight:500,color:C.ink,marginBottom:4}}>{prof.name||'Instructor'}</div>
+          {prof.studios?.name&&<div style={{fontSize:14,color:C.mist,marginBottom:6}}>{prof.studios.name}</div>}
+          {prof.bio&&<div style={{fontSize:13,color:C.ink,lineHeight:1.6,maxWidth:480}}>{prof.bio}</div>}
+        </div>
+      </div>
+      {/* Public series */}
+      {pubSeries.length>0&&(
+        <div style={{marginBottom:28}}>
+          <div style={{fontSize:10,fontWeight:700,color:C.mist,textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:10}}>Séries públicas</div>
+          <div style={{display:'flex',flexDirection:'column',gap:8}}>
+            {pubSeries.map(item=>(
+              <div key={item.id} style={{background:C.white,border:`1px solid ${C.stone}`,borderRadius:12,padding:"12px 16px",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontFamily:"'Clash Display',sans-serif",fontSize:15,fontWeight:600,color:C.ink,marginBottom:3}}>{item.name}</div>
+                  <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+                    {item.type&&<span style={{fontSize:10,fontWeight:700,color:C.white,background:typeColors[item.type]||C.mist,borderRadius:20,padding:"1px 7px"}}>{item.type}</span>}
+                    {item.primaryZone&&<span style={{fontSize:10,color:C.mist,background:C.stone,borderRadius:20,padding:"1px 7px"}}>{item.primaryZone}</span>}
+                  </div>
+                </div>
+                <div style={{display:'flex',gap:8}}>
+                  <button onClick={()=>onCopy(item)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"6px 14px",borderRadius:8,border:`1px solid ${C.crimson}`,background:"transparent",color:C.crimson,cursor:"pointer"}}>Copiar</button>
+                  <button onClick={()=>onSend(item)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"6px 14px",borderRadius:8,border:`1px solid ${C.stone}`,background:C.white,color:C.ink,cursor:"pointer"}}>Enviar →</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {/* Public classes */}
+      {pubClasses.length>0&&(
+        <div>
+          <div style={{fontSize:10,fontWeight:700,color:C.mist,textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:10}}>Aulas públicas</div>
+          <div style={{display:'flex',flexDirection:'column',gap:8}}>
+            {pubClasses.map(item=>(
+              <div key={item.id} style={{background:C.white,border:`1px solid ${C.stone}`,borderRadius:12,padding:"12px 16px",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontFamily:"'Clash Display',sans-serif",fontSize:15,fontWeight:600,color:C.ink,marginBottom:3}}>{item.name||'(sem título)'}</div>
+                  <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+                    {item.type&&<span style={{fontSize:10,fontWeight:700,color:C.white,background:typeColors[item.type]||C.mist,borderRadius:20,padding:"1px 7px"}}>{item.type}</span>}
+                    {item.date&&<span style={{fontSize:10,color:C.mist}}>{item.date}</span>}
+                  </div>
+                </div>
+                <div style={{display:'flex',gap:8}}>
+                  <button onClick={()=>onCopy(item)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"6px 14px",borderRadius:8,border:`1px solid ${C.crimson}`,background:"transparent",color:C.crimson,cursor:"pointer"}}>Copiar</button>
+                  <button onClick={()=>onSend(item)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"6px 14px",borderRadius:8,border:`1px solid ${C.stone}`,background:C.white,color:C.ink,cursor:"pointer"}}>Enviar →</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {pubSeries.length===0&&pubClasses.length===0&&<div style={{color:C.mist,fontSize:13,padding:'40px 0',textAlign:'center'}}>Este instructor ainda não tem conteúdo público.</div>}
+    </div>
+  );
+};
+
 // ─── DISCOVER PAGE ────────────────────────────────────────────────────────────
-const DiscoverPage = ({ items, loading, onRefresh, onCopy, onSend, profile }) => {
+const DiscoverPage = ({ items, loading, onRefresh, onCopy, onSend, profile, instructors=[], onViewInstructor }) => {
   const [search, setSearch] = React.useState('');
-  const [typeFilter, setTypeFilter] = React.useState('all'); // 'all','series','class'
+  const [typeFilter, setTypeFilter] = React.useState('all'); // 'all','series','class','instructors'
   const [zoneFilter, setZoneFilter] = React.useState('');
 
   const zones = React.useMemo(() => {
@@ -4915,81 +6162,127 @@ const DiscoverPage = ({ items, loading, onRefresh, onCopy, onSend, profile }) =>
       <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20,flexWrap:"wrap"}}>
         <h2 style={{fontFamily:"'Clash Display', sans-serif",fontSize:26,fontWeight:500,color:C.crimson,margin:0,flex:1}}>Descobrir</h2>
         <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Pesquisar…" style={{fontFamily:"'Satoshi',sans-serif",fontSize:13,padding:"7px 14px",borderRadius:20,border:`1px solid ${C.stone}`,outline:"none",background:C.white,color:C.ink,width:180}}/>
-        <div style={{display:"flex",gap:4}}>
-          {[['all','Tudo'],['series','Séries'],['class','Aulas']].map(([v,l])=>(
-            <button key={v} onClick={()=>setTypeFilter(v)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"6px 14px",borderRadius:20,border:`1px solid ${typeFilter===v?C.crimson:C.stone}`,background:typeFilter===v?C.crimson:"transparent",color:typeFilter===v?C.cream:C.ink,cursor:"pointer"}}>{l}</button>
-          ))}
-        </div>
-        {zones.length>0&&(
-          <select value={zoneFilter} onChange={e=>setZoneFilter(e.target.value)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,padding:"7px 10px",borderRadius:8,border:`1px solid ${C.stone}`,color:C.ink,background:C.white,outline:"none"}}>
-            <option value="">Todas as zonas</option>
-            {zones.map(z=><option key={z} value={z}>{z}</option>)}
-          </select>
-        )}
         <button onClick={onRefresh} disabled={loading} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"7px 14px",borderRadius:8,border:`1px solid ${C.stone}`,background:C.white,color:C.ink,cursor:"pointer",opacity:loading?0.5:1}}>{loading?"A carregar…":"↻ Atualizar"}</button>
       </div>
 
-      {loading && <div style={{color:C.mist,fontSize:14,padding:"40px 0",textAlign:"center"}}>A carregar conteúdo público…</div>}
-
-      {!loading && filtered.length===0 && (
-        <div style={{textAlign:"center",padding:"60px 0",color:C.mist}}>
-          <div style={{fontSize:32,marginBottom:12}}>✦</div>
-          <div style={{fontFamily:"'Clash Display',sans-serif",fontSize:18,color:C.ink,marginBottom:8}}>Nenhum conteúdo público encontrado</div>
-          <div style={{fontSize:13}}>Partilha as tuas séries para aparecer aqui!</div>
-        </div>
-      )}
-
-      {/* Series section */}
-      {(typeFilter==='all'||typeFilter==='series') && seriesItems.length>0 && (
-        <div style={{marginBottom:28}}>
-          {typeFilter==='all'&&<div style={{fontSize:10,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:10}}>Séries</div>}
-          <div style={{display:"flex",flexDirection:"column",gap:8}}>
-            {seriesItems.map(item=>(
-              <div key={item.id} style={{background:C.white,border:`1px solid ${C.stone}`,borderRadius:12,padding:"14px 18px",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:4}}>
-                    <span style={{fontFamily:"'Clash Display',sans-serif",fontSize:16,fontWeight:600,color:C.ink}}>{item.name}</span>
-                    {item.type&&<span style={{fontSize:11,fontWeight:700,color:C.white,background:typeColors[item.type]||C.mist,borderRadius:20,padding:"2px 8px"}}>{item.type}</span>}
-                    {item.primaryZone&&<span style={{fontSize:11,color:C.mist,background:C.stone,borderRadius:20,padding:"2px 8px"}}>{item.primaryZone}</span>}
-                    {item.seriesType&&<span style={{fontSize:11,fontWeight:600,color:"#5a2a00",background:`${C.sig}50`,border:`1px solid ${C.sig}`,borderRadius:20,padding:"2px 8px"}}>{item.seriesType}</span>}
-                  </div>
-                  {authorLabel(item)&&<div style={{fontSize:12,color:C.mist}}>{authorLabel(item)}</div>}
-                </div>
-                <div style={{display:"flex",gap:8,flexShrink:0}}>
-                  <button onClick={()=>onCopy(item)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"6px 14px",borderRadius:8,border:`1px solid ${C.crimson}`,background:"transparent",color:C.crimson,cursor:"pointer"}}>Copiar</button>
-                  <button onClick={()=>onSend(item)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"6px 14px",borderRadius:8,border:`1px solid ${C.stone}`,background:C.white,color:C.ink,cursor:"pointer"}}>Enviar →</button>
-                </div>
-              </div>
-            ))}
+      {/* Two-column layout */}
+      <div style={{display:"flex",gap:20,alignItems:"flex-start"}}>
+        {/* Left: filters */}
+        <div style={{width:160,flexShrink:0,display:"flex",flexDirection:"column",gap:16}}>
+          <div>
+            <div style={{fontSize:10,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Tipo</div>
+            <div style={{display:"flex",flexDirection:"column",gap:4}}>
+              {[['all','Tudo'],['series','Séries'],['class','Aulas'],['instructors','Instrutores']].map(([v,l])=>(
+                <button key={v} onClick={()=>setTypeFilter(v)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 12px",borderRadius:8,border:`1px solid ${typeFilter===v?C.neutral:C.stone}`,background:typeFilter===v?C.neutral:"transparent",color:typeFilter===v?C.white:C.ink,cursor:"pointer",textAlign:"left"}}>{l}</button>
+              ))}
+            </div>
           </div>
-        </div>
-      )}
-
-      {/* Classes section */}
-      {(typeFilter==='all'||typeFilter==='class') && classItems.length>0 && (
-        <div>
-          {typeFilter==='all'&&<div style={{fontSize:10,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:10}}>Aulas</div>}
-          <div style={{display:"flex",flexDirection:"column",gap:8}}>
-            {classItems.map(item=>(
-              <div key={item.id} style={{background:C.white,border:`1px solid ${C.stone}`,borderRadius:12,padding:"14px 18px",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:4}}>
-                    <span style={{fontFamily:"'Clash Display',sans-serif",fontSize:16,fontWeight:600,color:C.ink}}>{item.name}</span>
-                    {item.type&&<span style={{fontSize:11,fontWeight:700,color:C.white,background:typeColors[item.type]||C.mist,borderRadius:20,padding:"2px 8px"}}>{item.type}</span>}
-                    {item.level&&<span style={{fontSize:11,color:C.mist,background:C.stone,borderRadius:20,padding:"2px 8px"}}>{item.level}</span>}
-                    {item.date&&<span style={{fontSize:11,color:C.mist}}>{item.date}</span>}
-                  </div>
-                  {authorLabel(item)&&<div style={{fontSize:12,color:C.mist}}>{authorLabel(item)}</div>}
-                </div>
-                <div style={{display:"flex",gap:8,flexShrink:0}}>
-                  <button onClick={()=>onCopy(item)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"6px 14px",borderRadius:8,border:`1px solid ${C.crimson}`,background:"transparent",color:C.crimson,cursor:"pointer"}}>Copiar</button>
-                  <button onClick={()=>onSend(item)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"6px 14px",borderRadius:8,border:`1px solid ${C.stone}`,background:C.white,color:C.ink,cursor:"pointer"}}>Enviar →</button>
-                </div>
+          {(typeFilter==='all'||typeFilter==='series') && zones.length > 0 && (
+            <div>
+              <div style={{fontSize:10,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Zona</div>
+              <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                <button onClick={()=>setZoneFilter('')} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 12px",borderRadius:8,border:`1px solid ${!zoneFilter?C.neutral:C.stone}`,background:!zoneFilter?C.neutral:"transparent",color:!zoneFilter?C.white:C.ink,cursor:"pointer",textAlign:"left"}}>Todas</button>
+                {zones.map(z=>(
+                  <button key={z} onClick={()=>setZoneFilter(z===zoneFilter?'':z)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 12px",borderRadius:8,border:`1px solid ${zoneFilter===z?C.neutral:C.stone}`,background:zoneFilter===z?C.neutral:"transparent",color:zoneFilter===z?C.white:C.ink,cursor:"pointer",textAlign:"left"}}>{z}</button>
+                ))}
               </div>
-            ))}
-          </div>
+            </div>
+          )}
         </div>
-      )}
+
+        {/* Right: content */}
+        <div style={{flex:1,minWidth:0}}>
+          {loading && <div style={{color:C.mist,fontSize:14,padding:"40px 0",textAlign:"center"}}>A carregar conteúdo público…</div>}
+
+          {!loading && typeFilter!=='instructors' && filtered.length===0 && (
+            <div style={{textAlign:"center",padding:"60px 0",color:C.mist}}>
+              <div style={{fontSize:32,marginBottom:12}}>✦</div>
+              <div style={{fontFamily:"'Clash Display',sans-serif",fontSize:18,color:C.ink,marginBottom:8}}>Nenhum conteúdo público encontrado</div>
+              <div style={{fontSize:13}}>Partilha as tuas séries para aparecer aqui!</div>
+            </div>
+          )}
+          {!loading && typeFilter==='instructors' && instructors.length===0 && (
+            <div style={{textAlign:"center",padding:"60px 0",color:C.mist}}>
+              <div style={{fontSize:32,marginBottom:12}}>✦</div>
+              <div style={{fontFamily:"'Clash Display',sans-serif",fontSize:18,color:C.ink,marginBottom:8}}>Nenhum instrutor público encontrado</div>
+              <div style={{fontSize:13}}>Activa o teu perfil público nas definições.</div>
+            </div>
+          )}
+
+          {/* Series section */}
+          {(typeFilter==='all'||typeFilter==='series') && seriesItems.length>0 && (
+            <div style={{marginBottom:28}}>
+              {typeFilter==='all'&&<div style={{fontSize:10,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:10}}>Séries</div>}
+              <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                {seriesItems.map(item=>(
+                  <div key={item.id} style={{background:C.white,border:`1px solid ${C.stone}`,borderRadius:12,padding:"14px 18px",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:4}}>
+                        <span style={{fontFamily:"'Clash Display',sans-serif",fontSize:16,fontWeight:600,color:C.ink}}>{item.name}</span>
+                        {item.type&&<span style={{fontSize:11,fontWeight:700,color:C.white,background:typeColors[item.type]||C.mist,borderRadius:20,padding:"2px 8px"}}>{item.type}</span>}
+                        {item.primaryZone&&<span style={{fontSize:11,color:C.mist,background:C.stone,borderRadius:20,padding:"2px 8px"}}>{item.primaryZone}</span>}
+                        {item.seriesType&&<span style={{fontSize:11,fontWeight:600,color:"#5a2a00",background:`${C.sig}50`,border:`1px solid ${C.sig}`,borderRadius:20,padding:"2px 8px"}}>{item.seriesType}</span>}
+                      </div>
+                      {authorLabel(item)&&<div style={{fontSize:12,color:C.mist}}>{authorLabel(item)}</div>}
+                    </div>
+                    <div style={{display:"flex",gap:8,flexShrink:0}}>
+                      <button onClick={()=>onCopy(item)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"6px 14px",borderRadius:8,border:`1px solid ${C.crimson}`,background:"transparent",color:C.crimson,cursor:"pointer"}}>Copiar</button>
+                      <button onClick={()=>onSend(item)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"6px 14px",borderRadius:8,border:`1px solid ${C.stone}`,background:C.white,color:C.ink,cursor:"pointer"}}>Enviar →</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Classes section */}
+          {(typeFilter==='all'||typeFilter==='class') && classItems.length>0 && (
+            <div style={{marginBottom:28}}>
+              {typeFilter==='all'&&<div style={{fontSize:10,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:10}}>Aulas</div>}
+              <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                {classItems.map(item=>(
+                  <div key={item.id} style={{background:C.white,border:`1px solid ${C.stone}`,borderRadius:12,padding:"14px 18px",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:4}}>
+                        <span style={{fontFamily:"'Clash Display',sans-serif",fontSize:16,fontWeight:600,color:C.ink}}>{item.name}</span>
+                        {item.type&&<span style={{fontSize:11,fontWeight:700,color:C.white,background:typeColors[item.type]||C.mist,borderRadius:20,padding:"2px 8px"}}>{item.type}</span>}
+                        {item.level&&<span style={{fontSize:11,color:C.mist,background:C.stone,borderRadius:20,padding:"2px 8px"}}>{item.level}</span>}
+                        {item.date&&<span style={{fontSize:11,color:C.mist}}>{item.date}</span>}
+                      </div>
+                      {authorLabel(item)&&<div style={{fontSize:12,color:C.mist}}>{authorLabel(item)}</div>}
+                    </div>
+                    <div style={{display:"flex",gap:8,flexShrink:0}}>
+                      <button onClick={()=>onCopy(item)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"6px 14px",borderRadius:8,border:`1px solid ${C.crimson}`,background:"transparent",color:C.crimson,cursor:"pointer"}}>Copiar</button>
+                      <button onClick={()=>onSend(item)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"6px 14px",borderRadius:8,border:`1px solid ${C.stone}`,background:C.white,color:C.ink,cursor:"pointer"}}>Enviar →</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Instructors section */}
+          {typeFilter==='instructors' && instructors.length>0 && (
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:16}}>
+              {instructors.filter(p=>!search||(p.name||'').toLowerCase().includes(search.toLowerCase())||(p.bio||'').toLowerCase().includes(search.toLowerCase())).map(p=>(
+                <div key={p.id} onClick={()=>onViewInstructor&&onViewInstructor(p)} style={{background:C.white,border:`1px solid ${C.stone}`,borderRadius:12,padding:"20px 18px",cursor:onViewInstructor?"pointer":"default",transition:"box-shadow 0.15s"}} onMouseEnter={e=>e.currentTarget.style.boxShadow="0 4px 16px rgba(0,0,0,0.1)"} onMouseLeave={e=>e.currentTarget.style.boxShadow="none"}>
+                  <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:10}}>
+                    {p.avatar_url
+                      ? <img src={p.avatar_url} alt="" style={{width:48,height:48,borderRadius:"50%",objectFit:"cover",flexShrink:0}}/>
+                      : <div style={{width:48,height:48,borderRadius:"50%",background:C.stone,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,color:C.mist}}>✦</div>
+                    }
+                    <div style={{minWidth:0}}>
+                      <div style={{fontFamily:"'Clash Display',sans-serif",fontSize:15,fontWeight:600,color:C.ink,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.name||"—"}</div>
+                      {p.studios?.name&&<div style={{fontSize:12,color:C.mist,marginTop:2}}>{p.studios.name}</div>}
+                    </div>
+                  </div>
+                  {p.bio&&<div style={{fontSize:12,color:C.ink,lineHeight:1.5,display:"-webkit-box",WebkitLineClamp:3,WebkitBoxOrient:"vertical",overflow:"hidden"}}>{p.bio}</div>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 };
@@ -5063,10 +6356,12 @@ function HavenApp() {
   const [user,    setUser]    = useState(null);
   const [profile, setProfile] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [series,  setSeries]  = useState(SIGNATURE_SERIES);
-  const [classes, setClasses] = useState(DEFAULT_CLASSES);
+  const [series,  setSeries]  = useState([]);
+  const [classes, setClasses] = useState([]);
   const [aiStyle, setAiStyle] = useState("");
   const [dataLoaded, setDataLoaded] = useState(false);
+  const [tourSlides, setTourSlides] = useState(null); // null = no tour; array = active tour
+  const [tourIdx,    setTourIdx]    = useState(0);
 
   const effectiveAiStyle = React.useMemo(() => {
     const guidelines = profile?.studios?.settings?.guidelines;
@@ -5076,14 +6371,18 @@ function HavenApp() {
     ].filter(Boolean);
     return parts.join('\n\n');
   }, [profile?.studios?.settings?.guidelines, aiStyle]);
-  const [filterType,    setFilterType]    = useState("all");
+  const [filterType,    setFilterType]    = useState(() => { try { return localStorage.getItem('haven_filterType') || "all"; } catch { return "all"; } });
+  const [filterStatus,  setFilterStatus]  = useState(() => { try { return localStorage.getItem('haven_filterStatus') || "all"; } catch { return "all"; } }); // 'all','approved','wip'
+  const [filterChoreo,  setFilterChoreo]  = useState(() => { try { return localStorage.getItem('haven_filterChoreo') || "all"; } catch { return "all"; } }); // 'all','simple','choreo'
+  const [selectedArchive, setSelectedArchive] = useState([]);
   const [showChoreo,    setShowChoreo]    = useState(() => { try { return localStorage.getItem('showChoreo') !== 'false'; } catch(e) { return true; } });
-  const [sortBy,        setSortBy]        = useState("targetZone");
-  const [sortOrder,     setSortOrder]     = useState("asc");
+  const [sortBy,        setSortBy]        = useState(() => { try { return localStorage.getItem('haven_sortBy') || "targetZone"; } catch { return "targetZone"; } });
+  const [sortOrder,     setSortOrder]     = useState(() => { try { return localStorage.getItem('haven_sortOrder') || "asc"; } catch { return "asc"; } });
   const [editingSeries, setEditingSeries] = useState(null);
   const [addingSeries,  setAddingSeries]  = useState(false);
   const [screen, setScreen] = useState({ mode:"home", cls:null, fromLibrary:false });
   const [screenStack, setScreenStack] = useState([]);
+  const screenRestored = React.useRef(false);
   const [aiPanelOpen, setAiPanelOpen] = useState(() => {
     try { return localStorage.getItem('aiPanelOpen') !== 'false'; } catch(e) { return true; }
   });
@@ -5098,9 +6397,17 @@ function HavenApp() {
   const [sendModalItem, setSendModalItem] = useState(null);
   const [notifications, setNotifications] = useState([]);
   const [showNotifPanel, setShowNotifPanel] = useState(false);
+  const [studioActiveTab, setStudioActiveTab] = useState('series');
   const [studioHighlights, setStudioHighlights] = useState([]);
   const [studioRecent, setStudioRecent] = useState([]);
   const [recentPublic, setRecentPublic] = useState([]);
+  const [publicProfiles, setPublicProfiles] = useState([]);
+  const [homeNotices, setHomeNotices] = useState([]);
+  const [showFeedback, setShowFeedback] = useState(false);
+  const [feedbackMsg, setFeedbackMsg] = useState('');
+  const [feedbackList, setFeedbackList] = useState(null); // null=not loaded, []=loaded
+  const [loadingFeedback, setLoadingFeedback] = useState(false);
+  const [sendingFeedback, setSendingFeedback] = useState(false);
 
   const navigate = (newScreen) => {
     const newStack = [...screenStack, screen];
@@ -5124,6 +6431,21 @@ function HavenApp() {
     }
   };
 
+  // Save screen to localStorage on change
+  useEffect(()=>{
+    if (!user || !dataLoaded) return;
+    const toSave = { mode: screen.mode };
+    if (screen.mode === 'aula' && screen.cls) toSave.clsId = screen.cls.id;
+    if (screen.readOnly) toSave.readOnly = true;
+    try { localStorage.setItem('haven_screen', JSON.stringify(toSave)); } catch(e) {}
+  }, [screen, user, dataLoaded]);
+
+  useEffect(() => { try { localStorage.setItem('haven_filterType', filterType); } catch {} }, [filterType]);
+  useEffect(() => { try { localStorage.setItem('haven_filterStatus', filterStatus); } catch {} }, [filterStatus]);
+  useEffect(() => { try { localStorage.setItem('haven_filterChoreo', filterChoreo); } catch {} }, [filterChoreo]);
+  useEffect(() => { try { localStorage.setItem('haven_sortBy', sortBy); } catch {} }, [sortBy]);
+  useEffect(() => { try { localStorage.setItem('haven_sortOrder', sortOrder); } catch {} }, [sortOrder]);
+
   // Auth listener
   useEffect(()=>{
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -5132,7 +6454,7 @@ function HavenApp() {
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
-      if (!session) { setDataLoaded(false); setSeries(SIGNATURE_SERIES); setClasses(DEFAULT_CLASSES); setAiStyle(""); setProfile(null); }
+      if (!session) { setDataLoaded(false); setSeries([]); setClasses([]); setAiStyle(""); setProfile(null); screenRestored.current = false; try { localStorage.removeItem('haven_screen'); } catch(e) {} }
     });
     return () => subscription.unsubscribe();
   }, []);
@@ -5163,6 +6485,22 @@ function HavenApp() {
 
       setProfile(p);
       setDataLoaded(true);
+      // Restore screen from localStorage (runs once, uses freshly loaded data)
+      if (!screenRestored.current) {
+        screenRestored.current = true;
+        try {
+          const saved = localStorage.getItem('haven_screen');
+          if (saved) {
+            const { mode, clsId, readOnly: ro } = JSON.parse(saved);
+            if (mode === 'aula' && clsId && cl) {
+              const foundCls = cl.find(c => c.id === clsId);
+              if (foundCls) { setScreen({ mode:'aula', cls:foundCls, fromLibrary:false, readOnly:ro||false }); }
+            } else if (['library','builder','discover','studio','profile'].includes(mode)) {
+              setScreen({ mode });
+            }
+          }
+        } catch(e) {}
+      }
       // Load shares inbox
       const { data: sharesData } = await supabase.from('shares').select('*').eq('to_user_id', user.id).order('created_at', { ascending: false });
       setShares(sharesData || []);
@@ -5188,15 +6526,17 @@ function HavenApp() {
           ...(rsr.data||[]).map(r=>({ ...seriesFromDB(r), _hType:'series' })),
           ...(rcr.data||[]).map(r=>({ ...classFromDB(r),  _hType:'class'  })),
         ]);
+        supabase.from('studio_notices').select('*').eq('studio_id', p.studio_id).order('created_at', { ascending: false }).limit(3)
+          .then(({ data }) => setHomeNotices(data || []));
       }
-      // Load recent public content from other instructors
+      // Load recent public content
       const [{ data: pubS }, { data: pubC }] = await Promise.all([
-        supabase.from('series').select('*, profiles!created_by(name,studios(name))').eq('visibility','public').neq('created_by', user.id).order('updated_at',{ascending:false}).limit(4),
-        supabase.from('classes').select('*, profiles!created_by(name,studios(name))').eq('visibility','public').neq('created_by', user.id).order('updated_at',{ascending:false}).limit(4),
+        supabase.from('series').select('*, profiles!created_by(name,studios(name))').eq('is_public',true).order('updated_at',{ascending:false}).limit(4),
+        supabase.from('classes').select('*').eq('is_public',true).order('updated_at',{ascending:false}).limit(4),
       ]);
       setRecentPublic([
         ...(pubS||[]).map(r=>({...seriesFromDB(r),_hType:'series',_author:r.profiles})),
-        ...(pubC||[]).map(r=>({...classFromDB(r),_hType:'class',_author:r.profiles})),
+        ...(pubC||[]).map(r=>({...classFromDB(r),_hType:'class',_author:null})),
       ]);
     })();
   }, [user]);
@@ -5211,10 +6551,23 @@ function HavenApp() {
     setEditingSeries(null); setAddingSeries(false); toast("Série guardada");
     if (user) api.upsertSeries(s, user.id);
   };
+  const saveStudioSeries = async s => {
+    if (user) await api.upsertSeries(s, user.id);
+  };
+  const saveStudioClass = async c => {
+    if (user) await api.upsertClass(c, user.id);
+  };
   const deleteSeries = async id => {
-    if(await confirm("Tens a certeza que queres apagar esta série? Esta acção não pode ser desfeita.", {confirmLabel:"Apagar série"})) {
-      setSeries(p=>p.filter(s=>s.id!==id));
-      if (user) api.removeSeries(id);
+    const s = series.find(x=>x.id===id);
+    setSeries(p=>p.map(x=>x.id===id?{...x,isArchived:true}:x));
+    if (user) {
+      if (s?.visibility==='studio' && s?.studioId) {
+        await supabase.from('series').update({ deleted_by_instructor: true }).eq('id', s.id);
+        const { data: admins } = await supabase.from('profiles').select('id').eq('studio_id', s.studioId).in('role', ['admin','owner']);
+        for (const a of admins||[]) sendNotification(a.id, 'series_deleted', 'Série apagada pelo Instructor', `"${s.name}" foi apagada pelo instructor. Confirma se queres mantê-la no studio ou eliminá-la.`, 'series', id);
+      } else {
+        await supabase.from('series').update({ is_archived: true }).eq('id', id);
+      }
     }
   };
   const saveClass = async c => {
@@ -5222,12 +6575,31 @@ function HavenApp() {
     if (user) api.upsertClass(c, user.id);
   };
   const deleteClass = async id => {
-    if(await confirm("Tens a certeza que queres apagar esta aula?", {confirmLabel:"Apagar aula"})) {
-      setClasses(p=>p.filter(c=>c.id!==id));
-      if (user) api.removeClass(id);
+    const c = classes.find(x=>x.id===id);
+    setClasses(p=>p.map(x=>x.id===id?{...x,isArchived:true}:x));
+    if (user) {
+      if (c?.visibility==='studio' && c?.studioId) {
+        await supabase.from('classes').update({ deleted_by_instructor: true }).eq('id', c.id);
+        const { data: admins } = await supabase.from('profiles').select('id').eq('studio_id', c.studioId).in('role', ['admin','owner']);
+        for (const a of admins||[]) sendNotification(a.id, 'class_deleted', 'Aula apagada pelo Instructor', `"${c.name||'Aula'}" foi apagada pelo instructor. Confirma se queres mantê-la no studio ou eliminá-la.`, 'class', id);
+      } else {
+        await supabase.from('classes').update({ is_archived: true }).eq('id', id);
+      }
     }
   };
+  const permanentDeleteClass = async id => {
+    setClasses(p => p.filter(x => x.id !== id));
+    if (user) await supabase.from('classes').delete().eq('id', id);
+  };
   const updateClass = async c => { setClasses(p=>p.map(x=>x.id===c.id?c:x)); toast("Aula guardada"); if (user) api.upsertClass(c, user.id); };
+
+  const duplicateClass = async c => {
+    const copy = { ...JSON.parse(JSON.stringify(c)), id:`c-${Date.now()}`, name:`${c.name} (cópia)`, createdBy: user?.id, visibility:'personal', studioId:null, shareToken:null, isPublic:false, deletedByInstructor:false };
+    setClasses(p=>[...p, copy]);
+    if (user) await api.upsertClass(copy, user.id);
+    setScreen({ mode:'aula', cls:copy, fromLibrary:false });
+    toast("Aula duplicada");
+  };
 
   const saveFork = async (forkedSeries, classId, oldSeriesId) => {
     const newS = { ...forkedSeries, createdBy: user?.id, createdAt: new Date().toISOString().split('T')[0], visibility: 'personal', studioId: null };
@@ -5242,7 +6614,7 @@ function HavenApp() {
 
   const publishToStudio = async s => {
     if (!profile?.studio_id) return;
-    const updated = { ...s, visibility: 'pending_studio', studioId: profile.studio_id };
+    const updated = { ...s, visibility: 'pending_studio', studioId: profile.studio_id, studioComment: null };
     setSeries(p=>p.map(x=>x.id===s.id?updated:x));
     await supabase.from('series').update({ visibility:'pending_studio', studio_id: profile.studio_id, studio_comment: null }).eq('id', s.id);
     toast("Série submetida para revisão do studio");
@@ -5265,7 +6637,7 @@ function HavenApp() {
   };
   const publishClassToStudio = async c => {
     if (!profile?.studio_id) return;
-    const updated = { ...c, visibility: 'pending_studio', studioId: profile.studio_id };
+    const updated = { ...c, visibility: 'pending_studio', studioId: profile.studio_id, studioComment: null };
     setClasses(p=>p.map(x=>x.id===c.id?updated:x));
     await supabase.from('classes').update({ visibility:'pending_studio', studio_id: profile.studio_id, studio_comment: null }).eq('id', c.id);
     toast("Aula submetida para revisão do studio");
@@ -5291,15 +6663,17 @@ function HavenApp() {
   const loadDiscover = async () => {
     setDiscoverLoading(true);
     try {
-      const [{ data: pubSeries }, { data: pubClasses }] = await Promise.all([
-        supabase.from('series').select('*, profiles!created_by(id, name, studios(name))').eq('visibility','public').order('updated_at', { ascending: false }).limit(100),
-        supabase.from('classes').select('*, profiles!created_by(id, name, studios(name))').eq('visibility','public').order('updated_at', { ascending: false }).limit(100),
+      const [{ data: pubSeries }, { data: pubClasses }, { data: pubProfiles }] = await Promise.all([
+        supabase.from('series').select('*, profiles!created_by(id, name, studios(name))').eq('is_public',true).order('updated_at', { ascending: false }).limit(100),
+        supabase.from('classes').select('*').eq('is_public',true).order('updated_at', { ascending: false }).limit(100),
+        supabase.from('profiles').select('*, studios(name)').eq('is_public', true).limit(50),
       ]);
       const items = [
         ...(pubSeries||[]).map(r => ({ ...seriesFromDB(r), _discoverType:'series', _author: r.profiles })),
-        ...(pubClasses||[]).map(r => ({ ...classFromDB(r), _discoverType:'class', _author: r.profiles })),
+        ...(pubClasses||[]).map(r => ({ ...classFromDB(r), _discoverType:'class', _author: null })),
       ];
       setDiscoverItems(items);
+      setPublicProfiles(pubProfiles||[]);
     } catch(e) { console.error('loadDiscover error:', e); }
     setDiscoverLoading(false);
   };
@@ -5365,25 +6739,25 @@ function HavenApp() {
   };
 
   const toggleSeriesPublic = async (s) => {
-    const isPublic = s.visibility === 'public';
-    const updated = { ...s, visibility: isPublic ? 'personal' : 'public' };
+    const nowPublic = !s.isPublic;
+    const updated = { ...s, isPublic: nowPublic };
     setSeries(p=>p.map(x=>x.id===s.id?updated:x));
-    await supabase.from('series').update({ visibility: updated.visibility }).eq('id', s.id);
-    toast(isPublic ? 'Série tornada privada' : 'Série publicada na plataforma');
+    await supabase.from('series').update({ is_public: nowPublic }).eq('id', s.id);
+    toast(nowPublic ? 'Série publicada na plataforma' : 'Série tornada privada');
   };
 
   const toggleClassPublic = async (c) => {
-    const isPublic = c.visibility === 'public';
-    const newVisibility = isPublic ? 'personal' : 'public';
-    const updated = { ...c, visibility: newVisibility };
+    const nowPublic = !c.isPublic;
+    const updated = { ...c, isPublic: nowPublic };
     setClasses(p => p.map(x => x.id === c.id ? updated : x));
-    const { error } = await supabase.from('classes').update({ visibility: newVisibility }).eq('id', c.id);
+    const { error } = await supabase.from('classes').update({ is_public: nowPublic }).eq('id', c.id);
     if (error) { console.error('toggleClassPublic error:', error); toast('Erro ao alterar visibilidade', 'error'); return; }
-    toast(isPublic ? 'Aula tornada privada' : 'Aula publicada na plataforma');
+    toast(nowPublic ? 'Aula publicada na plataforma' : 'Aula tornada privada');
   };
 
   const unseenSharesCount = shares.length;
   const unseenNotifCount = notifications.filter(n => !n.read).length;
+  const studioNotifCount = notifications.filter(n => !n.read && ['series_submitted','class_submitted','join_request'].includes(n.type)).length;
 
   const sendNotification = async (userId, type, title, body, itemType, itemId) => {
     try {
@@ -5407,10 +6781,47 @@ function HavenApp() {
     await supabase.from('notifications').update({ read: true }).eq('user_id', user.id);
   };
 
+  const submitFeedback = async () => {
+    if (!feedbackMsg.trim()) return;
+    setSendingFeedback(true);
+    await supabase.from('feedback').insert({ user_id: user?.id, message: feedbackMsg.trim() });
+    setSendingFeedback(false);
+    setFeedbackMsg('');
+    setShowFeedback(false);
+    toast('Obrigada pelo feedback! 🙏');
+  };
+
   const loadNotifications = async () => {
     if (!user) return;
     const { data } = await supabase.from('notifications').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(50);
     setNotifications(data || []);
+  };
+
+  const saveToAiProfile = async (note) => {
+    if (!profile || !user) return;
+    const currentAiProfile = profile?.settings?.ai_profile || {};
+    const currentNotes = currentAiProfile.notes || '';
+    const newNotes = currentNotes ? `${currentNotes}\n${note}` : note;
+    const updatedAiProfile = { ...currentAiProfile, notes: newNotes };
+    await supabase.from('profiles').update({
+      settings: { ...(profile.settings || {}), ai_profile: updatedAiProfile }
+    }).eq('id', user.id);
+    const updated = await api.loadProfile(user.id);
+    setProfile(updated);
+  };
+
+  const handleNotifClick = async (n) => {
+    setShowNotifPanel(false);
+    await supabase.from('notifications').update({ read: true }).eq('id', n.id);
+    setNotifications(p => p.map(x => x.id === n.id ? { ...x, read: true } : x));
+    if (n.type === 'series_submitted' || n.type === 'class_submitted') {
+      setStudioActiveTab('reviews');
+      goTab('studio');
+    } else if (n.item_type === 'class') {
+      goTab('builder');
+    } else {
+      goTab('library');
+    }
   };
 
   const isChoreoSeries = s => {
@@ -5418,13 +6829,20 @@ function HavenApp() {
     return movs.some(m=>m.timing);
   };
   const filteredSeries = series.filter(s=>{
-    if(!showChoreo && isChoreoSeries(s)) return false;
+    if(filterType==="archive") return !!s.isArchived;
+    if(s.isArchived) return false;
     if(seriesSearch && !s.name.toLowerCase().includes(seriesSearch.toLowerCase())) return false;
-    if(filterType==="all")      return true;
-    if(filterType==="approved") return s.status==="approved";
-    if(filterType==="reformer") return s.type==="reformer"||s.type==="signature";
-    if(filterType==="barre")    return s.type==="barre"||s.type==="signature";
-    return s.type===filterType;
+    // Type filter
+    if(filterType==="reformer" && !(s.type==="reformer"||s.type==="signature")) return false;
+    if(filterType==="barre"    && !(s.type==="barre"||s.type==="signature"))    return false;
+    if(filterType==="signature" && s.type!=="signature")                        return false;
+    // Status filter
+    if(filterStatus==="approved" && s.status!=="Pronta")  return false;
+    if(filterStatus==="wip"      && s.status==="Pronta")   return false;
+    // Choreo filter
+    if(filterChoreo==="choreo" && !isChoreoSeries(s))  return false;
+    if(filterChoreo==="simple" && isChoreoSeries(s))   return false;
+    return true;
   }).sort((a,b)=>{
     let va="", vb="";
     if(sortBy==="name")       { va=a.name||""; vb=b.name||""; }
@@ -5475,57 +6893,94 @@ function HavenApp() {
   if (!user) return <Auth />;
   if (dataLoaded && profile?.role === 'client') return <ClientPortal user={user} profile={profile} />;
   if (dataLoaded && profile && !profile.onboarded) return (
-    <Onboarding user={user} profile={profile} onComplete={async (newAiStyle) => {
+    <Onboarding user={user} profile={profile} onComplete={async (newAiStyle, roles) => {
       const p = await api.loadProfile(user.id);
       setProfile(p);
       if (newAiStyle) setAiStyle(newAiStyle);
+      const isInst = roles?.isInstructor ?? true;
+      const isStud = roles?.isStudio ?? false;
+      const slides = buildTourSlides(isInst, isStud);
+      if (slides.length > 0) {
+        setTourSlides(slides);
+        setTourIdx(0);
+        goTab(slides[0].tab);
+        if (slides[0].studioTab) setStudioActiveTab(slides[0].studioTab);
+      }
     }}/>
   );
 
   return (
-    <div style={{minHeight:"100vh",background:C.cream,fontFamily:"'Satoshi', sans-serif"}}>
+    <div style={{minHeight:"100vh",background:C.cream,fontFamily:"'Satoshi', sans-serif",display:"flex"}}>
 
+      {/* ── LEFT SIDEBAR ── */}
       {!isAulaMode&&(
-        <div style={{background:C.crimson,padding:"12px 28px",display:"flex",alignItems:"center",gap:16,borderBottom:`1px solid #5a1010`}}>
-          <div style={{display:"flex",alignItems:"center",gap:12}}>
-            <HavenLogo size={30} color={C.cream}/>
-            <div>
-              <div style={{fontFamily:"'Clash Display', sans-serif",fontSize:9,fontWeight:500,letterSpacing:"0.3em",textTransform:"uppercase",color:`${C.cream}70`,marginBottom:1}}>The Haven</div>
-              <div style={{fontFamily:"'Clash Display', sans-serif",fontSize:16,fontWeight:600,color:C.cream,letterSpacing:"0.02em"}}>Instructor Studio</div>
-            </div>
+        <div style={{width:200,background:C.crimson,minHeight:"100vh",display:"flex",flexDirection:"column",flexShrink:0,position:"sticky",top:0,alignSelf:"flex-start",height:"100vh",overflowY:"auto"}}>
+
+          {/* Logo */}
+          <div style={{padding:"24px 20px 20px",borderBottom:`1px solid #5a1010`}}>
+            <div style={{fontFamily:"'Clash Display',sans-serif",fontSize:9,fontWeight:500,letterSpacing:"0.3em",textTransform:"uppercase",color:`${C.cream}70`,marginBottom:4}}>The Haven</div>
+            <div style={{fontFamily:"'Clash Display',sans-serif",fontSize:16,fontWeight:600,color:C.cream}}>Instructor Studio</div>
           </div>
-          <div style={{flex:1}}/>
-          <div style={{display:"flex",alignItems:"center",gap:8}}>
-            <div style={{display:"flex",gap:2,background:`rgba(0,0,0,0.15)`,padding:3,borderRadius:8}}>
-              {[["home","Início"],["discover","Descobrir"],["library","Séries"],["builder","Aulas"],["studio","Studio"],["perfil","Perfil"]].map(([id,lbl])=>(
-                <button key={id} onClick={()=>{ goTab(id); if(id==="discover") loadDiscover(); }} style={{fontFamily:"'Satoshi', sans-serif",fontWeight:600,fontSize:12,padding:"6px 16px",borderRadius:6,border:"none",cursor:"pointer",background:screen.mode===id?C.cream:"transparent",color:screen.mode===id?C.crimson:`${C.cream}80`,transition:"all 0.15s",position:"relative"}}>
-                  {id==="discover"&&unseenSharesCount>0&&<span style={{position:"absolute",top:2,right:4,background:"#e74c3c",color:"#fff",borderRadius:"50%",fontSize:9,padding:"0 4px",fontWeight:700,lineHeight:"14px",minWidth:14,textAlign:"center"}}>{unseenSharesCount}</span>}
-                  {lbl}
-                </button>
-              ))}
-            </div>
+
+          {/* Nav items */}
+          <nav style={{flex:1,padding:"12px 10px",display:"flex",flexDirection:"column",gap:2}}>
+            {[["home","Início","🏠"],["library","Séries","📚"],["builder","Aulas","📋"],["studio","Studio","🏛"],["discover","Descobrir","🔍"],["perfil","Perfil","👤"]].map(([id,lbl,icon])=>(
+              <button key={id} onClick={()=>{ goTab(id); if(id==="discover") loadDiscover(); }} style={{
+                display:"flex",alignItems:"center",gap:10,
+                width:"100%",padding:"9px 12px",borderRadius:8,border:"none",
+                cursor:"pointer",textAlign:"left",
+                background:screen.mode===id?`${C.cream}20`:"transparent",
+                color:screen.mode===id?C.cream:`${C.cream}80`,
+                fontFamily:"'Satoshi',sans-serif",fontWeight:screen.mode===id?700:500,fontSize:13,
+                transition:"all 0.15s",position:"relative",
+              }}>
+                <span style={{fontSize:15,lineHeight:1}}>{icon}</span>
+                <span>{lbl}</span>
+                {id==="discover"&&unseenSharesCount>0&&<span style={{marginLeft:"auto",background:"#e74c3c",color:"#fff",borderRadius:10,fontSize:9,padding:"1px 5px",fontWeight:700,lineHeight:"14px",minWidth:14,textAlign:"center"}}>{unseenSharesCount}</span>}
+                {id==="studio"&&studioNotifCount>0&&<span style={{marginLeft:"auto",background:"#e74c3c",color:"#fff",borderRadius:10,fontSize:9,padding:"1px 5px",fontWeight:700,lineHeight:"14px",minWidth:14,textAlign:"center"}}>{studioNotifCount}</span>}
+              </button>
+            ))}
+          </nav>
+
+          {/* Bottom actions */}
+          <div style={{padding:"12px 10px",borderTop:`1px solid #5a1010`,display:"flex",flexDirection:"column",gap:4}}>
+            {/* Notification bell */}
             <div style={{position:"relative"}}>
-              <button onClick={()=>{ const next=!showNotifPanel; setShowNotifPanel(next); if(next) loadNotifications(); }} title="Notificações" style={{position:"relative",background:showNotifPanel?C.cream:"transparent",border:`1px solid ${unseenNotifCount>0||showNotifPanel?C.cream:`${C.cream}40`}`,borderRadius:6,padding:"6px 10px",cursor:"pointer",color:showNotifPanel?C.crimson:unseenNotifCount>0?C.cream:`${C.cream}80`,fontSize:14,display:"inline-flex",alignItems:"center"}}>
-                🔔
-                {unseenNotifCount>0&&<span style={{position:"absolute",top:-4,right:-4,background:"#e74c3c",color:"#fff",borderRadius:"50%",fontSize:9,padding:"0 4px",fontWeight:700,lineHeight:"14px",minWidth:14,textAlign:"center"}}>{unseenNotifCount}</span>}
+              <button onClick={()=>{ const next=!showNotifPanel; setShowNotifPanel(next); if(next) loadNotifications(); }} style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"8px 12px",borderRadius:8,border:"none",cursor:"pointer",background:showNotifPanel?`${C.cream}20`:"transparent",color:`${C.cream}80`,fontFamily:"'Satoshi',sans-serif",fontSize:13,fontWeight:500,textAlign:"left"}}>
+                <span style={{fontSize:15}}>🔔</span>
+                <span>Notificações</span>
+                {unseenNotifCount>0&&<span style={{marginLeft:"auto",background:"#e74c3c",color:"#fff",borderRadius:10,fontSize:9,padding:"1px 5px",fontWeight:700,lineHeight:"14px",minWidth:14,textAlign:"center"}}>{unseenNotifCount}</span>}
               </button>
               {showNotifPanel&&(
-                <NotifPanel
-                  notifications={notifications}
-                  onDismiss={dismissNotif}
-                  onMarkAllRead={markAllNotifsRead}
-                  onViewAll={()=>{ setShowNotifPanel(false); goTab("home"); }}
-                  onClose={()=>setShowNotifPanel(false)}
-                />
+                <div style={{position:"fixed",bottom:20,left:210,zIndex:1000}}>
+                  <NotifPanel
+                    notifications={notifications}
+                    onDismiss={dismissNotif}
+                    onMarkAllRead={markAllNotifsRead}
+                    onClose={()=>setShowNotifPanel(false)}
+                    onNotifClick={handleNotifClick}
+                  />
+                </div>
               )}
             </div>
-            <button onClick={()=>supabase.auth.signOut()} style={{fontFamily:"'Satoshi',sans-serif",fontWeight:600,fontSize:12,padding:"6px 14px",borderRadius:6,border:`1px solid ${C.cream}40`,background:"transparent",color:`${C.cream}80`,cursor:"pointer"}} title="Sair">Sair</button>
+            <button onClick={()=>setShowFeedback(true)} style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"8px 12px",borderRadius:8,border:"none",cursor:"pointer",background:"transparent",color:`${C.cream}80`,fontFamily:"'Satoshi',sans-serif",fontSize:13,fontWeight:500,textAlign:"left"}}>
+              <span style={{fontSize:15}}>💡</span><span>Sugestões</span>
+            </button>
+            <button onClick={()=>{
+              const isInst = profile?.role !== 'studio_only';
+              const isStud = !!(profile?.studio_id || profile?.studioMemberships?.length);
+              const slides=buildTourSlides(isInst,isStud);
+              if(slides.length){setTourSlides(slides);setTourIdx(0);goTab(slides[0].tab);if(slides[0].studioTab)setStudioActiveTab(slides[0].studioTab);}
+            }} style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"8px 12px",borderRadius:8,border:"none",cursor:"pointer",background:"transparent",color:`${C.cream}80`,fontFamily:"'Satoshi',sans-serif",fontSize:13,fontWeight:500,textAlign:"left"}}>
+              <span style={{fontSize:15}}>❓</span><span>Tour</span>
+            </button>
           </div>
         </div>
       )}
 
-      <div style={{display:"flex",maxWidth:1600,margin:"0 auto",width:"100%",padding:isAulaMode?"0":"0",alignItems:"flex-start"}}>
-        <div style={{flex:1,minWidth:0,padding:isAulaMode?"0":"28px 24px",overflowX:"hidden"}}>
+      {/* ── MAIN CONTENT ── */}
+      <div style={{flex:1,minWidth:0,display:"flex",alignItems:"flex-start",maxWidth:isAulaMode?"none":1400}}>
+        <div style={{flex:1,minWidth:0,padding:isAulaMode?"0":"28px 32px",overflowX:"hidden"}}>
 
         <MovDatalist series={series}/>
 
@@ -5535,7 +6990,7 @@ function HavenApp() {
             series={series}
             classes={classes}
             profile={profile}
-            onNewSeries={()=>{setAddingSeries(true);setEditingSeries(null);goTab("library");}}
+            onNewSeries={()=>{ goTab("library"); setEditingSeries(null); setAddingSeries(true); }}
             onNewClass={()=>goTab("builder")}
             onViewSeries={s=>{setEditingSeries(s);goTab("library");}}
             onViewClass={c=>navigate({mode:"aula",cls:c,fromLibrary:false})}
@@ -5550,6 +7005,7 @@ function HavenApp() {
             studioRecent={studioRecent}
             recentPublic={recentPublic}
             onGoDiscover={()=>{ goTab("discover"); loadDiscover(); }}
+            notices={homeNotices}
           />
         )}
 
@@ -5562,13 +7018,25 @@ function HavenApp() {
             onCopy={copyDiscoverItem}
             onSend={item=>setSendModalItem(item)}
             profile={profile}
+            instructors={publicProfiles}
+            onViewInstructor={p=>navigate({mode:'instructor',profileId:p.id})}
+          />
+        )}
+
+        {/* ── INSTRUCTOR PROFILE ── */}
+        {screen.mode==="instructor"&&(
+          <InstructorProfileView
+            profileId={screen.profileId}
+            onBack={goBack}
+            onCopy={copyDiscoverItem}
+            onSend={item=>setSendModalItem(item)}
           />
         )}
 
         {/* ── LIBRARY ── */}
         {screen.mode==="library"&&(
           editingSeries||addingSeries
-            ? <SeriesEditor series={editingSeries} onSave={saveSeries} onSaveAsNew={s=>{saveSeries(s);}} onCancel={()=>{setEditingSeries(null);setAddingSeries(false);}} onDelete={id=>{deleteSeries(id);setEditingSeries(null);setAddingSeries(false);}} aiStyle={effectiveAiStyle} studioSettings={profile?.studios?.settings} availableZones={profile?.settings?.preferred_zones?.length?profile.settings.preferred_zones:undefined} availableSeriesTypes={profile?.settings?.series_types?.length?profile.settings.series_types:undefined}/>
+            ? <SeriesEditor series={editingSeries} onSave={saveSeries} onSaveAsNew={s=>{saveSeries(s);}} onCancel={()=>{setEditingSeries(null);setAddingSeries(false);}} onDelete={id=>{deleteSeries(id);setEditingSeries(null);setAddingSeries(false);}} aiStyle={effectiveAiStyle} studioSettings={profile?.studios?.settings} availableZones={profile?.settings?.preferred_zones?.length?profile.settings.preferred_zones:undefined} availableSeriesTypes={profile?.settings?.series_types?.length?profile.settings.series_types:undefined} availableClassTypes={profile?.settings?.class_types?.length?profile.settings.class_types:undefined} onPublish={profile?.studio_id?publishToStudio:undefined}/>
             : <>
                 {/* Top bar: title + search + new */}
                 <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16,flexWrap:"wrap"}}>
@@ -5579,75 +7047,130 @@ function HavenApp() {
                 {/* Two-column layout: left filters + right series */}
                 <div style={{display:"flex",gap:20,alignItems:"flex-start"}}>
                   {/* Left filter panel */}
-                  <div style={{width:170,flexShrink:0,display:"flex",flexDirection:"column",gap:16}}>
-                    {/* Type filter */}
-                    <div>
-                      <div style={{fontSize:10,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Tipo</div>
-                      <div style={{display:"flex",flexDirection:"column",gap:4}}>
-                        {[["all","Todas"],["reformer","Reformer"],["barre","Barre"],["signature","Signature"],["approved","✓ Aprovadas"]].map(([val,lbl])=>(
-                          <button key={val} onClick={()=>setFilterType(val)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 12px",borderRadius:8,border:`1px solid ${filterType===val?C.neutral:C.stone}`,background:filterType===val?C.neutral:"transparent",color:filterType===val?C.white:C.ink,cursor:"pointer",textAlign:"left"}}>{lbl}</button>
+                  <div style={{width:170,flexShrink:0,display:"flex",flexDirection:"column",gap:0}}>
+                    <CollapsibleSection title="Tipo de Aula" defaultOpen={true}>
+                      <div style={{display:"flex",flexDirection:"column",gap:4,paddingBottom:8}}>
+                        {[["all","Todas"],["reformer","Reformer"],["barre","Barre"],["signature","Paralelo"]].map(([val,lbl])=>(
+                          <button key={val} onClick={()=>setFilterType(val)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 12px",borderRadius:8,border:`1px solid ${filterType===val&&['all','reformer','barre','signature'].includes(val)?C.neutral:C.stone}`,background:filterType===val&&['all','reformer','barre','signature'].includes(val)?C.neutral:"transparent",color:filterType===val&&['all','reformer','barre','signature'].includes(val)?C.white:C.ink,cursor:"pointer",textAlign:"left"}}>{lbl}</button>
                         ))}
                       </div>
-                    </div>
-                    {/* Sort */}
-                    <div>
-                      <div style={{fontSize:10,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Ordenar</div>
-                      <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                    </CollapsibleSection>
+
+                    <CollapsibleSection title="Modo" defaultOpen={false}>
+                      <div style={{display:"flex",flexDirection:"column",gap:4,paddingBottom:8}}>
+                        {[["all","Todos"],["simple","Simples"],["choreo","Coreografado"]].map(([val,lbl])=>(
+                          <button key={val} onClick={()=>setFilterChoreo(val)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 12px",borderRadius:8,border:`1px solid ${filterChoreo===val?C.neutral:C.stone}`,background:filterChoreo===val?C.neutral:"transparent",color:filterChoreo===val?C.white:C.ink,cursor:"pointer",textAlign:"left"}}>{lbl}</button>
+                        ))}
+                      </div>
+                    </CollapsibleSection>
+
+                    <CollapsibleSection title="Estado" defaultOpen={false}>
+                      <div style={{display:"flex",flexDirection:"column",gap:4,paddingBottom:8}}>
+                        {[["all","Todas"],["approved","Prontas"],["wip","WIP"]].map(([val,lbl])=>(
+                          <button key={val} onClick={()=>setFilterStatus(val)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 12px",borderRadius:8,border:`1px solid ${filterStatus===val?C.neutral:C.stone}`,background:filterStatus===val?C.neutral:"transparent",color:filterStatus===val?C.white:C.ink,cursor:"pointer",textAlign:"left"}}>{lbl}</button>
+                        ))}
+                      </div>
+                    </CollapsibleSection>
+
+                    <CollapsibleSection title="Ordenar" defaultOpen={false}>
+                      <div style={{display:"flex",flexDirection:"column",gap:4,paddingBottom:8}}>
                         {[["name","Nome"],["createdAt","Data"],["targetZone","Zona"]].map(([val,lbl])=>(
                           <button key={val} onClick={()=>{ if(sortBy===val) setSortOrder(p=>p==="asc"?"desc":"asc"); else { setSortBy(val); setSortOrder("asc"); }}} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 12px",borderRadius:8,border:`1px solid ${sortBy===val?C.neutral:C.stone}`,background:sortBy===val?C.neutral:"transparent",color:sortBy===val?C.white:C.ink,cursor:"pointer",textAlign:"left"}}>
                             {lbl}{sortBy===val?(sortOrder==="asc"?" ↑":" ↓"):""}
                           </button>
                         ))}
                       </div>
+                    </CollapsibleSection>
+
+                    <div style={{borderTop:`1px solid ${C.stone}`,paddingTop:8,marginTop:4,display:"flex",flexDirection:"column",gap:2}}>
+                      <button onClick={()=>setFilterType('archive')} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,color:filterType==='archive'?C.crimson:C.mist,background:"none",border:"none",cursor:"pointer",padding:"4px 0",textAlign:"left",textDecoration:"underline"}}>📦 Arquivo</button>
+                      <button onClick={()=>navigate({mode:"movements",cls:null,fromLibrary:true})} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,color:C.mist,background:"none",border:"none",cursor:"pointer",padding:"4px 0",textAlign:"left",textDecoration:"underline"}}>Movimentos →</button>
                     </div>
-                    {/* View options */}
-                    <div>
-                      <div style={{fontSize:10,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Vista</div>
-                      <div style={{display:"flex",flexDirection:"column",gap:4}}>
-                        <button onClick={()=>{ const n=!compactSeries; setCompactSeries(n); try{localStorage.setItem('compactSeries',String(n));}catch(e){} }} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 12px",borderRadius:8,border:`1px solid ${compactSeries?C.neutral:C.stone}`,background:compactSeries?C.neutral:"transparent",color:compactSeries?C.white:C.ink,cursor:"pointer",textAlign:"left"}}>{compactSeries?"☰ Normal":"⊞ Compacto"}</button>
-                        <button onClick={()=>{ const n=!showChoreo; setShowChoreo(n); try{localStorage.setItem('showChoreo',String(n));}catch(e){} }} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 12px",borderRadius:8,border:`1px solid ${!showChoreo?C.neutral:C.stone}`,background:!showChoreo?C.neutral:"transparent",color:!showChoreo?C.white:C.ink,cursor:"pointer",textAlign:"left"}}>{showChoreo?"Ocultar coreog.":"Mostrar coreog."}</button>
-                      </div>
-                    </div>
-                    {/* Movements link */}
-                    <button onClick={()=>navigate({mode:"movements",cls:null,fromLibrary:true})} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,color:C.mist,background:"none",border:"none",cursor:"pointer",padding:"4px 0",textAlign:"left",textDecoration:"underline",marginTop:4}}>Biblioteca de movimentos →</button>
                   </div>
                   {/* Right: series list */}
-                  <div style={{flex:1,minWidth:0,display:"flex",flexDirection:"column",gap:8}}>
-                    {(()=>{
-                      let lastZone = undefined;
-                      return filteredSeries.map(s=>{
-                        const zone = sortBy==="targetZone" ? (s.primaryZone||s.targetZone?.split(",")[0]?.trim()||"") : null;
-                        const showDivider = zone!==null && zone!==lastZone;
-                        lastZone = zone;
+                  <div style={{flex:1,minWidth:0}}>
+                    {filterType === "archive" ? (
+                      (() => {
+                        const archivedSeries = series.filter(s => s.isArchived);
+                        const restoreSelected = async () => {
+                          const ids = selectedArchive;
+                          setSeries(p => p.map(s => ids.includes(s.id) ? {...s, isArchived: false} : s));
+                          setSelectedArchive([]);
+                          if (user) for (const id of ids) await supabase.from('series').update({is_archived: false}).eq('id', id);
+                        };
+                        const deleteSelected = async () => {
+                          if (!window.confirm(`Apagar permanentemente ${selectedArchive.length} série(s)? Esta acção não pode ser desfeita.`)) return;
+                          const ids = selectedArchive;
+                          setSeries(p => p.filter(s => !ids.includes(s.id)));
+                          setSelectedArchive([]);
+                          if (user) for (const id of ids) await supabase.from('series').delete().eq('id', id);
+                        };
                         return (
-                          <React.Fragment key={s.id}>
-                            {showDivider&&(
-                              <div style={{display:"flex",alignItems:"center",gap:10,margin:"4px 0 2px"}}>
-                                <div style={{flex:1,height:1,background:C.stone}}/>
-                                <span style={{fontSize:10,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.1em"}}>{zone||"—"}</span>
-                                <div style={{flex:1,height:1,background:C.stone}}/>
-                              </div>
-                            )}
-                            <SeriesCard series={s}
-                              modalityFilter={filterType==="reformer"?"reformer":filterType==="barre"?"barre":null}
-                              onEdit={s=>setEditingSeries(s)}
-                              onDelete={deleteSeries}
-                              onUpdateSeries={saveSeries}
-                              aiStyle={effectiveAiStyle}
-                              currentUserId={user?.id}
-                              hasStudio={!!profile?.studio_id}
-                              onCopy={copyToLibrary}
-                              onPublish={publishToStudio}
-                              onUnpublish={unpublishFromStudio}
-                              onMakePublic={makeSeriesPublic}
-                              onTogglePublic={toggleSeriesPublic}
-                              onSend={item=>setSendModalItem(item)}
-                              compact={compactSeries}
-                            />
-                          </React.Fragment>
+                          <div>
+                            <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12,flexWrap:"wrap"}}>
+                              <span style={{fontSize:13,color:C.mist}}>{archivedSeries.length} séries arquivadas</span>
+                              {selectedArchive.length > 0 && (
+                                <>
+                                  <button onClick={restoreSelected} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 14px",borderRadius:8,border:`1px solid ${C.neutral}`,background:C.neutral,color:C.white,cursor:"pointer"}}>↺ Restaurar ({selectedArchive.length})</button>
+                                  <button onClick={deleteSelected} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 14px",borderRadius:8,border:"1px solid #b91c1c",background:"#b91c1c",color:"#fff",cursor:"pointer"}}>🗑 Apagar permanentemente ({selectedArchive.length})</button>
+                                </>
+                              )}
+                            </div>
+                            {archivedSeries.length === 0 && <div style={{color:C.mist,fontSize:13,padding:"30px 0",textAlign:"center"}}>Arquivo vazio.</div>}
+                            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                              {archivedSeries.map(s => (
+                                <div key={s.id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",background:C.white,borderRadius:10,border:`1px solid ${C.stone}`}}>
+                                  <input type="checkbox" checked={selectedArchive.includes(s.id)} onChange={e=>setSelectedArchive(p=>e.target.checked?[...p,s.id]:p.filter(x=>x!==s.id))} style={{cursor:"pointer",flexShrink:0}}/>
+                                  <div style={{flex:1,minWidth:0}}>
+                                    <div style={{fontSize:13,fontWeight:600,color:C.ink,fontFamily:"'Clash Display',sans-serif",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.name}</div>
+                                    <div style={{fontSize:11,color:C.mist}}>{s.type}{s.primaryZone?` · ${s.primaryZone}`:""}</div>
+                                  </div>
+                                  <button onClick={async()=>{setSeries(p=>p.map(x=>x.id===s.id?{...x,isArchived:false}:x));if(user)await supabase.from('series').update({is_archived:false}).eq('id',s.id);}} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"4px 12px",borderRadius:8,border:`1px solid ${C.neutral}`,background:"transparent",color:C.neutral,cursor:"pointer"}}>↺ Restaurar</button>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
                         );
-                      });
-                    })()}
+                      })()
+                    ) : (
+                      <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                        {(()=>{
+                          let lastZone = undefined;
+                          return filteredSeries.map(s=>{
+                            const zone = sortBy==="targetZone" ? (s.primaryZone||s.targetZone?.split(",")[0]?.trim()||"") : null;
+                            const showDivider = zone!==null && zone!==lastZone;
+                            lastZone = zone;
+                            return (
+                              <React.Fragment key={s.id}>
+                                {showDivider&&(
+                                  <div style={{display:"flex",alignItems:"center",gap:10,margin:"4px 0 2px"}}>
+                                    <div style={{flex:1,height:1,background:C.stone}}/>
+                                    <span style={{fontSize:10,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.1em"}}>{zone||"—"}</span>
+                                    <div style={{flex:1,height:1,background:C.stone}}/>
+                                  </div>
+                                )}
+                                <SeriesCard series={s}
+                                  modalityFilter={filterType==="reformer"?"reformer":filterType==="barre"?"barre":null}
+                                  onEdit={s=>setEditingSeries(s)}
+                                  onDelete={deleteSeries}
+                                  onUpdateSeries={saveSeries}
+                                  aiStyle={effectiveAiStyle}
+                                  currentUserId={user?.id}
+                                  hasStudio={!!profile?.studio_id}
+                                  onCopy={copyToLibrary}
+                                  onPublish={publishToStudio}
+                                  onUnpublish={unpublishFromStudio}
+                                  onMakePublic={makeSeriesPublic}
+                                  onTogglePublic={toggleSeriesPublic}
+                                  onSend={item=>setSendModalItem(item)}
+                                  compact={true}
+                                />
+                              </React.Fragment>
+                            );
+                          });
+                        })()}
+                      </div>
+                    )}
                   </div>
                 </div>
               </>
@@ -5659,9 +7182,12 @@ function HavenApp() {
             profile={profile} user={user} onProfileUpdate={p=>setProfile(p)}
             onCopyToLibrary={copyToLibrary} sendNotification={sendNotification}
             onSaveSeries={saveSeries} onSaveClass={saveClass}
+            onSaveStudioSeries={saveStudioSeries} onSaveStudioClass={saveStudioClass}
             onDeleteSeries={id=>deleteSeries(id)} onDeleteClass={deleteClass}
-            onViewAula={c=>navigate({mode:"aula",cls:c,fromLibrary:false})}
-            allSeries={series}
+            onViewAula={(c,opts={})=>navigate({mode:"aula",cls:c,fromLibrary:false,...opts})}
+            allSeries={series} allClasses={classes}
+            onPublishSeries={publishToStudio} onPublishClass={publishClassToStudio}
+            activeTab={studioActiveTab} onTabChange={setStudioActiveTab}
           />
         )}
 
@@ -5684,6 +7210,7 @@ function HavenApp() {
             allSeries={series} classes={classes}
             onSave={c=>saveClass(c)}
             onDeleteClass={deleteClass}
+            onPermanentDeleteClass={permanentDeleteClass}
             onViewAula={c=>navigate({mode:"aula",cls:c,fromLibrary:false})}
             studioSettings={profile?.studios?.settings}
             onPublishClass={publishClassToStudio}
@@ -5691,6 +7218,7 @@ function HavenApp() {
             hasStudio={!!profile?.studio_id}
             onToggleClassPublic={toggleClassPublic}
             onSendClass={item=>setSendModalItem(item)}
+            onUpdateClass={updateClass}
           />
         )}
 
@@ -5709,10 +7237,15 @@ function HavenApp() {
             onTeachingModeChange={setAulaTeachingMode}
             onSeriesEditChange={setAulaEditingSeries}
             studioSettings={profile?.studios?.settings}
+            readOnly={!!screen.readOnly}
+            onPublishClass={profile?.studio_id?publishClassToStudio:undefined}
+            onUnpublishClass={profile?.studio_id?unpublishClassFromStudio:undefined}
+            onDuplicateClass={!screen.readOnly?duplicateClass:undefined}
+            onSaveSeriesAsNew={!screen.readOnly?saveSeries:undefined}
           />
         )}
 
-      </div>{/* end main content */}
+      </div>{/* end inner content */}
       {!isAulaMode&&<ContextAIPanel
         open={aiPanelOpen}
         onToggle={toggleAiPanel}
@@ -5722,11 +7255,123 @@ function HavenApp() {
         classes={classes}
         aiStyle={effectiveAiStyle}
         onUpdateSeries={saveSeries}
+        onUpdateClass={updateClass}
         onNavigate={navigate}
         profile={profile}
+        onSaveToProfile={saveToAiProfile}
       />}
-    </div>{/* end flex row */}
+      </div>
     {sendModalItem&&<SendModal item={sendModalItem} currentUserId={user?.id} onSend={sendToInstructor} onClose={()=>setSendModalItem(null)}/>}
+
+    {/* ── FEEDBACK MODAL ── */}
+    {showFeedback && (
+      <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 700 }} onClick={() => setShowFeedback(false)}>
+        <div style={{ background: C.white, borderRadius: 16, padding: 28, width: 'calc(100% - 48px)', maxWidth: 420, boxShadow: '0 12px 40px rgba(0,0,0,0.18)' }} onClick={e => e.stopPropagation()}>
+          <div style={{ fontFamily: "'Clash Display',sans-serif", fontSize: 18, fontWeight: 600, color: C.ink, marginBottom: 6 }}>💡 Sugestões & Feedback</div>
+          <div style={{ fontSize: 13, color: C.mist, marginBottom: 16 }}>Tens uma ideia ou encontraste um problema? Diz-nos!</div>
+          <textarea
+            value={feedbackMsg}
+            onChange={e => setFeedbackMsg(e.target.value)}
+            placeholder="Descreve a tua sugestão ou problema…"
+            rows={4}
+            style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: `1px solid ${C.stone}`, fontFamily: "'Satoshi',sans-serif", fontSize: 13, outline: 'none', resize: 'vertical', boxSizing: 'border-box', marginBottom: 16 }}
+          />
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button onClick={() => setShowFeedback(false)} style={{ flex: 1, padding: 10, borderRadius: 8, border: `1px solid ${C.stone}`, background: 'transparent', fontFamily: "'Satoshi',sans-serif", fontWeight: 600, fontSize: 13, cursor: 'pointer', color: C.ink }}>Cancelar</button>
+            <button onClick={submitFeedback} disabled={sendingFeedback || !feedbackMsg.trim()} style={{ flex: 1, padding: 10, borderRadius: 8, border: 'none', background: sendingFeedback || !feedbackMsg.trim() ? C.stone : C.crimson, color: C.cream, fontFamily: "'Satoshi',sans-serif", fontWeight: 700, fontSize: 13, cursor: sendingFeedback || !feedbackMsg.trim() ? 'not-allowed' : 'pointer' }}>
+              {sendingFeedback ? 'A enviar…' : 'Enviar'}
+            </button>
+          </div>
+          <div style={{marginTop:12,borderTop:`1px solid ${C.stone}`,paddingTop:12}}>
+            <button onClick={async()=>{
+              if(feedbackList!==null){setFeedbackList(null);return;}
+              setLoadingFeedback(true);
+              const {data}=await supabase.from('feedback').select('*').order('created_at',{ascending:false}).limit(100);
+              setFeedbackList(data||[]);setLoadingFeedback(false);
+            }} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,color:C.mist,background:"none",border:"none",cursor:"pointer",padding:0,textDecoration:"underline"}}>
+              {feedbackList!==null?"Esconder sugestões":"Ver todas as sugestões"}
+            </button>
+            {loadingFeedback&&<div style={{fontSize:11,color:C.mist,marginTop:6}}>A carregar…</div>}
+            {feedbackList&&feedbackList.length===0&&<div style={{fontSize:12,color:C.mist,marginTop:8}}>Sem sugestões ainda.</div>}
+            {feedbackList&&feedbackList.length>0&&(
+              <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:6,maxHeight:320,overflowY:"auto"}}>
+                {feedbackList.map((f,i)=>(
+                  <div key={f.id||i} style={{padding:"8px 10px",borderRadius:8,border:`1px solid ${C.stone}`,background:C.cream}}>
+                    <div style={{fontSize:11,color:C.mist,marginBottom:4}}>{f.created_at?.slice(0,16).replace('T',' ')||"—"} · {f.user_id?.slice(0,8)||"anon"}</div>
+                    <div style={{fontSize:13,color:C.ink,lineHeight:1.4}}>{f.message}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    )}
+
+    {/* ── ONBOARDING TOUR ── */}
+    {tourSlides&&(()=>{
+      const slide = tourSlides[tourIdx];
+      const isLast = tourIdx >= tourSlides.length - 1;
+      const closeTour = () => setTourSlides(null);
+      const navToSlide = (s) => {
+        if (s?.tab) goTab(s.tab);
+        if (s?.studioTab) setStudioActiveTab(s.studioTab);
+        if (s?.action === 'openNewSeries') {
+          // Use first existing series, or open blank editor
+          if (series.length > 0) {
+            setEditingSeries(series[0]);
+            setAddingSeries(false);
+          } else {
+            setEditingSeries(null);
+            setAddingSeries(true);
+          }
+        } else if (s?.action === 'openNewClass') {
+          // Use first existing class, or open blank aula view
+          if (classes.length > 0) {
+            setScreen({ mode: 'aula', cls: classes[0], fromLibrary: false });
+          } else {
+            const blankCls = { id: `tour-${Date.now()}`, name: 'Nova aula (tour)', type: 'Reformer', seriesIds: [], date: null, createdBy: user?.id };
+            setScreen({ mode: 'aula', cls: blankCls, fromLibrary: false });
+          }
+        }
+      };
+      const advance = () => {
+        if (isLast) { closeTour(); return; }
+        const next = tourSlides[tourIdx + 1];
+        navToSlide(next);
+        setTourIdx(p => p + 1);
+      };
+      const back = () => {
+        if (tourIdx === 0) return;
+        const prev = tourSlides[tourIdx - 1];
+        navToSlide(prev);
+        setTourIdx(p => p - 1);
+      };
+      return (
+        <div style={{position:'fixed',bottom:24,left:'50%',transform:'translateX(-50%)',zIndex:600,width:'calc(100% - 48px)',maxWidth:480,background:C.white,borderRadius:16,boxShadow:'0 8px 40px rgba(0,0,0,0.18)',padding:'20px 24px',border:`1px solid ${C.stone}`}}>
+          {/* dots */}
+          <div style={{display:'flex',gap:5,marginBottom:14,justifyContent:'center'}}>
+            {tourSlides.map((_,i)=>(
+              <div key={i} style={{width:i===tourIdx?18:5,height:5,borderRadius:3,background:i===tourIdx?C.crimson:C.stone,transition:'all 0.2s'}}/>
+            ))}
+          </div>
+          <div style={{marginBottom:14}}>
+            <div style={{fontFamily:"'Clash Display',sans-serif",fontSize:16,fontWeight:600,color:C.crimson,marginBottom:4}}>{slide.title}</div>
+            <div style={{fontFamily:"'Satoshi',sans-serif",fontSize:13,color:C.mist,lineHeight:1.6}}>{slide.body}</div>
+          </div>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+            <button onClick={back} style={{background:'none',border:'none',color:C.mist,fontFamily:"'Satoshi',sans-serif",fontWeight:600,fontSize:13,cursor:'pointer',opacity:tourIdx===0?0:1,pointerEvents:tourIdx===0?'none':'auto'}}>← Anterior</button>
+            <div style={{display:'flex',gap:10,alignItems:'center'}}>
+              <button onClick={closeTour} style={{background:'none',border:'none',color:C.mist,fontFamily:"'Satoshi',sans-serif",fontSize:12,cursor:'pointer'}}>Saltar tour</button>
+              <button onClick={advance} style={{padding:'8px 20px',borderRadius:8,border:'none',background:C.crimson,color:C.cream,fontFamily:"'Satoshi',sans-serif",fontWeight:700,fontSize:13,cursor:'pointer'}}>
+                {isLast ? 'Começar ✓' : 'Seguinte →'}
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    })()}
+
     </div>
   );
 }

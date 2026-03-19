@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS shares (
   from_user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   to_user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   item_type TEXT NOT NULL CHECK (item_type IN ('series','class')),
-  item_id UUID NOT NULL,
+  item_id TEXT NOT NULL,
   item_snapshot JSONB NOT NULL,
   message TEXT,
   seen BOOLEAN DEFAULT false,
