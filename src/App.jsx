@@ -421,7 +421,7 @@ const classToDB = (c, userId) => ({
   id: c.id, name: c.name, type: c.type, date: c.date || null,
   series_order: c.seriesIds || [], notes: c.notes || null,
   created_by: userId, visibility: c.visibility || 'personal',
-  studio_id: c.studioId || null,
+  studio_id: c.studioId || c.studio_id || null,
   level: c.level || null,
   warmup_notes: c.warmupNotes || null, cooldown_notes: c.cooldownNotes || null,
   attribution: c.attribution || null,
@@ -1101,14 +1101,18 @@ const SeriesCard = ({ series, onEdit, onDelete, onUpdateSeries, aiStyle, modalit
       <div style={{ padding:"8px 14px", display:"flex", alignItems:"center", gap:10, cursor:"pointer" }}
         onClick={()=>setExpanded(p=>!p)}>
         {/* Left: circular type badge */}
-        <div style={{ width:36, height:36, borderRadius:"50%", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center",
-          background: isSig ? `${C.sig}40` : series.type==="reformer" ? `${C.reformer}20` : `${C.barre}30`,
-          border: `1.5px solid ${isSig ? C.sig : series.type==="reformer" ? `${C.reformer}50` : `${C.barre}60`}`,
-        }}>
-          <span style={{ fontSize:14, fontWeight:700, color: isSig ? "#7a4010" : series.type==="reformer" ? C.reformer : "#c0507a", lineHeight:1 }}>
-            {isSig ? "✦" : series.type==="reformer" ? "R" : "B"}
-          </span>
-        </div>
+        {(()=>{
+          const t = series.type || "";
+          const isRef = t.toLowerCase()==="reformer";
+          const isBar = t.toLowerCase()==="barre";
+          const bg = isSig?`${C.sig}40`:isRef?`${C.reformer}20`:isBar?`${C.barre}30`:`${C.neutral}20`;
+          const border = isSig?C.sig:isRef?`${C.reformer}50`:isBar?`${C.barre}60`:`${C.neutral}50`;
+          const color = isSig?"#7a4010":isRef?C.reformer:isBar?"#c0507a":C.mist;
+          const label = isSig?"✦":t.slice(0,2).toUpperCase()||"?";
+          return <div style={{width:36,height:36,borderRadius:"50%",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",background:bg,border:`1.5px solid ${border}`}}>
+            <span style={{fontSize:label==="✦"?14:11,fontWeight:700,color,lineHeight:1}}>{label}</span>
+          </div>;
+        })()}
         {/* Middle: name + subtitle */}
         <div style={{ flex:1, minWidth:0 }}>
           <div style={{ fontFamily:"'Clash Display', sans-serif", fontSize:15, fontWeight:500, color:C.ink, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{series.name}</div>
@@ -2568,6 +2572,7 @@ const AulaView = ({ cls, allSeries, onBack, onDeleteClass, onUpdateSeries, onUpd
     onUpdateClass({...currentCls, usedDates: newDates});
   };
   const toast_ = useToast();
+  const confirm_ = useConfirm();
 
   const handleShare = async () => {
     let token = shareToken;
@@ -2665,10 +2670,14 @@ const AulaView = ({ cls, allSeries, onBack, onDeleteClass, onUpdateSeries, onUpd
   };
 
   // Flow editor helpers
-  const availableForFlow = React.useMemo(() =>
-    allSeries.filter(s => !seriesList.find(x=>x.id===s.id) &&
-      (cls.type==="signature" ? s.type==="signature" : s.type===cls.type||s.type==="signature"))
-  , [allSeries, seriesList, cls.type]);
+  const availableForFlow = React.useMemo(() => {
+    const isStudioClass = cls.visibility==="studio";
+    return allSeries.filter(s => {
+      if (seriesList.find(x=>x.id===s.id)) return false;
+      if (isStudioClass) return s.visibility==="studio" && (s.studioId===cls.studioId||s.studio_id===cls.studio_id);
+      return s.type===cls.type || s.type==="signature";
+    });
+  }, [allSeries, seriesList, cls.type, cls.visibility, cls.studioId, cls.studio_id]);
 
   const flowZones = React.useMemo(() => {
     const zset = new Set();
@@ -3101,7 +3110,7 @@ const AulaView = ({ cls, allSeries, onBack, onDeleteClass, onUpdateSeries, onUpd
                   {studioCheckClass&&studioCheckClass!=='loading'&&<div style={{fontSize:11,padding:"4px 8px",borderRadius:8,background:studioCheckClass.verdict?.startsWith('✓')?'#f0fdf4':studioCheckClass.verdict?.startsWith('✗')?'#fef2f2':'#fefce8',color:studioCheckClass.verdict?.startsWith('✓')?'#166534':studioCheckClass.verdict?.startsWith('✗')?'#991b1b':'#854d0e',cursor:'pointer'}} onClick={()=>setStudioCheckClass(null)} title={studioCheckClass.explanation}>{studioCheckClass.verdict}: {studioCheckClass.explanation}</div>}
                   {onDuplicateClass&&<button onClick={()=>onDuplicateClass(cls)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 12px",borderRadius:8,border:`1px solid ${C.stone}`,background:C.white,color:C.ink,cursor:"pointer",textAlign:"left"}}>Duplicar</button>}
                   {cls.visibility==='pending_studio'&&onUnpublishClass&&<button onClick={()=>onUnpublishClass(cls)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 12px",borderRadius:8,border:`1px solid ${C.stone}`,background:C.white,color:C.mist,cursor:"pointer",textAlign:"left"}}>Retirar submissão</button>}
-                  {onDeleteClass&&<button onClick={()=>onDeleteClass(cls.id)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 12px",borderRadius:8,border:"1px solid #fca5a5",background:C.white,color:"#b91c1c",cursor:"pointer",textAlign:"left"}}>Apagar aula</button>}
+                  {onDeleteClass&&<button onClick={async()=>{ const ok=await confirm_('Apagar esta aula? Esta acção não pode ser desfeita.'); if(ok) onDeleteClass(cls.id); }} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 12px",borderRadius:8,border:"1px solid #fca5a5",background:C.white,color:"#b91c1c",cursor:"pointer",textAlign:"left"}}>Apagar aula</button>}
                 </div>
               )}
 
@@ -3174,7 +3183,7 @@ const AulaView = ({ cls, allSeries, onBack, onDeleteClass, onUpdateSeries, onUpd
                     <span style={{color:C.stone,fontSize:12,userSelect:"none"}}>⠿</span>
                     <span style={{fontSize:11,fontWeight:700,color:C.mist,minWidth:18}}>{i+1}</span>
                     <span style={{flex:1,fontSize:13,color:C.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ser.name}</span>
-                    <Badge label={ser.type==="signature"?"✦":ser.type==="reformer"?"R":"B"} color={ser.type==="signature"?"gold":ser.type==="reformer"?"teal":"coral"}/>
+                    <Badge label={ser.type==="signature"?"✦":ser.type?.slice(0,2)?.toUpperCase()||"?"} color={ser.type==="signature"?"gold":ser.type?.toLowerCase()==="reformer"?"teal":ser.type?.toLowerCase()==="barre"?"coral":"neutral"}/>
                     <button onClick={()=>removeFromFlow(ser.id)} style={{background:"none",border:"none",cursor:"pointer",color:C.coral,padding:"2px 4px",flexShrink:0}}><Icon name="x" size={13}/></button>
                   </div>
                 ))}
@@ -3194,7 +3203,7 @@ const AulaView = ({ cls, allSeries, onBack, onDeleteClass, onUpdateSeries, onUpd
                 {availableFlowFiltered.map(ser=>(
                   <div key={ser.id} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",background:C.cream,borderRadius:8,border:`1px solid ${C.stone}`,marginBottom:5}}>
                     <span style={{flex:1,fontSize:13,color:C.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ser.name}</span>
-                    <Badge label={ser.type==="signature"?"✦":ser.type==="reformer"?"R":"B"} color={ser.type==="signature"?"gold":ser.type==="reformer"?"teal":"coral"}/>
+                    <Badge label={ser.type==="signature"?"✦":ser.type?.slice(0,2)?.toUpperCase()||"?"} color={ser.type==="signature"?"gold":ser.type?.toLowerCase()==="reformer"?"teal":ser.type?.toLowerCase()==="barre"?"coral":"neutral"}/>
                     <Btn small variant="ghost" onClick={()=>addToFlow(ser.id)}><Icon name="plus" size={12}/></Btn>
                   </div>
                 ))}
@@ -3568,14 +3577,17 @@ const ClassBuilder = ({ allSeries, classes, onSave, onDeleteClass, onPermanentDe
                   onMouseLeave={e=>{ if(!isExpanded)e.currentTarget.style.borderColor=C.stone; }}>
                   {/* Header */}
                   <div onClick={toggleExpand} style={{cursor:"pointer",padding:"8px 14px",display:"flex",alignItems:"center",gap:10}}>
-                    <div style={{width:36,height:36,borderRadius:"50%",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",
-                      background:c.type==="signature"?`${C.sig}40`:c.type==="reformer"?`${C.reformer}20`:`${C.barre}30`,
-                      border:`1.5px solid ${c.type==="signature"?C.sig:c.type==="reformer"?`${C.reformer}50`:`${C.barre}60`}`,
-                    }}>
-                      <span style={{fontSize:14,fontWeight:700,color:c.type==="signature"?"#7a4010":c.type==="reformer"?C.reformer:"#c0507a",lineHeight:1}}>
-                        {c.type==="signature"?"✦":c.type==="reformer"?"R":"B"}
-                      </span>
-                    </div>
+                    {(()=>{
+                      const t = c.type||"";
+                      const isSig=t==="signature";const isRef=t.toLowerCase()==="reformer";const isBar=t.toLowerCase()==="barre";
+                      const bg=isSig?`${C.sig}40`:isRef?`${C.reformer}20`:isBar?`${C.barre}30`:`${C.neutral}20`;
+                      const bdr=isSig?C.sig:isRef?`${C.reformer}50`:isBar?`${C.barre}60`:`${C.neutral}50`;
+                      const color=isSig?"#7a4010":isRef?C.reformer:isBar?"#c0507a":C.mist;
+                      const lbl=isSig?"✦":t.slice(0,2).toUpperCase()||"?";
+                      return <div style={{width:36,height:36,borderRadius:"50%",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",background:bg,border:`1.5px solid ${bdr}`}}>
+                        <span style={{fontSize:lbl==="✦"?14:11,fontWeight:700,color,lineHeight:1}}>{lbl}</span>
+                      </div>;
+                    })()}
                     <div style={{flex:1,minWidth:0}}>
                       <div style={{fontFamily:"'Clash Display',sans-serif",fontSize:15,fontWeight:500,color:C.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name||"Sem nome"}</div>
                       <div style={{fontSize:11,color:C.mist,marginTop:1}}>{[c.level,c.date,c.seriesIds?.length?`${c.seriesIds.length} série${c.seriesIds.length!==1?"s":""}`:null].filter(Boolean).join(" · ")}</div>
