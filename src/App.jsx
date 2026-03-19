@@ -5911,7 +5911,7 @@ const ContextAIPanel = ({ open, onToggle, screen, editingSeries, series, classes
               if(!text) return;
               await onSaveToProfile(text);
               setInput("");
-            }} disabled={!input.trim()} style={{fontFamily:"'Satoshi',sans-serif",fontSize:10,color:input.trim()?C.neutral:C.stone,background:"none",border:"none",cursor:input.trim()?"pointer":"default",padding:"0 2px",textAlign:"left",textDecoration:"underline",alignSelf:"flex-start"}}>
+            }} disabled={!input.trim()} title="Guarda o texto acima como o teu estilo de instrução para IA. Substitui o estilo atual no teu perfil e passa a ser usado em todos os prompts de IA." style={{fontFamily:"'Satoshi',sans-serif",fontSize:10,color:input.trim()?C.neutral:C.stone,background:"none",border:"none",cursor:input.trim()?"pointer":"default",padding:"0 2px",textAlign:"left",textDecoration:"underline",alignSelf:"flex-start"}}>
               💾 Guardar no perfil
             </button>}
           </div>}
