@@ -4611,7 +4611,7 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
   const handleJoin = async e => {
     e.preventDefault();
     setJoinError(''); setJoining(true);
-    const { data: found } = await supabase.from('studios').select('id, name').eq('slug', joinSlug.trim()).maybeSingle();
+    const { data: found } = await supabase.from('studios').select('id, name').eq('studio_code', joinSlug.trim().toUpperCase()).maybeSingle();
     if (!found) { setJoinError('Studio não encontrado. Verifica o código.'); setJoining(false); return; }
     const err = await api.upsertProfile({ id: user.id, studio_id: found.id, role: 'instructor' });
     if (err) { setJoinError(err.message); setJoining(false); return; }
