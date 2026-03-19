@@ -486,7 +486,9 @@ export default function Onboarding({ user, profile, onComplete }) {
             </div>
           ))}
         </div>
-        <NavRow onBack={goPrev} onNext={goNext} nextDisabled={!studioAction} />
+        <NavRow onBack={goPrev} onNext={goNext} nextDisabled={!studioAction}
+          onSkip={handleSave} skipLabel="Saltar e começar sem studio →" saving={saving} />
+        {saveError && <div style={{ marginTop: 10, fontSize: 12, color: '#991b1b', textAlign: 'center', fontFamily: "'Satoshi', sans-serif" }}>{saveError}</div>}
       </Card>
     </Shell>
   );
@@ -547,7 +549,8 @@ export default function Onboarding({ user, profile, onComplete }) {
             </div>
           </div>
         </div>
-        <NavRow onBack={goPrev} onNext={goNext} nextDisabled={!studioName.trim() || studioCode.length < 4} />
+        <NavRow onBack={goPrev} onNext={goNext} nextDisabled={!studioName.trim() || studioCode.length < 4}
+          onSkip={handleSave} skipLabel="Saltar e começar sem studio →" saving={saving} />
       </Card>
     </Shell>
   );
