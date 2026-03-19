@@ -6608,6 +6608,241 @@ const SendModal = ({ item, currentUserId, onSend, onClose }) => {
   );
 };
 
+// ─── ADMIN / BACKOFFICE PAGE ──────────────────────────────────────────────────
+const AdminPage = ({ user }) => {
+  const [activeTab, setActiveTab] = React.useState('users');
+  const [users, setUsers] = React.useState([]);
+  const [studios, setStudios] = React.useState([]);
+  const [pendingMemberships, setPendingMemberships] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
+  const [search, setSearch] = React.useState('');
+  const [stats, setStats] = React.useState({ users: 0, studios: 0, series: 0, classes: 0 });
+  const toast_ = useToast();
+  const confirm_ = useConfirm();
+
+  const load = React.useCallback(async () => {
+    setLoading(true);
+    const [
+      { data: profilesData },
+      { data: studiosData },
+      { data: pendingData },
+      { count: userCount },
+      { count: studioCount },
+      { count: seriesCount },
+      { count: classCount },
+    ] = await Promise.all([
+      supabase.from('profiles').select('id, name, role, studio_id, onboarded, created_at, studios(name)').order('created_at', { ascending: false }),
+      supabase.from('studios').select('id, name, studio_code, is_public, settings, studio_memberships(count)').order('created_at', { ascending: false }),
+      supabase.from('studio_memberships').select('id, user_id, studio_id, role, status, joined_at, profiles(name), studios(name)').eq('status', 'pending').order('joined_at', { ascending: false }),
+      supabase.from('profiles').select('id', { count: 'exact', head: true }),
+      supabase.from('studios').select('id', { count: 'exact', head: true }),
+      supabase.from('series').select('id', { count: 'exact', head: true }),
+      supabase.from('classes').select('id', { count: 'exact', head: true }),
+    ]);
+    setUsers(profilesData || []);
+    setStudios(studiosData || []);
+    setPendingMemberships(pendingData || []);
+    setStats({ users: userCount||0, studios: studioCount||0, series: seriesCount||0, classes: classCount||0 });
+    setLoading(false);
+  }, []);
+
+  React.useEffect(() => { load(); }, [load]);
+
+  const changeUserRole = async (userId, newRole) => {
+    const { error } = await supabase.from('profiles').update({ role: newRole }).eq('id', userId);
+    if (error) { toast_('Erro: ' + error.message, 'error'); return; }
+    setUsers(prev => prev.map(u => u.id === userId ? { ...u, role: newRole } : u));
+    toast_('Papel atualizado');
+  };
+
+  const resetOnboarding = async (userId) => {
+    const { error } = await supabase.from('profiles').update({ onboarded: false }).eq('id', userId);
+    if (error) { toast_('Erro: ' + error.message, 'error'); return; }
+    setUsers(prev => prev.map(u => u.id === userId ? { ...u, onboarded: false } : u));
+    toast_('Onboarding reposto');
+  };
+
+  const deleteUser = async (userId, userName) => {
+    const ok = await confirm_(`Apagar o utilizador "${userName}"? Esta ação é irreversível.`);
+    if (!ok) return;
+    const ok2 = await confirm_('Última confirmação — apagar conta definitivamente?', { confirmLabel: 'Apagar', cancelLabel: 'Cancelar' });
+    if (!ok2) return;
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const r = await fetch('/api/admin/delete-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ userId }),
+      });
+      const result = await r.json();
+      if (!r.ok) { toast_('Erro: ' + (result.error || r.status), 'error'); return; }
+      setUsers(prev => prev.filter(u => u.id !== userId));
+      toast_('Utilizador apagado');
+    } catch (e) {
+      toast_('Erro de rede: ' + e.message, 'error');
+    }
+  };
+
+  const approveRequest = async (membershipId) => {
+    const { error } = await supabase.from('studio_memberships').update({ status: 'active' }).eq('id', membershipId);
+    if (error) { toast_('Erro: ' + error.message, 'error'); return; }
+    setPendingMemberships(prev => prev.filter(m => m.id !== membershipId));
+    toast_('Pedido aprovado');
+  };
+
+  const rejectRequest = async (membershipId) => {
+    const ok = await confirm_('Rejeitar este pedido?');
+    if (!ok) return;
+    const { error } = await supabase.from('studio_memberships').delete().eq('id', membershipId);
+    if (error) { toast_('Erro: ' + error.message, 'error'); return; }
+    setPendingMemberships(prev => prev.filter(m => m.id !== membershipId));
+    toast_('Pedido rejeitado');
+  };
+
+  const toggleStudioPublic = async (studioId, currentVal) => {
+    const { error } = await supabase.from('studios').update({ is_public: !currentVal }).eq('id', studioId);
+    if (error) { toast_('Erro: ' + error.message, 'error'); return; }
+    setStudios(prev => prev.map(s => s.id === studioId ? { ...s, is_public: !currentVal } : s));
+  };
+
+  const ROLES = ['instructor', 'admin', 'studio_owner', 'super_admin', 'backoffice_admin'];
+  const filteredUsers = users.filter(u => !search || u.name?.toLowerCase().includes(search.toLowerCase()));
+
+  const tabStyle = active => ({
+    fontFamily: "'Satoshi',sans-serif", fontSize: 13, fontWeight: 600, padding: '7px 16px', borderRadius: 8,
+    border: `1px solid ${active ? C.crimson : C.stone}`, background: active ? C.crimson : 'transparent',
+    color: active ? C.cream : C.ink, cursor: 'pointer',
+  });
+
+  return (
+    <div>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
+        <h2 style={{ fontFamily: "'Clash Display',sans-serif", fontSize: 26, fontWeight: 500, color: C.crimson, margin: 0, flex: 1 }}>⚙️ Backoffice</h2>
+        <button onClick={load} disabled={loading} style={{ fontFamily: "'Satoshi',sans-serif", fontSize: 12, fontWeight: 600, padding: '7px 14px', borderRadius: 8, border: `1px solid ${C.stone}`, background: C.white, color: C.ink, cursor: 'pointer', opacity: loading ? 0.5 : 1 }}>↻ Recarregar</button>
+      </div>
+
+      {/* Stats bar */}
+      <div style={{ display: 'flex', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
+        {[['Utilizadores', stats.users, '👤'], ['Studios', stats.studios, '🏛'], ['Séries', stats.series, '📚'], ['Aulas', stats.classes, '📋']].map(([lbl, val, icon]) => (
+          <div key={lbl} style={{ background: C.white, border: `1px solid ${C.stone}`, borderRadius: 12, padding: '12px 20px', flex: 1, minWidth: 100, textAlign: 'center' }}>
+            <div style={{ fontSize: 22, marginBottom: 4 }}>{icon}</div>
+            <div style={{ fontFamily: "'Clash Display',sans-serif", fontSize: 22, fontWeight: 600, color: C.crimson }}>{val}</div>
+            <div style={{ fontSize: 11, color: C.mist, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{lbl}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Tab bar */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
+        <button style={tabStyle(activeTab === 'users')} onClick={() => setActiveTab('users')}>Utilizadores</button>
+        <button style={tabStyle(activeTab === 'studios')} onClick={() => setActiveTab('studios')}>Studios</button>
+        <button style={tabStyle(activeTab === 'requests')} onClick={() => setActiveTab('requests')}>
+          Pedidos de Studio{pendingMemberships.length > 0 ? ` (${pendingMemberships.length})` : ''}
+        </button>
+      </div>
+
+      {loading && <div style={{ color: C.mist, fontSize: 14, padding: '40px 0', textAlign: 'center' }}>A carregar…</div>}
+
+      {/* ── UTILIZADORES TAB ── */}
+      {!loading && activeTab === 'users' && (
+        <div>
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Pesquisar por nome…"
+            style={{ fontFamily: "'Satoshi',sans-serif", fontSize: 13, padding: '8px 14px', borderRadius: 20, border: `1px solid ${C.stone}`, outline: 'none', background: C.white, color: C.ink, width: 240, marginBottom: 16 }} />
+          <div style={{ background: C.white, borderRadius: 12, border: `1px solid ${C.stone}`, overflow: 'hidden' }}>
+            {/* Table header */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 120px 140px 80px 1fr', gap: 0, background: C.stone, padding: '8px 16px' }}>
+              {['Nome', 'Papel', 'Studio', 'Onboard', 'Ações'].map(h => (
+                <span key={h} style={{ fontSize: 10, fontWeight: 700, color: C.mist, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{h}</span>
+              ))}
+            </div>
+            {filteredUsers.length === 0 && <div style={{ padding: '24px 16px', color: C.mist, fontSize: 13 }}>Nenhum utilizador encontrado.</div>}
+            {filteredUsers.map((u, i) => (
+              <div key={u.id} style={{ display: 'grid', gridTemplateColumns: '1fr 120px 140px 80px 1fr', gap: 0, padding: '10px 16px', borderTop: i > 0 ? `1px solid ${C.stone}` : 'none', alignItems: 'center' }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: C.ink }}>{u.name || '(sem nome)'}</div>
+                  <div style={{ fontSize: 11, color: C.mist, fontFamily: 'monospace' }}>{u.id.slice(0, 8)}…</div>
+                </div>
+                <select value={u.role || 'instructor'} onChange={e => changeUserRole(u.id, e.target.value)}
+                  style={{ fontFamily: "'Satoshi',sans-serif", fontSize: 12, padding: '4px 8px', borderRadius: 6, border: `1px solid ${C.stone}`, background: C.white, color: C.ink, cursor: 'pointer' }}>
+                  {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
+                </select>
+                <div style={{ fontSize: 12, color: C.mist, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.studios?.name || '—'}</div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: u.onboarded ? '#16a34a' : '#b91c1c' }}>{u.onboarded ? '✓' : '✗'}</div>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  <button onClick={() => resetOnboarding(u.id)} title="Repor onboarding"
+                    style={{ fontFamily: "'Satoshi',sans-serif", fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 6, border: `1px solid ${C.stone}`, background: 'transparent', color: C.ink, cursor: 'pointer' }}>
+                    ↩ Onboarding
+                  </button>
+                  {u.id !== user?.id && (
+                    <button onClick={() => deleteUser(u.id, u.name || u.id)}
+                      style={{ fontFamily: "'Satoshi',sans-serif", fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 6, border: '1px solid #fca5a5', background: '#fef2f2', color: '#b91c1c', cursor: 'pointer' }}>
+                      Apagar
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── STUDIOS TAB ── */}
+      {!loading && activeTab === 'studios' && (
+        <div style={{ background: C.white, borderRadius: 12, border: `1px solid ${C.stone}`, overflow: 'hidden' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 100px 80px 80px 80px', gap: 0, background: C.stone, padding: '8px 16px' }}>
+            {['Nome', 'Código', 'Membros', 'Público', ''].map(h => (
+              <span key={h} style={{ fontSize: 10, fontWeight: 700, color: C.mist, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{h}</span>
+            ))}
+          </div>
+          {studios.length === 0 && <div style={{ padding: '24px 16px', color: C.mist, fontSize: 13 }}>Nenhum studio.</div>}
+          {studios.map((s, i) => (
+            <div key={s.id} style={{ display: 'grid', gridTemplateColumns: '1fr 100px 80px 80px 80px', gap: 0, padding: '10px 16px', borderTop: i > 0 ? `1px solid ${C.stone}` : 'none', alignItems: 'center' }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: C.ink }}>{s.name}</div>
+              <code style={{ fontSize: 12, color: C.mist, background: C.stone, padding: '2px 6px', borderRadius: 4 }}>{s.studio_code || '—'}</code>
+              <div style={{ fontSize: 13, color: C.mist, textAlign: 'center' }}>{Array.isArray(s.studio_memberships) ? s.studio_memberships[0]?.count ?? s.studio_memberships.length : '—'}</div>
+              <div style={{ textAlign: 'center' }}>
+                <MiniToggle on={!!s.is_public} onToggle={() => toggleStudioPublic(s.id, s.is_public)} onColor={C.crimson} />
+              </div>
+              <div style={{ fontSize: 11, color: s.is_public ? '#16a34a' : C.mist }}>{s.is_public ? 'Público' : 'Privado'}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── PEDIDOS DE STUDIO TAB ── */}
+      {!loading && activeTab === 'requests' && (
+        <div>
+          {pendingMemberships.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '60px 0', color: C.mist }}>
+              <div style={{ fontSize: 32, marginBottom: 12 }}>✓</div>
+              <div style={{ fontFamily: "'Clash Display',sans-serif", fontSize: 18, color: C.ink }}>Sem pedidos pendentes</div>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {pendingMemberships.map(m => (
+                <div key={m.id} style={{ background: C.white, border: `1px solid ${C.stone}`, borderRadius: 12, padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: C.ink }}>{m.profiles?.name || m.user_id?.slice(0, 8)}</div>
+                    <div style={{ fontSize: 12, color: C.mist, marginTop: 2 }}>
+                      quer entrar em <b style={{ color: C.ink }}>{m.studios?.name || m.studio_id?.slice(0, 8)}</b>
+                      {m.joined_at && <span> · {new Date(m.joined_at).toLocaleDateString('pt-PT', { day: '2-digit', month: 'short', year: 'numeric' })}</span>}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                    <button onClick={() => approveRequest(m.id)} style={{ fontFamily: "'Satoshi',sans-serif", fontSize: 12, fontWeight: 700, padding: '7px 16px', borderRadius: 8, border: 'none', background: '#16a34a', color: '#fff', cursor: 'pointer' }}>Aprovar</button>
+                    <button onClick={() => rejectRequest(m.id)} style={{ fontFamily: "'Satoshi',sans-serif", fontSize: 12, fontWeight: 700, padding: '7px 16px', borderRadius: 8, border: `1px solid #fca5a5`, background: '#fef2f2', color: '#b91c1c', cursor: 'pointer' }}>Rejeitar</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
 function HavenApp() {
   const [user,    setUser]    = useState(null);
@@ -7206,7 +7441,7 @@ function HavenApp() {
 
           {/* Nav items */}
           <nav style={{flex:1,padding:"12px 10px",display:"flex",flexDirection:"column",gap:2}}>
-            {[["home","Início","🏠"],["library","Séries","📚"],["builder","Aulas","📋"],["studio","Studio","🏛"],["discover","Descobrir","🔍"],["perfil","Perfil","👤"]].map(([id,lbl,icon])=>(
+            {[["home","Início","🏠"],["library","Séries","📚"],["builder","Aulas","📋"],["studio","Studio","🏛"],["discover","Descobrir","🔍"],["perfil","Perfil","👤"],...(['super_admin','backoffice_admin'].includes(profile?.role)?[["admin","Admin","⚙️"]]:[] )].map(([id,lbl,icon])=>(
               <button key={id} onClick={()=>{ goTab(id); if(id==="discover") loadDiscover(); }} style={{
                 display:"flex",alignItems:"center",gap:10,
                 width:"100%",padding:"9px 12px",borderRadius:8,border:"none",
@@ -7555,6 +7790,11 @@ function HavenApp() {
             onDuplicateClass={!screen.readOnly?duplicateClass:undefined}
             onSaveSeriesAsNew={!screen.readOnly?saveSeries:undefined}
           />
+        )}
+
+        {/* ── ADMIN / BACKOFFICE ── */}
+        {screen.mode==="admin"&&['super_admin','backoffice_admin'].includes(profile?.role)&&(
+          <AdminPage user={user} />
         )}
 
       </div>{/* end inner content */}
