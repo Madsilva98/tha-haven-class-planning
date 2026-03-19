@@ -7282,7 +7282,15 @@ function HavenApp() {
             onViewInstructor={p=>navigate({mode:'instructor',profileId:p.id})}
             onJoinStudio={async studioId => {
               if (!user) return;
-              await supabase.from('studio_memberships').upsert({ user_id: user.id, studio_id: studioId, role: 'instructor', status: 'pending' }, { onConflict: 'user_id,studio_id' });
+              const { error: joinErr } = await supabase.from('studio_memberships').upsert(
+                { user_id: user.id, studio_id: studioId, role: 'instructor', status: 'pending' },
+                { onConflict: 'user_id,studio_id' }
+              );
+              if (joinErr) {
+                console.error('[onJoinStudio] upsert error:', joinErr);
+                toast('Erro ao enviar pedido: ' + (joinErr.message || joinErr.code), 'error');
+                return;
+              }
               // Notify studio admins/owners
               const { data: owners } = await supabase.from('studio_memberships').select('user_id').eq('studio_id', studioId).eq('status', 'active').in('role', ['owner', 'admin', 'studio_owner']);
               for (const o of (owners || [])) {
