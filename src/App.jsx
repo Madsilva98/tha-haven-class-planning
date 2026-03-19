@@ -1897,7 +1897,7 @@ const SeriesEditor = ({ series, onSave, onSaveAsNew, onCancel, onDelete, aiStyle
     }
     return initS;
   });
-  const [originalSnap] = useState(()=>JSON.stringify({name:initS.name,song:initS.song,type:initS.type,status:initS.status,cues:initS.cues,reformer:initS.reformer,barre:initS.barre,parallelColumns:initS.parallelColumns}));
+  const [originalSnap] = useState(()=>JSON.stringify({name:initS.name,song:initS.song,type:initS.type,status:initS.status,muscles:initS.muscles,cues:initS.cues,reformer:initS.reformer,barre:initS.barre,parallelColumns:initS.parallelColumns}));
   const [generatingMods, setGeneratingMods] = useState(false);
   const toast_ = useToast();
   const [choreMode, setChoreMode] = useState(()=> (initS.reformer?.movements||initS.barre?.movements||[]).some(m=>m.timing));
@@ -2085,15 +2085,14 @@ const SeriesEditor = ({ series, onSave, onSaveAsNew, onCancel, onDelete, aiStyle
       {/* Type row — always visible, required */}
       <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",padding:"8px 0",borderBottom:`1px solid ${C.stone}`}}>
         <span style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em",flexShrink:0}}>Tipo:</span>
-        {!isParallel&&[["reformer","Reformer"],["barre","Barre"]].map(([val,lbl])=>{
-          const clr = val==="reformer"?C.reformer:C.barre;
-          const isActive = s.type===val;
-          return <button key={val} onClick={()=>up("type",val)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 14px",borderRadius:20,
-            border:`1px solid ${isActive?clr:C.stone}`,
-            background:isActive?clr:"transparent",
-            color:isActive?(val==="reformer"?C.white:"#5a1a30"):C.mist,cursor:"pointer"}}>{lbl}</button>;
+        {!isParallel&&(availableClassTypes||[]).map(t=>{
+          const isActive = s.type===t;
+          return <button key={t} onClick={()=>up("type",t)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 14px",borderRadius:20,
+            border:`1px solid ${isActive?C.crimson:C.stone}`,
+            background:isActive?`${C.crimson}20`:"transparent",
+            color:isActive?C.crimson:C.mist,cursor:"pointer"}}>{t}</button>;
         })}
-        {isParallel&&[...new Set([...(availableClassTypes?.length?availableClassTypes:[]),'Reformer','Barre',...(s.parallelColumns||[]).map(c=>c.type)])].map(t=>{
+        {isParallel&&[...new Set([...(availableClassTypes||[]),...(s.parallelColumns||[]).map(c=>c.type)])].map(t=>{
           const colIndex=(s.parallelColumns||[]).findIndex(c=>c.type===t);
           const isSel=colIndex!==-1;
           return <button key={t} onClick={()=>{
@@ -4109,6 +4108,7 @@ const ProfilePage = ({ profile, user, onProfileUpdate, studioSettings, aiStyle, 
 
         {/* 3. Tipos de aula */}
         <CollapsibleSection title="Tipos de aula" defaultOpen={false}>
+          <p style={{margin:'0 0 10px',fontSize:12,color:C.mist,fontFamily:"'Satoshi',sans-serif"}}>as modalidades que dás</p>
           <PillRow items={editPrefClassTypes} onRemove={t => setEditPrefClassTypes(p => p.filter(x => x !== t))}
             newVal={newPrefClassType} onNewVal={setNewPrefClassType} placeholder="Adicionar tipo…"
             onAdd={() => { const v = newPrefClassType.trim(); if (v && !editPrefClassTypes.map(x => x.toLowerCase()).includes(v.toLowerCase())) { setEditPrefClassTypes(p => [...p, v]); setNewPrefClassType(''); } }} />
@@ -4165,6 +4165,16 @@ const ProfilePage = ({ profile, user, onProfileUpdate, studioSettings, aiStyle, 
           </button>
           <button onClick={async()=>{ await supabase.auth.signOut(); }} style={{ alignSelf: 'flex-start', marginTop: 8, padding: '9px 24px', borderRadius: 8, border: `1px solid ${C.stone}`, background: 'transparent', color: C.mist, fontWeight: 600, fontSize: 13, cursor: 'pointer', fontFamily: "'Satoshi',sans-serif" }}>
             Sair da conta
+          </button>
+          <button onClick={async()=>{
+            const confirmed = await confirm_('Tens a certeza que queres apagar a tua conta? Esta ação é irreversível e apaga todos os teus dados.');
+            if (!confirmed) return;
+            const confirmed2 = await confirm_('Última confirmação — apagar conta definitivamente?', { confirmLabel: 'Apagar conta', cancelLabel: 'Cancelar' });
+            if (!confirmed2) return;
+            await supabase.from('profiles').delete().eq('id', user.id);
+            await supabase.auth.signOut();
+          }} style={{ alignSelf: 'flex-start', marginTop: 4, padding: '9px 24px', borderRadius: 8, border: `1px solid #fca5a5`, background: 'transparent', color: '#b91c1c', fontWeight: 600, fontSize: 13, cursor: 'pointer', fontFamily: "'Satoshi',sans-serif" }}>
+            Apagar conta
           </button>
         </div>
       </div>

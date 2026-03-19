@@ -99,28 +99,6 @@ export const AiForm = ({ ai = BLANK_AI, setAi, forStudio = false }) => {
         </div>
       </div>
 
-      <div>
-        <FieldLabel>Tom</FieldLabel>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-          {TONES.map(t => <Pill key={t} label={t} active={(ai.tone || []).includes(t)} onClick={() => toggle('tone', t)} />)}
-        </div>
-      </div>
-
-      {!forStudio && (
-        <div>
-          <FieldLabel>O que evitar</FieldLabel>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 8 }}>
-            {AVOID_OPTIONS.map(o => (
-              <CheckRow key={o} label={o}
-                checked={(ai.avoid || []).includes(o)}
-                onChange={v => setAi(p => ({ ...p, avoid: v ? [...(p.avoid || []), o] : (p.avoid || []).filter(x => x !== o) }))} />
-            ))}
-          </div>
-          <input value={ai.avoidCustom || ''} onChange={e => up('avoidCustom', e.target.value)}
-            placeholder="Outros…"
-            style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: `1px solid ${C.stone}`, fontFamily: "'Satoshi', sans-serif", fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
-        </div>
-      )}
 
       <div>
         <FieldLabel>Língua de instrução</FieldLabel>
