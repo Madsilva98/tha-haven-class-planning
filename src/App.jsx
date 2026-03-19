@@ -4513,7 +4513,7 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
     toast_?.(`Studio "${name}" criado`);
   };
 
-  const copySlug = () => { navigator.clipboard.writeText(studio?.slug || ''); toast_?.('Código copiado'); };
+  const copySlug = () => { navigator.clipboard.writeText(studio?.studio_code || studio?.slug || ''); toast_?.('Código copiado!'); };
 
   const generateInvite = async () => {
     const code = Math.random().toString(36).slice(2, 10).toUpperCase();
@@ -4576,7 +4576,7 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
           <h2 style={{ fontFamily:"'Clash Display',sans-serif", fontSize: 26, fontWeight: 500, color: C.crimson, margin: 0 }}>{studio?.name || 'Studio'}</h2>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
             <span style={{ fontSize: 12, color: C.mist }}>Código:</span>
-            <code style={{ fontSize: 12, background: C.stone, padding: '2px 8px', borderRadius: 6, color: C.ink }}>{studio?.slug}</code>
+            <code style={{ fontSize: 13, background: C.stone, padding: '3px 10px', borderRadius: 6, color: C.ink, fontWeight: 700, letterSpacing: '0.1em' }}>{studio?.studio_code || studio?.slug || '—'}</code>
             <button onClick={copySlug} style={{ background: 'none', border: 'none', color: C.crimson, fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>Copiar</button>
           </div>
         </div>
