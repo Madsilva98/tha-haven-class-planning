@@ -6195,8 +6195,8 @@ const InstructorProfileView = ({ profileId, onBack, onCopy, onSend }) => {
     (async()=>{
       const [{ data: p }, { data: s }, { data: c }] = await Promise.all([
         supabase.from('profiles').select('*, studios(name)').eq('id', profileId).maybeSingle(),
-        supabase.from('series').select('*').eq('created_by', profileId).eq('is_public',true).order('updated_at',{ascending:false}),
-        supabase.from('classes').select('*').eq('created_by', profileId).eq('is_public',true).order('updated_at',{ascending:false}),
+        supabase.from('series').select('*').eq('created_by', profileId).eq('is_public',true).order('created_at',{ascending:false}),
+        supabase.from('classes').select('*').eq('created_by', profileId).eq('is_public',true).order('created_at',{ascending:false}),
       ]);
       setProf(p);
       setPubSeries((s||[]).map(r=>({...seriesFromDB(r),_discoverType:'series',_author:p})));
@@ -6744,8 +6744,8 @@ function HavenApp() {
         const [sr, cr, rsr, rcr] = await Promise.all([
           featSeriesIds.length ? supabase.from('series').select('*').in('id', featSeriesIds) : Promise.resolve({ data: [] }),
           featClassIds.length  ? supabase.from('classes').select('*').in('id', featClassIds)  : Promise.resolve({ data: [] }),
-          supabase.from('series').select('*').eq('studio_id', p.studio_id).eq('visibility','studio').order('updated_at',{ascending:false}).limit(4),
-          supabase.from('classes').select('*').eq('studio_id', p.studio_id).eq('visibility','studio').order('updated_at',{ascending:false}).limit(4),
+          supabase.from('series').select('*').eq('studio_id', p.studio_id).eq('visibility','studio').order('created_at',{ascending:false}).limit(4),
+          supabase.from('classes').select('*').eq('studio_id', p.studio_id).eq('visibility','studio').order('created_at',{ascending:false}).limit(4),
         ]);
         setStudioHighlights([
           ...(sr.data||[]).map(r=>({ ...seriesFromDB(r), _hType:'series' })),
@@ -6763,8 +6763,8 @@ function HavenApp() {
       }
       // Load recent public content
       const [{ data: pubS }, { data: pubC }] = await Promise.all([
-        supabase.from('series').select('*, profiles!created_by(name,studios(name))').eq('is_public',true).order('updated_at',{ascending:false}).limit(4),
-        supabase.from('classes').select('*').eq('is_public',true).order('updated_at',{ascending:false}).limit(4),
+        supabase.from('series').select('*, profiles!created_by(name,studios(name))').eq('is_public',true).order('created_at',{ascending:false}).limit(4),
+        supabase.from('classes').select('*').eq('is_public',true).order('created_at',{ascending:false}).limit(4),
       ]);
       setRecentPublic([
         ...(pubS||[]).map(r=>({...seriesFromDB(r),_hType:'series',_author:r.profiles})),
@@ -6896,8 +6896,8 @@ function HavenApp() {
     setDiscoverLoading(true);
     try {
       const [{ data: pubSeries }, { data: pubClasses }, { data: pubProfiles }, { data: pubStudios }] = await Promise.all([
-        supabase.from('series').select('*, profiles!created_by(id, name, studios(name))').eq('is_public',true).order('updated_at', { ascending: false }).limit(100),
-        supabase.from('classes').select('*').eq('is_public',true).order('updated_at', { ascending: false }).limit(100),
+        supabase.from('series').select('*, profiles!created_by(id, name, studios(name))').eq('is_public',true).order('created_at', { ascending: false }).limit(100),
+        supabase.from('classes').select('*').eq('is_public',true).order('created_at', { ascending: false }).limit(100),
         supabase.from('profiles').select('*, studios(name), settings').eq('is_public', true).limit(50),
         supabase.from('studios').select('id, name, logo_url, description, contact, settings').eq('is_public', true).limit(50),
       ]);
