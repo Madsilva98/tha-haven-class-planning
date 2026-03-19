@@ -513,7 +513,7 @@ const api = {
   },
   async loadProfile(userId) {
     const { data, error } = await supabase.from('profiles').select(
-      '*, studios(*), studio_memberships(id, role, status, joined_at, studios(id, name, settings, logo_url, contact, description, studio_code))'
+      '*, studios(*), studio_memberships(id, role, status, studio_id, joined_at, studios(id, name, is_public, settings, logo_url, contact, description, studio_code))'
     ).eq('id', userId).maybeSingle();
     if (error) console.error('[loadProfile error]', error);
     if (!data) return data;
@@ -6478,12 +6478,8 @@ const DiscoverPage = ({ items, loading, onRefresh, onCopy, onSend, profile, inst
                         <span style={{color:C.mist,transition:"transform 0.2s",transform:isExp?"rotate(180deg)":"rotate(0deg)"}}>⌄</span>
                       </div>
                       {isExp&&(()=>{
-                        const alreadyMember = memberStudioIds.has(s.id);
-                        const alreadyPending = (profile?.pendingMemberships||[]).some(m=>(m.studio_id||m.studios?.id)===s.id);
-                        const justJoined = joinedStudioIds.has(s.id);
-                        const isPending = alreadyPending || justJoined;
-                        const isMember = alreadyMember && !alreadyPending;
-                        const isOwn = profile?.studio_id === s.id;
+                        const sIsOwn = (profile?.studio_id===s.id) || (profile?.studioMemberships||[]).some(m=>(m.studio_id||m.studios?.id)===s.id);
+                        const sIsPending = joinedStudioIds.has(s.id) || (profile?.pendingMemberships||[]).some(m=>(m.studio_id||m.studios?.id)===s.id);
                         return (
                           <div style={{borderTop:`1px solid ${C.stone}`,padding:"12px 16px",display:"flex",flexDirection:"column",gap:8}}>
                             {s.description&&<div style={{fontSize:12,color:C.ink,lineHeight:1.5}}>{s.description}</div>}
@@ -6492,12 +6488,12 @@ const DiscoverPage = ({ items, loading, onRefresh, onCopy, onSend, profile, inst
                               {s.contact?.email&&<span style={{fontSize:11,color:C.mist}}>✉ {s.contact.email}</span>}
                               {s.contact?.website&&<span style={{fontSize:11,color:C.mist}}>🌐 {s.contact.website}</span>}
                             </div>
-                            {!isOwn && user && (
-                              isOwn ? null :
-                              isMember ? <span style={{fontSize:11,color:'#16a34a',fontWeight:600}}>✓ Já és membro</span> :
-                              isPending ? <span style={{fontSize:11,color:'#d97706',fontWeight:600}}>⏳ Pedido enviado</span> :
-                              onJoinStudio && <button onClick={async()=>{ await onJoinStudio(s.id); setJoinedStudioIds(p=>new Set([...p,s.id])); }} style={{alignSelf:'flex-start',fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:700,padding:'5px 14px',borderRadius:8,border:`1px solid ${C.crimson}`,background:'transparent',color:C.crimson,cursor:'pointer'}}>Pedir para entrar</button>
-                            )}
+                            {sIsOwn
+                              ? <span style={{fontSize:11,color:'#16a34a',fontWeight:600}}>✓ Já és membro</span>
+                              : sIsPending
+                                ? <span style={{fontSize:11,color:'#d97706',fontWeight:600}}>⏳ Pedido enviado</span>
+                                : onJoinStudio&&user&&<button onClick={async()=>{ await onJoinStudio(s.id); setJoinedStudioIds(p=>new Set([...p,s.id])); }} style={{alignSelf:'flex-start',fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:700,padding:'5px 14px',borderRadius:8,border:`1px solid ${C.crimson}`,background:'transparent',color:C.crimson,cursor:'pointer'}}>Pedir para entrar</button>
+                            }
                           </div>
                         );
                       })()}
