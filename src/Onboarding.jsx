@@ -254,7 +254,6 @@ export default function Onboarding({ user, profile, onComplete }) {
       // 1. Profile upsert (handles both new accounts and existing rows)
       const { error: profileErr } = await supabase.from('profiles').upsert({
         id: user.id,
-        email: user.email,
         name: name.trim() || profile?.name || null,
         onboarded: true,
         bio: bio.trim() || null,
