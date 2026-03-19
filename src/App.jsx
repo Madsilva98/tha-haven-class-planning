@@ -468,7 +468,7 @@ const api = {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return fallback;
       if (key === 'series') {
-        const { data, error } = await supabase.from('series').select('*').eq('created_by', user.id).order('created_at', { ascending: true });
+        const { data, error } = await supabase.from('series').select('*').eq('created_by', user.id).neq('visibility', 'studio').order('created_at', { ascending: true });
         return (!error && data) ? data.map(seriesFromDB) : fallback;
       }
       if (key === 'classes') {
@@ -4381,22 +4381,31 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
     }
   };
 
+  const fetchPendingMembers = React.useCallback(async () => {
+    if (!isAdmin || !profile?.studio_id) return;
+    const { data: pending, error } = await supabase
+      .from('studio_memberships')
+      .select('id, user_id, role, status, studio_id')
+      .eq('studio_id', profile.studio_id)
+      .eq('status', 'pending');
+    if (error) { console.error('[pendingMembers]', error); return; }
+    if (!pending?.length) { setPendingMembers([]); return; }
+    const { data: profs } = await supabase.from('profiles').select('id, name').in('id', pending.map(m => m.user_id));
+    const map = Object.fromEntries((profs || []).map(p => [p.id, p]));
+    setPendingMembers(pending.map(m => ({ ...m, profiles: map[m.user_id] || null })));
+  }, [profile?.studio_id, isAdmin]);
+
   useEffect(() => {
     if (!profile?.studio_id) { setLoading(false); return; }
     supabase.from('profiles').select('id, name, role, created_at').eq('studio_id', profile.studio_id)
       .then(({ data }) => { setMembers(data || []); setLoading(false); });
     supabase.from('studio_notices').select('*, profiles(name)').eq('studio_id', profile.studio_id).order('created_at', { ascending: false })
       .then(({ data }) => setNotices(data || []));
-    if (isAdmin) {
-      supabase.from('studio_memberships').select('*, profiles(id, name)').eq('studio_id', profile.studio_id).eq('status', 'pending')
-        .then(({ data }) => setPendingMembers(data || []));
-    }
+    fetchPendingMembers();
   }, [profile?.studio_id, isAdmin]);
 
   useEffect(() => {
-    if (activeTab !== 'members' || !isAdmin || !profile?.studio_id) return;
-    supabase.from('studio_memberships').select('*, profiles(id, name)').eq('studio_id', profile.studio_id).eq('status', 'pending')
-      .then(({ data }) => setPendingMembers(data || []));
+    if (activeTab === 'members') fetchPendingMembers();
   }, [activeTab]);
 
   useEffect(() => {
