@@ -36,6 +36,22 @@ const C = {
 };
 
 
+// ─── BRAND COLOR HELPERS ─────────────────────────────────────────────────────
+const hexLuminance = hex => {
+  const clean = hex.replace('#','');
+  const [r,g,b] = [0,2,4].map(i=>parseInt(clean.slice(i,i+2),16)/255).map(c=>c<=0.03928?c/12.92:((c+0.055)/1.055)**2.4);
+  return 0.2126*r+0.7152*g+0.0722*b;
+};
+const contrastOk = (fg, bg='#FFFAF7') => {
+  const l1=hexLuminance(fg), l2=hexLuminance(bg);
+  return (Math.max(l1,l2)+0.05)/(Math.min(l1,l2)+0.05) >= 3.0;
+};
+
+// ─── CLASS TYPE HELPERS ───────────────────────────────────────────────────────
+const normalizeClassType = t => typeof t === 'string' ? { name: t, color: null } : (t || { name: '', color: null });
+const classTypeName = t => normalizeClassType(t).name;
+const classTypeColor = (t, fallback = C.stone) => normalizeClassType(t).color || fallback;
+
 // ─── PLATFORM CONTEXT FOR AI ─────────────────────────────────────────────────
 const PLATFORM_CONTEXT = `The Haven Instructor Studio — platform reference:
 
@@ -3391,7 +3407,7 @@ Only use IDs from the available list. Return only the JSON array, no explanation
 };
 
 // ─── CLASS BUILDER ────────────────────────────────────────────────────────────
-const ClassBuilder = ({ allSeries, classes, onSave, onDeleteClass, onPermanentDeleteClass, onViewAula, studioSettings, profileClassTypes, onPublishClass, onUnpublishClass, hasStudio, onToggleClassPublic, onSendClass, onUpdateClass }) => {
+const ClassBuilder = ({ allSeries, classes, onSave, onDeleteClass, onPermanentDeleteClass, onViewAula, studioSettings, profileClassTypes, onPublishClass, onUnpublishClass, hasStudio, onToggleClassPublic, onSendClass, onUpdateClass, pendingNewClass, onPendingConsumed }) => {
   const [creating, setCreating] = useState(false);
   const [newCls, setNewCls] = useState(null);
   const [classSearch, setClassSearch] = useState("");
@@ -3404,6 +3420,8 @@ const ClassBuilder = ({ allSeries, classes, onSave, onDeleteClass, onPermanentDe
   const [classSortOrder, setClassSortOrder] = useState("desc");
   const [expandedClassIds, setExpandedClassIds] = React.useState(new Set());
   const classLevels = studioSettings?.class_levels || DEFAULT_CLASS_LEVELS;
+
+  useEffect(() => { if (pendingNewClass) { setShowTypePicker(true); onPendingConsumed?.(); } }, [pendingNewClass]);
 
   const startCreate = type => {
     setNewCls({ id:`c-${Date.now()}`, name:"", type, date:new Date().toISOString().split("T")[0], seriesIds:[], notes:"", level:"" });
@@ -3512,9 +3530,10 @@ const ClassBuilder = ({ allSeries, classes, onSave, onDeleteClass, onPermanentDe
       {showTypePicker&&(
         <div style={{display:"flex",gap:8,marginBottom:16,padding:"12px 16px",background:C.white,borderRadius:10,border:`1px solid ${C.stone}`,flexWrap:"wrap",alignItems:"center"}}>
           <span style={{fontSize:12,fontWeight:700,color:C.mist,fontFamily:"'Satoshi',sans-serif",marginRight:4}}>Tipo:</span>
-          {(profileClassTypes?.length ? profileClassTypes : []).map(type=>(
-            <button key={type} onClick={()=>{startCreate(type);setShowTypePicker(false);}} style={{padding:"7px 18px",borderRadius:20,border:`1px solid ${C.stone}`,background:"transparent",color:C.ink,fontWeight:600,fontSize:13,cursor:"pointer",fontFamily:"'Satoshi',sans-serif"}}>{type}</button>
-          ))}
+          {(profileClassTypes?.length ? profileClassTypes : []).map(t=>{
+            const tn=classTypeName(t); const tc=classTypeColor(t,null);
+            return <button key={tn} onClick={()=>{startCreate(tn);setShowTypePicker(false);}} style={{padding:"7px 18px",borderRadius:20,border:`1.5px solid ${tc||C.stone}`,background:tc?`${tc}15`:"transparent",color:C.ink,fontWeight:600,fontSize:13,cursor:"pointer",fontFamily:"'Satoshi',sans-serif"}}>{tn}</button>;
+          })}
           {!(profileClassTypes?.length) && (
             <span style={{fontSize:12,color:C.mist,fontFamily:"'Satoshi',sans-serif"}}>Configura os tipos de aula no perfil primeiro.</span>
           )}
@@ -3568,11 +3587,18 @@ const ClassBuilder = ({ allSeries, classes, onSave, onDeleteClass, onPermanentDe
           <>
           {filteredClasses.length===0&&<div style={{textAlign:"center",color:C.mist,padding:40,fontSize:14}}>{classes.filter(c=>!c.isArchived).length===0?"Ainda não há aulas criadas.":"Nenhuma aula encontrada."}</div>}
           <div style={{display:"flex",flexDirection:"column",gap:6}}>
-            {filteredClasses.map(c=>{
+            {(()=>{
+              let lastLevel = undefined;
+              return filteredClasses.map(c=>{
               const isExpanded = expandedClassIds.has(c.id);
               const toggleExpand = () => setExpandedClassIds(prev => { const n=new Set(prev); n.has(c.id)?n.delete(c.id):n.add(c.id); return n; });
+              const lvl = classSortBy==='level' ? (c.level||'—') : null;
+              const showLvlDivider = lvl!==null && lvl!==lastLevel;
+              lastLevel = lvl;
               return (
-                <div key={c.id} style={{background:C.white,borderRadius:14,border:`1px solid ${isExpanded?C.neutral:C.stone}`,transition:"border-color 0.15s,box-shadow 0.15s",overflow:"hidden",boxShadow:isExpanded?"0 4px 24px rgba(0,0,0,0.09)":"none"}}
+                <React.Fragment key={c.id}>
+                {showLvlDivider&&<div style={{display:"flex",alignItems:"center",gap:10,margin:"4px 0 2px"}}><div style={{flex:1,height:1,background:C.stone}}/><span style={{fontSize:10,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.1em"}}>{lvl}</span><div style={{flex:1,height:1,background:C.stone}}/></div>}
+                <div style={{background:C.white,borderRadius:14,border:`1px solid ${isExpanded?C.neutral:C.stone}`,transition:"border-color 0.15s,box-shadow 0.15s",overflow:"hidden",boxShadow:isExpanded?"0 4px 24px rgba(0,0,0,0.09)":"none"}}
                   onMouseEnter={e=>{ if(!isExpanded)e.currentTarget.style.borderColor=C.neutral; }}
                   onMouseLeave={e=>{ if(!isExpanded)e.currentTarget.style.borderColor=C.stone; }}>
                   {/* Header */}
@@ -3623,8 +3649,9 @@ const ClassBuilder = ({ allSeries, classes, onSave, onDeleteClass, onPermanentDe
                     </div>
                   )}
                 </div>
+                </React.Fragment>
               );
-            })}
+            });})()}
           </div>
           </>
           )}
@@ -3966,7 +3993,7 @@ const ProfilePage = ({ profile, user, onProfileUpdate, studioSettings, aiStyle, 
   const [editPrefZones, setEditPrefZones] = useState(
     profile?.settings?.preferred_zones?.length ? profile.settings.preferred_zones : DEFAULT_STUDIO_ZONES
   );
-  const [editPrefClassTypes, setEditPrefClassTypes] = useState(profile?.settings?.class_types || []);
+  const [editPrefClassTypes, setEditPrefClassTypes] = useState((profile?.settings?.class_types || []).map(normalizeClassType));
   const [editPrefLevels, setEditPrefLevels] = useState(profile?.settings?.preferred_levels || []);
   const [editSeriesTypes, setEditSeriesTypes] = useState(
     profile?.settings?.series_types?.length ? profile.settings.series_types : DEFAULT_STUDIO_SERIES_TYPES
@@ -3978,6 +4005,7 @@ const ProfilePage = ({ profile, user, onProfileUpdate, studioSettings, aiStyle, 
   const [isPublic, setIsPublic] = useState(profile?.is_public || false);
   const [editBio, setEditBio] = useState(profile?.bio || '');
   const [editAvatarUrl, setEditAvatarUrl] = useState(profile?.avatar_url || '');
+  const [editPrimaryColor, setEditPrimaryColor] = useState(profile?.settings?.primary_color || C.crimson);
   const [saving, setSaving] = useState(false);
   const [aiProfile, setAiProfile] = useState(() => profile?.settings?.ai_profile || BLANK_AI);
   const toast_ = useToast();
@@ -4032,7 +4060,7 @@ const ProfilePage = ({ profile, user, onProfileUpdate, studioSettings, aiStyle, 
       is_public: isPublic,
       bio: editBio || null,
       avatar_url: editAvatarUrl || null,
-      settings: { ...(profile?.settings || {}), preferred_zones: editPrefZones, class_types: editPrefClassTypes, preferred_levels: editPrefLevels, series_types: editSeriesTypes, ai_profile: aiProfile },
+      settings: { ...(profile?.settings || {}), preferred_zones: editPrefZones, class_types: editPrefClassTypes, preferred_levels: editPrefLevels, series_types: editSeriesTypes, ai_profile: aiProfile, primary_color: editPrimaryColor },
     }).eq('id', profile.id);
     setSaving(false);
     if (!error) {
@@ -4055,7 +4083,7 @@ const ProfilePage = ({ profile, user, onProfileUpdate, studioSettings, aiStyle, 
     autoSaveTimer.current = setTimeout(() => saveRef.current?.({silent:true}), 1500);
     return () => clearTimeout(autoSaveTimer.current);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editName, editBio, editAvatarUrl, isPublic, JSON.stringify(editPrefZones), JSON.stringify(editPrefClassTypes), JSON.stringify(editPrefLevels), JSON.stringify(editSeriesTypes), JSON.stringify(aiProfile)]);
+  }, [editName, editBio, editAvatarUrl, isPublic, editPrimaryColor, JSON.stringify(editPrefZones), JSON.stringify(editPrefClassTypes), JSON.stringify(editPrefLevels), JSON.stringify(editSeriesTypes), JSON.stringify(aiProfile)]);
 
   const classLevelOptions = studioSettings?.class_levels || DEFAULT_CLASS_LEVELS;
 
@@ -4128,9 +4156,20 @@ const ProfilePage = ({ profile, user, onProfileUpdate, studioSettings, aiStyle, 
         {/* 3. Tipos de aula */}
         <CollapsibleSection title="Tipos de aula" defaultOpen={false}>
           <p style={{margin:'0 0 10px',fontSize:12,color:C.mist,fontFamily:"'Satoshi',sans-serif"}}>as modalidades que dás</p>
-          <PillRow items={editPrefClassTypes} onRemove={t => setEditPrefClassTypes(p => p.filter(x => x !== t))}
-            newVal={newPrefClassType} onNewVal={setNewPrefClassType} placeholder="Adicionar tipo…"
-            onAdd={() => { const v = newPrefClassType.trim(); if (v && !editPrefClassTypes.map(x => x.toLowerCase()).includes(v.toLowerCase())) { setEditPrefClassTypes(p => [...p, v]); setNewPrefClassType(''); } }} />
+          <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:10}}>
+            {editPrefClassTypes.map(t => (
+              <span key={classTypeName(t)} style={{display:'inline-flex',alignItems:'center',gap:5,padding:'5px 10px',borderRadius:20,background:t.color?`${t.color}18`:C.cream,border:`1.5px solid ${t.color||C.stone}`,fontSize:13,fontWeight:500,color:C.ink,fontFamily:"'Satoshi',sans-serif"}}>
+                <input type="color" value={t.color||'#721919'} onChange={e=>setEditPrefClassTypes(p=>p.map(x=>classTypeName(x)===classTypeName(t)?{...normalizeClassType(x),color:e.target.value}:x))} style={{width:14,height:14,border:'none',padding:0,borderRadius:'50%',cursor:'pointer',background:'none',appearance:'none',WebkitAppearance:'none',flexShrink:0}} title="Escolher cor"/>
+                {classTypeName(t)}
+                <button onClick={() => setEditPrefClassTypes(p => p.filter(x => classTypeName(x) !== classTypeName(t)))} style={{background:'none',border:'none',cursor:'pointer',color:C.mist,fontSize:13,lineHeight:1,padding:0,display:'flex',alignItems:'center'}}>×</button>
+              </span>
+            ))}
+          </div>
+          <div style={{display:'flex',gap:8}}>
+            <input value={newPrefClassType} onChange={e=>setNewPrefClassType(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'){const v=newPrefClassType.trim();if(v&&!editPrefClassTypes.map(x=>classTypeName(x).toLowerCase()).includes(v.toLowerCase())){setEditPrefClassTypes(p=>[...p,{name:v,color:null}]);setNewPrefClassType('');}}}
+            } placeholder="Adicionar tipo…" style={{flex:1,padding:'7px 12px',borderRadius:8,border:`1px solid ${C.stone}`,fontFamily:"'Satoshi',sans-serif",fontSize:13,outline:'none'}}/>
+            <button onClick={()=>{const v=newPrefClassType.trim();if(v&&!editPrefClassTypes.map(x=>classTypeName(x).toLowerCase()).includes(v.toLowerCase())){setEditPrefClassTypes(p=>[...p,{name:v,color:null}]);setNewPrefClassType('');}}} style={{padding:'7px 14px',borderRadius:8,border:`1px solid ${C.stone}`,background:'transparent',color:C.ink,fontWeight:600,fontSize:13,cursor:'pointer',fontFamily:"'Satoshi',sans-serif"}}>+ Adicionar</button>
+          </div>
         </CollapsibleSection>
 
         {/* 4. Níveis de aula */}
@@ -4168,7 +4207,20 @@ const ProfilePage = ({ profile, user, onProfileUpdate, studioSettings, aiStyle, 
             onAdd={() => { const v = newPrefZone.trim(); if (v && !editPrefZones.map(x => x.toLowerCase()).includes(v.toLowerCase())) { setEditPrefZones(p => [...p, v]); setNewPrefZone(''); } }} />
         </CollapsibleSection>
 
-        {/* 7. IA — Estilo de instrução */}
+        {/* 7. Cor da app */}
+        <CollapsibleSection title="Cor da app" defaultOpen={false}>
+          <p style={{margin:'0 0 12px',fontSize:12,color:C.mist,fontFamily:"'Satoshi',sans-serif"}}>Substitui o bordeaux em toda a app (exceto dentro da tab Studio).</p>
+          <div style={{display:'flex',alignItems:'center',gap:12}}>
+            <input type="color" value={editPrimaryColor} onChange={e=>setEditPrimaryColor(e.target.value)} style={{width:40,height:40,borderRadius:8,border:`1px solid ${C.stone}`,cursor:'pointer',padding:2}} />
+            <div>
+              <div style={{fontSize:13,fontWeight:600,color:C.ink,fontFamily:"'Satoshi',sans-serif"}}>{editPrimaryColor}</div>
+              {!contrastOk(editPrimaryColor) && <div style={{fontSize:11,color:'#b45309',marginTop:2,fontFamily:"'Satoshi',sans-serif"}}>⚠️ É melhor escolheres uma cor com mais contraste</div>}
+            </div>
+            {editPrimaryColor !== C.crimson && <button onClick={()=>setEditPrimaryColor(C.crimson)} style={{fontSize:11,padding:'4px 10px',borderRadius:6,border:`1px solid ${C.stone}`,background:'transparent',color:C.mist,cursor:'pointer',fontFamily:"'Satoshi',sans-serif"}}>Repor default</button>}
+          </div>
+        </CollapsibleSection>
+
+        {/* 8. IA — Estilo de instrução */}
         <CollapsibleSection title="IA — Estilo de instrução" defaultOpen={false}>
           <AiForm ai={aiProfile} setAi={setAiProfile} />
           {aiToString(aiProfile) && (
@@ -4270,6 +4322,8 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
   const [savingSettings, setSavingSettings] = useState(false);
   const [editGuidelines, setEditGuidelines] = useState('');
   const [editStudioAiProfile, setEditStudioAiProfile] = useState(BLANK_AI);
+  const [editStudioPrimaryColor, setEditStudioPrimaryColor] = useState(C.crimson);
+  const [studioIsPublic, setStudioIsPublic] = useState(false);
   const [editStudioDescription, setEditStudioDescription] = useState('');
   const [editStudioLogoUrl, setEditStudioLogoUrl] = useState('');
   const [editStudioContact, setEditStudioContact] = useState({email:'',phone:'',website:'',instagram:''});
@@ -4283,12 +4337,13 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
 
   useEffect(() => {
     if (studio?.settings) {
-      setEditClassTypes(studio.settings.class_types || DEFAULT_STUDIO_CLASS_TYPES);
+      setEditClassTypes((studio.settings.class_types || DEFAULT_STUDIO_CLASS_TYPES).map(normalizeClassType));
       setEditZones(studio.settings.zones || DEFAULT_STUDIO_ZONES);
       setEditClassLevels(studio.settings.class_levels || DEFAULT_CLASS_LEVELS);
       setEditSeriesTypes(studio.settings.series_types || DEFAULT_STUDIO_SERIES_TYPES);
       setEditGuidelines(studio.settings.guidelines || '');
       setEditStudioAiProfile(studio.settings.ai_profile || BLANK_AI);
+      setEditStudioPrimaryColor(studio.settings.primary_color || C.crimson);
     } else {
       setEditClassTypes(DEFAULT_STUDIO_CLASS_TYPES);
       setEditZones(DEFAULT_STUDIO_ZONES);
@@ -4301,15 +4356,17 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
     setEditStudioDescription(studio?.description || '');
     setEditStudioLogoUrl(studio?.logo_url || '');
     setEditStudioContact(studio?.contact || {email:'',phone:'',website:'',instagram:''});
+    setStudioIsPublic(studio?.is_public || false);
   }, [studio]);
 
   const saveSettings = async () => {
     setSavingSettings(true);
     const { error } = await supabase.from('studios').update({
-      settings: { ...(studio?.settings || {}), class_types: editClassTypes, zones: editZones, class_levels: editClassLevels, series_types: editSeriesTypes, ai_profile: editStudioAiProfile, guidelines: editGuidelines },
+      settings: { ...(studio?.settings || {}), class_types: editClassTypes, zones: editZones, class_levels: editClassLevels, series_types: editSeriesTypes, ai_profile: editStudioAiProfile, guidelines: editGuidelines, primary_color: editStudioPrimaryColor },
       description: editStudioDescription || null,
       logo_url: editStudioLogoUrl || null,
       contact: editStudioContact,
+      is_public: studioIsPublic,
       ...(editStudioCode.trim() ? { studio_code: editStudioCode.trim().toUpperCase() } : {}),
     }).eq('id', profile.studio_id);
     setSavingSettings(false);
@@ -4410,7 +4467,24 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
 
   const approveClass = async c => {
     await supabase.from('classes').update({ visibility: 'studio', studio_comment: null }).eq('id', c.id);
-    toast_?.('Aula aprovada');
+    // Copy series referenced in the class to studio series pool
+    const seriesIds = c.series_order || [];
+    let copiedCount = 0;
+    if (seriesIds.length > 0) {
+      const { data: existingStudio } = await supabase.from('series').select('id').eq('studio_id', profile.studio_id).eq('visibility', 'studio');
+      const existingIds = new Set((existingStudio||[]).map(s=>s.id));
+      const toFetch = seriesIds.filter(id => !existingIds.has(id));
+      if (toFetch.length > 0) {
+        const { data: sourceSeries } = await supabase.from('series').select('*').in('id', toFetch);
+        for (const s of (sourceSeries||[])) {
+          const newId = (crypto.randomUUID ? crypto.randomUUID() : `s-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+          await supabase.from('series').insert({ ...s, id: newId, studio_id: profile.studio_id, visibility: 'studio', created_at: new Date().toISOString() });
+          copiedCount++;
+        }
+      }
+    }
+    if (copiedCount > 0) toast_?.(`Aula aprovada e ${copiedCount} série${copiedCount!==1?'s':''} adicionadas ao studio`);
+    else toast_?.('Aula aprovada');
     if (c.created_by) sendNotification?.(c.created_by, 'class_approved', 'Aula aprovada ✓', `"${c.name||'Aula'}" foi aprovada pelo studio`, 'class', c.id);
     refreshContent();
   };
@@ -4714,15 +4788,16 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
               {showClassTypePicker&&(
                 <div style={{display:'flex',gap:8,flexWrap:'wrap',padding:'10px 14px',background:C.white,borderRadius:10,border:`1px solid ${C.stone}`,alignItems:'center'}}>
                   <span style={{fontSize:12,fontWeight:700,color:C.mist,fontFamily:"'Satoshi',sans-serif"}}>Tipo:</span>
-                  {(studio?.settings?.class_types?.length ? studio.settings.class_types : []).map(t=>(
-                    <button key={t} onClick={async()=>{
+                  {(studio?.settings?.class_types?.length ? studio.settings.class_types : []).map(t=>{
+                    const tn=classTypeName(t); const tc=classTypeColor(t,null);
+                    return <button key={tn} onClick={async()=>{
                       const now=new Date().toISOString().split('T')[0];
-                      const newC = { id:`c-${Date.now()}`, name:'', type:t, seriesIds:[], date:now, visibility:'studio', studio_id:profile.studio_id, created_by:user.id };
+                      const newC = { id:`c-${Date.now()}`, name:'', type:tn, seriesIds:[], date:now, visibility:'studio', studio_id:profile.studio_id, created_by:user.id };
                       await onSaveStudioClass(newC);
                       onViewAula(newC);
                       setShowClassTypePicker(false);
-                    }} style={{padding:'6px 16px',borderRadius:20,border:`1px solid ${C.stone}`,background:'transparent',color:C.ink,fontWeight:600,fontSize:13,cursor:'pointer',fontFamily:"'Satoshi',sans-serif"}}>{t}</button>
-                  ))}
+                    }} style={{padding:'6px 16px',borderRadius:20,border:`1.5px solid ${tc||C.stone}`,background:tc?`${tc}15`:'transparent',color:C.ink,fontWeight:600,fontSize:13,cursor:'pointer',fontFamily:"'Satoshi',sans-serif"}}>{tn}</button>;
+                  })}
                   {!(studio?.settings?.class_types?.length) && <span style={{fontSize:12,color:C.mist,fontFamily:"'Satoshi',sans-serif"}}>Configura os tipos nas Definições do studio.</span>}
                   <button onClick={()=>setShowClassTypePicker(false)} style={{marginLeft:'auto',background:'none',border:'none',cursor:'pointer',color:C.mist,fontSize:16,padding:'0 4px'}}>×</button>
                 </div>
@@ -4800,13 +4875,23 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
                   <div style={{ fontWeight: 600, fontSize: 14, color: C.ink }}>{m.name || '(sem nome)'}</div>
                   <div style={{ fontSize: 12, color: C.mist }}>{m.id === user.id ? 'Tu' : ''}</div>
                 </div>
-                <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 10px', borderRadius: 20, background: m.role === 'admin' ? `${C.crimson}18` : C.stone, color: m.role === 'admin' ? C.crimson : C.mist }}>{m.role === 'admin' ? 'Admin' : 'Instructor'}</span>
-                {isAdmin && m.id !== user.id && (<>
-                  <button onClick={() => changeRole(m.id, m.role === 'admin' ? 'instructor' : 'admin')} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, border: `1px solid ${C.stone}`, background: 'transparent', color: C.ink, cursor: 'pointer', fontFamily: "'Satoshi',sans-serif" }}>
-                    {m.role === 'admin' ? '→ Instructor' : '→ Admin'}
-                  </button>
+                {(()=>{
+                  const isOwnerRole = m.role==='studio_owner'||m.role==='owner';
+                  const roleLabel = isOwnerRole?'Owner':m.role==='admin'?'Admin':'Instructor';
+                  const roleBg = isOwnerRole?C.crimson:m.role==='admin'?`${C.crimson}18`:C.stone;
+                  const roleColor = isOwnerRole?C.cream:m.role==='admin'?C.crimson:C.mist;
+                  return <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 10px', borderRadius: 20, background: roleBg, color: roleColor }}>{roleLabel}</span>;
+                })()}
+                {isOwner && m.id !== user.id && (
+                  <select value={m.role==='owner'?'studio_owner':m.role} onChange={e=>changeRole(m.id, e.target.value)} style={{ fontSize: 11, padding: '3px 8px', borderRadius: 6, border: `1px solid ${C.stone}`, background: 'transparent', color: C.ink, cursor: 'pointer', fontFamily: "'Satoshi',sans-serif" }}>
+                    <option value="instructor">Instructor</option>
+                    <option value="admin">Admin</option>
+                    <option value="studio_owner">Owner</option>
+                  </select>
+                )}
+                {isAdmin && m.id !== user.id && (
                   <button onClick={() => removeMember(m.id)} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, border: `1px solid ${C.stone}`, background: 'transparent', color: '#b91c1c', cursor: 'pointer', fontFamily: "'Satoshi',sans-serif" }}>Remover</button>
-                </>)}
+                )}
               </div>
             ))}
           </div>
@@ -5027,6 +5112,15 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
               </div>
             </div>
           </CollapsibleSection>
+          {/* Public toggle */}
+          <div style={{display:'flex',alignItems:'center',gap:12,padding:'12px 0',borderTop:`1px solid ${C.stone}`,marginTop:4}}>
+            <div style={{flex:1}}>
+              <div style={{fontSize:13,fontWeight:600,color:C.ink,fontFamily:"'Satoshi',sans-serif"}}>Perfil público</div>
+              <div style={{fontSize:11,color:C.mist,marginTop:2,fontFamily:"'Satoshi',sans-serif"}}>Aparece na secção Estúdios do Descobrir</div>
+            </div>
+            <MiniToggle on={studioIsPublic} onToggle={()=>setStudioIsPublic(p=>!p)}/>
+          </div>
+
           {/* 2. Código de convite */}
           <CollapsibleSection title="Código de convite" defaultOpen={false}>
             <div style={{fontSize:12,color:C.mist,marginBottom:10}}>Partilha este código com instrutores para entrarem no studio. Podes alterá-lo manualmente (só letras e números, máx. 8 caracteres).</div>
@@ -5038,18 +5132,22 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
           {/* 3. Tipos de Aula */}
           <CollapsibleSection title="Tipos de Aula" defaultOpen={false}>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
-              {editClassTypes.map(t => (
-                <span key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 12px', borderRadius: 20, background: C.cream, border: `1px solid ${C.stone}`, fontSize: 13, fontWeight: 500, color: C.ink, fontFamily: "'Satoshi',sans-serif" }}>
-                  {t}
-                  <button onClick={() => setEditClassTypes(p => p.filter(x => x !== t))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.mist, fontSize: 13, lineHeight: 1, padding: 0, display: 'flex', alignItems: 'center' }}>×</button>
-                </span>
-              ))}
+              {editClassTypes.map(t => {
+                const tn=classTypeName(t); const tc=classTypeColor(t,null);
+                return (
+                  <span key={tn} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 20, background: tc?`${tc}18`:C.cream, border: `1.5px solid ${tc||C.stone}`, fontSize: 13, fontWeight: 500, color: C.ink, fontFamily: "'Satoshi',sans-serif" }}>
+                    <input type="color" value={tc||'#721919'} onChange={e=>setEditClassTypes(p=>p.map(x=>classTypeName(x)===tn?{...normalizeClassType(x),color:e.target.value}:x))} style={{width:14,height:14,border:'none',padding:0,borderRadius:'50%',cursor:'pointer',background:'none',appearance:'none',WebkitAppearance:'none',flexShrink:0}} title="Escolher cor"/>
+                    {tn}
+                    <button onClick={() => setEditClassTypes(p => p.filter(x => classTypeName(x) !== tn))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.mist, fontSize: 13, lineHeight: 1, padding: 0, display: 'flex', alignItems: 'center' }}>×</button>
+                  </span>
+                );
+              })}
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
               <input value={newClassType} onChange={e => setNewClassType(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') { const v = newClassType.trim(); if (v && !editClassTypes.map(x => x.toLowerCase()).includes(v.toLowerCase())) { setEditClassTypes(p => [...p, v]); setNewClassType(''); } } }}
+                onKeyDown={e => { if (e.key === 'Enter') { const v = newClassType.trim(); if (v && !editClassTypes.map(x => classTypeName(x).toLowerCase()).includes(v.toLowerCase())) { setEditClassTypes(p => [...p, {name:v,color:null}]); setNewClassType(''); } } }}
                 placeholder="Adicionar tipo…" style={{ flex: 1, padding: '7px 12px', borderRadius: 8, border: `1px solid ${C.stone}`, fontFamily: "'Satoshi',sans-serif", fontSize: 13, outline: 'none' }} />
-              <button onClick={() => { const v = newClassType.trim(); if (v && !editClassTypes.map(x => x.toLowerCase()).includes(v.toLowerCase())) { setEditClassTypes(p => [...p, v]); setNewClassType(''); } }}
+              <button onClick={() => { const v = newClassType.trim(); if (v && !editClassTypes.map(x => classTypeName(x).toLowerCase()).includes(v.toLowerCase())) { setEditClassTypes(p => [...p, {name:v,color:null}]); setNewClassType(''); } }}
                 style={{ padding: '7px 14px', borderRadius: 8, border: `1px solid ${C.stone}`, background: 'transparent', color: C.ink, fontWeight: 600, fontSize: 13, cursor: 'pointer', fontFamily: "'Satoshi',sans-serif" }}>+ Adicionar</button>
             </div>
           </CollapsibleSection>
@@ -5107,7 +5205,20 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
                 style={{ padding: '7px 14px', borderRadius: 8, border: `1px solid ${C.stone}`, background: 'transparent', color: C.ink, fontWeight: 600, fontSize: 13, cursor: 'pointer', fontFamily: "'Satoshi',sans-serif" }}>+ Adicionar</button>
             </div>
           </CollapsibleSection>
-          {/* 7. IA do Studio */}
+          {/* 7. Cor do Studio */}
+          <CollapsibleSection title="Cor do Studio" defaultOpen={false}>
+            <p style={{margin:'0 0 12px',fontSize:12,color:C.mist,fontFamily:"'Satoshi',sans-serif"}}>Substitui o bordeaux dentro da tab Studio para todos os membros.</p>
+            <div style={{display:'flex',alignItems:'center',gap:12}}>
+              <input type="color" value={editStudioPrimaryColor} onChange={e=>setEditStudioPrimaryColor(e.target.value)} style={{width:40,height:40,borderRadius:8,border:`1px solid ${C.stone}`,cursor:'pointer',padding:2}} />
+              <div>
+                <div style={{fontSize:13,fontWeight:600,color:C.ink,fontFamily:"'Satoshi',sans-serif"}}>{editStudioPrimaryColor}</div>
+                {!contrastOk(editStudioPrimaryColor) && <div style={{fontSize:11,color:'#b45309',marginTop:2,fontFamily:"'Satoshi',sans-serif"}}>⚠️ É melhor escolheres uma cor com mais contraste</div>}
+              </div>
+              {editStudioPrimaryColor !== C.crimson && <button onClick={()=>setEditStudioPrimaryColor(C.crimson)} style={{fontSize:11,padding:'4px 10px',borderRadius:6,border:`1px solid ${C.stone}`,background:'transparent',color:C.mist,cursor:'pointer',fontFamily:"'Satoshi',sans-serif"}}>Repor default</button>}
+            </div>
+          </CollapsibleSection>
+
+          {/* 8. IA do Studio */}
           <CollapsibleSection title="IA do Studio" defaultOpen={false}>
             {/* Studio AI Profile */}
             <div style={{ marginBottom: 20 }}>
@@ -6160,10 +6271,12 @@ const InstructorProfileView = ({ profileId, onBack, onCopy, onSend }) => {
 };
 
 // ─── DISCOVER PAGE ────────────────────────────────────────────────────────────
-const DiscoverPage = ({ items, loading, onRefresh, onCopy, onSend, profile, instructors=[], onViewInstructor }) => {
+const DiscoverPage = ({ items, loading, onRefresh, onCopy, onSend, profile, instructors=[], studios=[], onViewInstructor }) => {
   const [search, setSearch] = React.useState('');
-  const [typeFilter, setTypeFilter] = React.useState('all'); // 'all','series','class','instructors'
+  const [typeFilter, setTypeFilter] = React.useState('all'); // 'all','series','class','instructors','studios'
   const [zoneFilter, setZoneFilter] = React.useState('');
+  const [expandedStudioId, setExpandedStudioId] = React.useState(null);
+  const [expandedInstructorId, setExpandedInstructorId] = React.useState(null);
 
   const zones = React.useMemo(() => {
     const zs = new Set();
@@ -6206,7 +6319,7 @@ const DiscoverPage = ({ items, loading, onRefresh, onCopy, onSend, profile, inst
           <div>
             <div style={{fontSize:10,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Tipo</div>
             <div style={{display:"flex",flexDirection:"column",gap:4}}>
-              {[['all','Tudo'],['series','Séries'],['class','Aulas'],['instructors','Instrutores']].map(([v,l])=>(
+              {[['all','Tudo'],['series','Séries'],['class','Aulas'],['instructors','Instrutores'],['studios','Estúdios']].map(([v,l])=>(
                 <button key={v} onClick={()=>setTypeFilter(v)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 12px",borderRadius:8,border:`1px solid ${typeFilter===v?C.neutral:C.stone}`,background:typeFilter===v?C.neutral:"transparent",color:typeFilter===v?C.white:C.ink,cursor:"pointer",textAlign:"left"}}>{l}</button>
               ))}
             </div>
@@ -6228,7 +6341,7 @@ const DiscoverPage = ({ items, loading, onRefresh, onCopy, onSend, profile, inst
         <div style={{flex:1,minWidth:0}}>
           {loading && <div style={{color:C.mist,fontSize:14,padding:"40px 0",textAlign:"center"}}>A carregar conteúdo público…</div>}
 
-          {!loading && typeFilter!=='instructors' && filtered.length===0 && (
+          {!loading && typeFilter!=='instructors' && typeFilter!=='studios' && filtered.length===0 && (
             <div style={{textAlign:"center",padding:"60px 0",color:C.mist}}>
               <div style={{fontSize:32,marginBottom:12}}>✦</div>
               <div style={{fontFamily:"'Clash Display',sans-serif",fontSize:18,color:C.ink,marginBottom:8}}>Nenhum conteúdo público encontrado</div>
@@ -6240,6 +6353,12 @@ const DiscoverPage = ({ items, loading, onRefresh, onCopy, onSend, profile, inst
               <div style={{fontSize:32,marginBottom:12}}>✦</div>
               <div style={{fontFamily:"'Clash Display',sans-serif",fontSize:18,color:C.ink,marginBottom:8}}>Nenhum instrutor público encontrado</div>
               <div style={{fontSize:13}}>Activa o teu perfil público nas definições.</div>
+            </div>
+          )}
+          {!loading && typeFilter==='studios' && studios.length===0 && (
+            <div style={{textAlign:"center",padding:"60px 0",color:C.mist}}>
+              <div style={{fontSize:32,marginBottom:12}}>🏛</div>
+              <div style={{fontFamily:"'Clash Display',sans-serif",fontSize:18,color:C.ink,marginBottom:8}}>Nenhum estúdio público encontrado</div>
             </div>
           )}
 
@@ -6295,24 +6414,74 @@ const DiscoverPage = ({ items, loading, onRefresh, onCopy, onSend, profile, inst
             </div>
           )}
 
-          {/* Instructors section */}
-          {typeFilter==='instructors' && instructors.length>0 && (
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:16}}>
-              {instructors.filter(p=>!search||(p.name||'').toLowerCase().includes(search.toLowerCase())||(p.bio||'').toLowerCase().includes(search.toLowerCase())).map(p=>(
-                <div key={p.id} onClick={()=>onViewInstructor&&onViewInstructor(p)} style={{background:C.white,border:`1px solid ${C.stone}`,borderRadius:12,padding:"20px 18px",cursor:onViewInstructor?"pointer":"default",transition:"box-shadow 0.15s"}} onMouseEnter={e=>e.currentTarget.style.boxShadow="0 4px 16px rgba(0,0,0,0.1)"} onMouseLeave={e=>e.currentTarget.style.boxShadow="none"}>
-                  <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:10}}>
-                    {p.avatar_url
-                      ? <img src={p.avatar_url} alt="" style={{width:48,height:48,borderRadius:"50%",objectFit:"cover",flexShrink:0}}/>
-                      : <div style={{width:48,height:48,borderRadius:"50%",background:C.stone,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,color:C.mist}}>✦</div>
-                    }
-                    <div style={{minWidth:0}}>
-                      <div style={{fontFamily:"'Clash Display',sans-serif",fontSize:15,fontWeight:600,color:C.ink,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.name||"—"}</div>
-                      {p.studios?.name&&<div style={{fontSize:12,color:C.mist,marginTop:2}}>{p.studios.name}</div>}
+          {/* Instructors section — 2-per-row expandable cards */}
+          {(typeFilter==='all'||typeFilter==='instructors') && instructors.filter(p=>!search||(p.name||'').toLowerCase().includes(search.toLowerCase())||(p.bio||'').toLowerCase().includes(search.toLowerCase())).length>0 && (
+            <div style={{marginBottom:28}}>
+              {typeFilter==='all'&&<div style={{fontSize:10,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:10}}>Instrutores</div>}
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                {instructors.filter(p=>!search||(p.name||'').toLowerCase().includes(search.toLowerCase())||(p.bio||'').toLowerCase().includes(search.toLowerCase())).map(p=>{
+                  const isExp = expandedInstructorId===p.id;
+                  return (
+                    <div key={p.id} style={{background:C.white,border:`1px solid ${isExp?C.neutral:C.stone}`,borderRadius:12,overflow:"hidden",transition:"border-color 0.15s"}}>
+                      <div onClick={()=>setExpandedInstructorId(isExp?null:p.id)} style={{padding:"14px 16px",cursor:"pointer",display:"flex",alignItems:"center",gap:10}}>
+                        {p.avatar_url
+                          ? <img src={p.avatar_url} alt="" style={{width:40,height:40,borderRadius:"50%",objectFit:"cover",flexShrink:0}}/>
+                          : <div style={{width:40,height:40,borderRadius:"50%",background:C.stone,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,color:C.mist}}>✦</div>
+                        }
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontFamily:"'Clash Display',sans-serif",fontSize:14,fontWeight:600,color:C.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name||"—"}</div>
+                          {p.studios?.name&&<div style={{fontSize:11,color:C.mist,marginTop:1}}>{p.studios.name}</div>}
+                        </div>
+                        <span style={{color:C.mist,transition:"transform 0.2s",transform:isExp?"rotate(180deg)":"rotate(0deg)"}}>⌄</span>
+                      </div>
+                      {isExp&&(
+                        <div style={{borderTop:`1px solid ${C.stone}`,padding:"12px 16px",display:"flex",flexDirection:"column",gap:8}}>
+                          {p.bio&&<div style={{fontSize:12,color:C.ink,lineHeight:1.5}}>{p.bio}</div>}
+                          {p.settings?.class_types?.length>0&&<div style={{display:"flex",gap:4,flexWrap:"wrap"}}>{(p.settings.class_types).map(t=><span key={classTypeName(t)} style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:20,background:`${classTypeColor(t,C.stone)}20`,border:`1px solid ${classTypeColor(t,C.stone)}`,color:C.ink}}>{classTypeName(t)}</span>)}</div>}
+                          {onViewInstructor&&<button onClick={()=>onViewInstructor(p)} style={{alignSelf:"flex-start",fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"5px 12px",borderRadius:8,border:`1px solid ${C.stone}`,background:"transparent",color:C.ink,cursor:"pointer"}}>Ver perfil →</button>}
+                        </div>
+                      )}
                     </div>
-                  </div>
-                  {p.bio&&<div style={{fontSize:12,color:C.ink,lineHeight:1.5,display:"-webkit-box",WebkitLineClamp:3,WebkitBoxOrient:"vertical",overflow:"hidden"}}>{p.bio}</div>}
-                </div>
-              ))}
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Studios section — 2-per-row expandable cards */}
+          {(typeFilter==='all'||typeFilter==='studios') && studios.filter(s=>!search||(s.name||'').toLowerCase().includes(search.toLowerCase())).length>0 && (
+            <div style={{marginBottom:28}}>
+              {typeFilter==='all'&&<div style={{fontSize:10,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:10}}>Estúdios</div>}
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                {studios.filter(s=>!search||(s.name||'').toLowerCase().includes(search.toLowerCase())).map(s=>{
+                  const isExp = expandedStudioId===s.id;
+                  return (
+                    <div key={s.id} style={{background:C.white,border:`1px solid ${isExp?C.neutral:C.stone}`,borderRadius:12,overflow:"hidden",transition:"border-color 0.15s"}}>
+                      <div onClick={()=>setExpandedStudioId(isExp?null:s.id)} style={{padding:"14px 16px",cursor:"pointer",display:"flex",alignItems:"center",gap:10}}>
+                        {s.logo_url
+                          ? <img src={s.logo_url} alt="" style={{width:40,height:40,borderRadius:8,objectFit:"cover",flexShrink:0}} onError={e=>{e.target.style.display='none';}}/>
+                          : <div style={{width:40,height:40,borderRadius:8,background:C.stone,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,color:C.mist}}>🏛</div>
+                        }
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontFamily:"'Clash Display',sans-serif",fontSize:14,fontWeight:600,color:C.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.name||"—"}</div>
+                          {s.contact?.instagram&&<div style={{fontSize:11,color:C.mist,marginTop:1}}>{s.contact.instagram}</div>}
+                        </div>
+                        <span style={{color:C.mist,transition:"transform 0.2s",transform:isExp?"rotate(180deg)":"rotate(0deg)"}}>⌄</span>
+                      </div>
+                      {isExp&&(
+                        <div style={{borderTop:`1px solid ${C.stone}`,padding:"12px 16px",display:"flex",flexDirection:"column",gap:8}}>
+                          {s.description&&<div style={{fontSize:12,color:C.ink,lineHeight:1.5}}>{s.description}</div>}
+                          {s.settings?.class_types?.length>0&&<div style={{display:"flex",gap:4,flexWrap:"wrap"}}>{s.settings.class_types.map(t=><span key={classTypeName(t)} style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:20,background:`${classTypeColor(t,C.stone)}20`,border:`1px solid ${classTypeColor(t,C.stone)}`,color:C.ink}}>{classTypeName(t)}</span>)}</div>}
+                          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                            {s.contact?.email&&<span style={{fontSize:11,color:C.mist}}>✉ {s.contact.email}</span>}
+                            {s.contact?.website&&<span style={{fontSize:11,color:C.mist}}>🌐 {s.contact.website}</span>}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
         </div>
@@ -6429,6 +6598,7 @@ function HavenApp() {
   const [aulaEditingSeries, setAulaEditingSeries] = useState(null);
   const [discoverItems, setDiscoverItems] = useState([]);
   const [discoverLoading, setDiscoverLoading] = useState(false);
+  const [discoverStudios, setDiscoverStudios] = useState([]);
   const [shares, setShares] = useState([]);
   const [sendModalItem, setSendModalItem] = useState(null);
   const [notifications, setNotifications] = useState([]);
@@ -6444,6 +6614,8 @@ function HavenApp() {
   const [feedbackList, setFeedbackList] = useState(null); // null=not loaded, []=loaded
   const [loadingFeedback, setLoadingFeedback] = useState(false);
   const [sendingFeedback, setSendingFeedback] = useState(false);
+  const [pendingNewClass, setPendingNewClass] = useState(false);
+  const [studioSeriesCache, setStudioSeriesCache] = useState([]);
 
   const navigate = (newScreen) => {
     const newStack = [...screenStack, screen];
@@ -6564,6 +6736,9 @@ function HavenApp() {
         ]);
         supabase.from('studio_notices').select('*').eq('studio_id', p.studio_id).order('created_at', { ascending: false }).limit(3)
           .then(({ data }) => setHomeNotices(data || []));
+        // Load studio series for AulaView flow editor
+        supabase.from('series').select('*').eq('studio_id', p.studio_id).eq('visibility','studio')
+          .then(({ data }) => setStudioSeriesCache((data||[]).map(seriesFromDB)));
       }
       // Load recent public content
       const [{ data: pubS }, { data: pubC }] = await Promise.all([
@@ -6699,10 +6874,11 @@ function HavenApp() {
   const loadDiscover = async () => {
     setDiscoverLoading(true);
     try {
-      const [{ data: pubSeries }, { data: pubClasses }, { data: pubProfiles }] = await Promise.all([
+      const [{ data: pubSeries }, { data: pubClasses }, { data: pubProfiles }, { data: pubStudios }] = await Promise.all([
         supabase.from('series').select('*, profiles!created_by(id, name, studios(name))').eq('is_public',true).order('updated_at', { ascending: false }).limit(100),
         supabase.from('classes').select('*').eq('is_public',true).order('updated_at', { ascending: false }).limit(100),
-        supabase.from('profiles').select('*, studios(name)').eq('is_public', true).limit(50),
+        supabase.from('profiles').select('*, studios(name), settings').eq('is_public', true).limit(50),
+        supabase.from('studios').select('id, name, logo_url, description, contact, settings').eq('is_public', true).limit(50),
       ]);
       const items = [
         ...(pubSeries||[]).map(r => ({ ...seriesFromDB(r), _discoverType:'series', _author: r.profiles })),
@@ -6710,6 +6886,7 @@ function HavenApp() {
       ];
       setDiscoverItems(items);
       setPublicProfiles(pubProfiles||[]);
+      setDiscoverStudios(pubStudios||[]);
     } catch(e) { console.error('loadDiscover error:', e); }
     setDiscoverLoading(false);
   };
@@ -6888,19 +7065,27 @@ function HavenApp() {
     return sortOrder==="asc" ? cmp : -cmp;
   });
 
-  const goTabImmediate = id => {
+  // ── Brand color theming ──
+  const activeBrandColor = screen.mode === 'studio'
+    ? (profile?.studios?.settings?.primary_color || profile?.settings?.primary_color || C.crimson)
+    : (profile?.settings?.primary_color || C.crimson);
+  useEffect(() => {
+    document.documentElement.style.setProperty('--brand', activeBrandColor);
+  }, [activeBrandColor]);
+
+  const goTabImmediate = (id, keepEditingSeries=false) => {
     const newScreen = {mode:id,cls:null,fromLibrary:false};
-    setScreen(newScreen); setEditingSeries(null); setAddingSeries(false); setScreenStack([]); setAulaTeachingMode(false); setAulaEditingSeries(null);
+    setScreen(newScreen); if (!keepEditingSeries) setEditingSeries(null); setAddingSeries(false); setScreenStack([]); setAulaTeachingMode(false); setAulaEditingSeries(null);
     window.scrollTo(0, 0);
     window.history.replaceState({ screen: newScreen, screenStack: [] }, '');
   };
-  const goTab = async id => {
+  const goTab = async (id, opts={}) => {
     if (screen.mode === 'perfil' && profileDirtyRef.current) {
       const leave = await confirm_app('Tens alterações por guardar no perfil. Sair mesmo assim?', { confirmLabel: 'Sair sem guardar', cancelLabel: 'Ficar' });
       if (!leave) return;
       profileDirtyRef.current = false;
     }
-    goTabImmediate(id);
+    goTabImmediate(id, opts.keepEditingSeries);
   };
   const isAulaMode = screen.mode==="aula" && aulaTeachingMode;
 
@@ -6959,10 +7144,10 @@ function HavenApp() {
 
       {/* ── LEFT SIDEBAR ── */}
       {!isAulaMode&&(
-        <div style={{width:200,background:C.crimson,minHeight:"100vh",display:"flex",flexDirection:"column",flexShrink:0,position:"sticky",top:0,alignSelf:"flex-start",height:"100vh",overflowY:"auto"}}>
+        <div style={{width:200,background:activeBrandColor,minHeight:"100vh",display:"flex",flexDirection:"column",flexShrink:0,position:"sticky",top:0,alignSelf:"flex-start",height:"100vh",overflowY:"auto"}}>
 
           {/* Logo */}
-          <div style={{padding:"24px 20px 20px",borderBottom:`1px solid #5a1010`}}>
+          <div style={{padding:"24px 20px 20px",borderBottom:`1px solid rgba(0,0,0,0.2)`}}>
             <div style={{fontFamily:"'Clash Display',sans-serif",fontSize:9,fontWeight:500,letterSpacing:"0.3em",textTransform:"uppercase",color:`${C.cream}70`,marginBottom:4}}>The Haven</div>
             <div style={{fontFamily:"'Clash Display',sans-serif",fontSize:16,fontWeight:600,color:C.cream}}>Instructor Studio</div>
           </div>
@@ -7037,8 +7222,8 @@ function HavenApp() {
             classes={classes}
             profile={profile}
             onNewSeries={()=>{ goTab("library"); setEditingSeries(null); setAddingSeries(true); }}
-            onNewClass={()=>goTab("builder")}
-            onViewSeries={s=>{setEditingSeries(s);goTab("library");}}
+            onNewClass={()=>{ setPendingNewClass(true); goTab("builder"); }}
+            onViewSeries={s=>{setEditingSeries(s);goTab("library",{keepEditingSeries:true});}}
             onViewClass={c=>navigate({mode:"aula",cls:c,fromLibrary:false})}
             onGoStudio={()=>goTab("studio")}
             shares={shares}
@@ -7065,6 +7250,7 @@ function HavenApp() {
             onSend={item=>setSendModalItem(item)}
             profile={profile}
             instructors={publicProfiles}
+            studios={discoverStudios}
             onViewInstructor={p=>navigate({mode:'instructor',profileId:p.id})}
           />
         )}
@@ -7267,13 +7453,15 @@ function HavenApp() {
             onToggleClassPublic={toggleClassPublic}
             onSendClass={item=>setSendModalItem(item)}
             onUpdateClass={updateClass}
+            pendingNewClass={pendingNewClass}
+            onPendingConsumed={()=>setPendingNewClass(false)}
           />
         )}
 
         {/* ── AULA (merged) ── */}
         {screen.mode==="aula"&&screen.cls&&(
           <AulaView
-            cls={screen.cls} allSeries={series}
+            cls={screen.cls} allSeries={screen.cls?.visibility==='studio'?[...series,...studioSeriesCache.filter(ss=>!series.find(s=>s.id===ss.id))]:series}
             onBack={goBack}
             onDeleteClass={async id=>{ await deleteClass(id); goBack(); }}
             onUpdateSeries={saveSeries}
