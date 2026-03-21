@@ -5805,7 +5805,7 @@ const loadChats = () => { try { return JSON.parse(localStorage.getItem(CHATS_KEY
 const deleteChat = id => { try { localStorage.setItem(CHATS_KEY, JSON.stringify(loadChats().filter(c=>c.id!==id))); } catch(e) {} };
 const newChatId = () => 'chat_'+(crypto.randomUUID?.()??Math.random().toString(36).slice(2)+Math.random().toString(36).slice(2));
 
-const ContextAIPanel = ({ open, onToggle, screen, editingSeries, series, classes, aiStyle, onUpdateSeries, onNavigate, profile, onSaveToProfile, onUpdateClass }) => {
+const ContextAIPanel = ({ open, onToggle, screen, editingSeries, series, classes, aiStyle, onUpdateSeries, onNavigate, profile, onSaveToProfile, onUpdateClass, clients=[], clientSessions=[] }) => {
   const [messages, setMessages] = React.useState([]);
   const [input, setInput] = React.useState("");
   const [loading, setLoading] = React.useState(false);
@@ -5827,7 +5827,7 @@ const ContextAIPanel = ({ open, onToggle, screen, editingSeries, series, classes
   }, []);
 
   // Reset chat when context changes meaningfully
-  const contextKey = `${screen.mode}-${screen.cls?.id||""}-${editingSeries?.id||""}`;
+  const contextKey = `${screen.mode}-${screen.cls?.id||""}-${editingSeries?.id||""}-${screen.sessionId||""}`;
   const prevContextKey = React.useRef(contextKey);
   React.useEffect(() => {
     if (prevContextKey.current !== contextKey) {
@@ -5847,6 +5847,25 @@ const ContextAIPanel = ({ open, onToggle, screen, editingSeries, series, classes
   }, [messages]);
 
   const getContext = () => {
+    if (screen.mode === 'duo_session' && screen.sessionId) {
+      const ses = clientSessions.find(s=>s.id===screen.sessionId);
+      const linked = ses?.session_group_id ? clientSessions.find(s=>s.session_group_id===ses.session_group_id&&s.id!==ses.id) : null;
+      const cl1 = clients.find(c=>c.id===(ses?.client_id||screen.clientId));
+      const cl2 = linked ? clients.find(c=>c.id===linked.client_id) : null;
+      const fmtCl = (cl, s, serList) => {
+        if(!cl) return '';
+        const serInfo = serList.map(sr=>{
+          const d=sr.type==='barre'?sr.barre:sr.reformer;
+          const setup=[d?.springs&&`springs: ${d.springs}`,d?.props&&`props: ${d.props}`,d?.startPosition&&`posição: ${d.startPosition}`].filter(Boolean).join(', ');
+          const movs=(d?.movements||[]).map(m=>m.movement).filter(Boolean).join(', ');
+          return `  - ${sr.name}${setup?` (${setup})`:''}${movs?` — ${movs}`:''}`;
+        }).join('\n');
+        return `${cl.name}:\n  Objetivos: ${cl.objectives||'—'}\n  Notas: ${cl.notes||'—'}\n${s?.session_notes?`  Notas da sessão: ${s.session_notes}\n`:''}  Séries:\n${serInfo||'  —'}`;
+      };
+      const p1Ser = (ses?.series_ids||[]).map(id=>series.find(s=>s.id===id)).filter(Boolean);
+      const p2Ser = (linked?.series_ids||[]).map(id=>series.find(s=>s.id===id)).filter(Boolean);
+      return `Sessão Duo${ses?.date?` de ${ses.date}`:''}${ses?.modality?` — ${ses.modality}`:''}:\n\n${fmtCl(cl1,ses,p1Ser)}${cl2?`\n\n${fmtCl(cl2,linked,p2Ser)}`:''}`;
+    }
     if (editingSeries) {
       const s = editingSeries;
       const isSig = s.type==="signature";
@@ -5867,6 +5886,9 @@ const ContextAIPanel = ({ open, onToggle, screen, editingSeries, series, classes
 
   const getSystemPrompt = () => {
     const styleCtx = aiStyle ? `\n\nEstilo de ensino do instructor: ${aiStyle}` : "";
+    if (screen.mode === 'duo_session') {
+      return `${PLATFORM_CONTEXT}\n\nÉs um expert Pilates a ajudar um instructor numa sessão duo. Tens acesso ao contexto completo da sessão (clientes, objetivos, notas e séries de cada um). Ajuda com coaching específico por cliente, progressões, ajustes e observações. Responde em português (Portugal).${styleCtx}`;
+    }
     if (editingSeries) {
       return `${PLATFORM_CONTEXT}\n\nÉs um expert Pilates a ajudar um instructor a melhorar as suas séries. Dá sugestões específicas sobre sequência, flow biomecânico, princípios Pilates, escolha de springs/props, e cues. Explica sempre o porquê. Não reescreves a série — ofereces sugestões que o instructor pode escolher aplicar ou ignorar. Responde em português (Portugal).${styleCtx}`;
     }
@@ -5877,6 +5899,13 @@ const ContextAIPanel = ({ open, onToggle, screen, editingSeries, series, classes
   };
 
   const getLabel = () => {
+    if (screen.mode === 'duo_session') {
+      const ses = clientSessions.find(s=>s.id===screen.sessionId);
+      const linked = ses?.session_group_id ? clientSessions.find(s=>s.session_group_id===ses.session_group_id&&s.id!==ses.id) : null;
+      const cl1 = clients.find(c=>c.id===(ses?.client_id||screen.clientId));
+      const cl2 = linked ? clients.find(c=>c.id===linked.client_id) : null;
+      return `Sessão — ${cl1?.name||'P1'}${cl2?` & ${cl2.name}`:''}`;
+    }
     if (editingSeries) return `Análise — ${editingSeries.name}`;
     if (screen.mode==="library") return "Assistente de séries";
     if (screen.mode==="builder") return "Assistente de aulas";
@@ -7471,12 +7500,7 @@ const DuoSessionView = ({ sessionId, clientId, clients, clientSessions, series, 
   const [showEdit, setShowEdit] = useState(false);
   const [editDate, setEditDate] = useState(()=>session?.date||'');
   const [editModality, setEditModality] = useState(()=>session?.modality||'');
-  const [chatOpen, setChatOpen] = useState(false);
-  const [chatMessages, setChatMessages] = useState([]);
-  const [chatInput, setChatInput] = useState('');
-  const [chatLoading, setChatLoading] = useState(false);
-  const [chatContext, setChatContext] = useState('');
-  const [chatClientName, setChatClientName] = useState('');
+  const [allExpanded, setAllExpanded] = useState(false);
   const toast_ = useToast();
   const confirm_ = useConfirm();
 
@@ -7516,47 +7540,10 @@ const DuoSessionView = ({ sessionId, clientId, clients, clientSessions, series, 
     setShowEdit(false); toast_('Sessão atualizada!');
   };
 
-  const buildCtx = (cl, serList) => {
-    const seriesInfo = serList.map(s=>{
-      const d=s.type==='barre'?s.barre:s.reformer;
-      const setup=[d?.springs&&`springs: ${d.springs}`,d?.props&&`props: ${d.props}`,d?.startPosition&&`posição: ${d.startPosition}`].filter(Boolean).join(', ');
-      const movs=(d?.movements||[]).map(m=>m.movement).filter(Boolean).join(', ');
-      return `${s.name}${setup?` (${setup})`:''}${movs?` — ${movs}`:''}`;
-    }).join('\n');
-    return `Cliente: ${cl.name}\nObjetivos: ${cl.objectives||'—'}\nNotas do cliente: ${cl.notes||'—'}\n\nSéries da sessão:\n${seriesInfo}`;
-  };
-
-  const openChat = async (cl, serList) => {
-    if(!cl||serList.length===0) return;
-    const ctx = buildCtx(cl, serList);
-    const system = [aiStyle,'Analisa a sessão de Pilates descrita e sugere observações de coaching e progressão para o cliente.'].filter(Boolean).join('\n\n');
-    setChatContext(ctx); setChatClientName(cl.name||'Cliente');
-    setChatMessages([]); setChatInput(''); setChatOpen(true); setChatLoading(true);
-    try {
-      const r = await fetch('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({system,messages:[{role:'user',content:ctx}],max_tokens:800})});
-      const data = await r.json();
-      setChatMessages([{role:'assistant',content:data?.content?.[0]?.text||'Sem resposta.'}]);
-    } catch(e){ setChatMessages([{role:'assistant',content:'Erro na análise.'}]); }
-    setChatLoading(false);
-  };
-
-  const sendChat = async () => {
-    if(!chatInput.trim()||chatLoading) return;
-    const system = [aiStyle,'Analisa a sessão de Pilates. Contexto:\n'+chatContext].filter(Boolean).join('\n\n');
-    const newMsgs=[...chatMessages,{role:'user',content:chatInput}];
-    setChatMessages(newMsgs); setChatInput(''); setChatLoading(true);
-    try {
-      const r = await fetch('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({system,messages:newMsgs,max_tokens:800})});
-      const data = await r.json();
-      setChatMessages(p=>[...p,{role:'assistant',content:data?.content?.[0]?.text||'Sem resposta.'}]);
-    } catch(e){ setChatMessages(p=>[...p,{role:'assistant',content:'Erro.'}]); }
-    setChatLoading(false);
-  };
-
   const noteTA={width:"100%",fontFamily:"'Satoshi',sans-serif",fontSize:12,padding:"5px 8px",borderRadius:6,border:`1px solid ${C.stone}`,outline:"none",resize:"vertical",background:`${C.stone}20`,boxSizing:"border-box"};
   const inp={fontFamily:"'Satoshi',sans-serif",fontSize:13,padding:"6px 10px",borderRadius:8,border:`1px solid ${C.stone}`,outline:"none",background:C.white,color:C.ink};
 
-  const renderCol = (client, serList, perSerNotes, saveNote, sesNotes, setSesNotes, saveSesNotes, onOpenChat) => (
+  const renderCol = (client, serList, perSerNotes, saveNote, sesNotes, setSesNotes, saveSesNotes) => (
     <div style={{flex:1,display:"flex",flexDirection:"column",gap:0,minWidth:0}}>
       <div style={{fontSize:14,fontWeight:700,fontFamily:"'Clash Display',sans-serif",color:C.crimson,paddingBottom:10,borderBottom:`2px solid ${C.crimson}30`,marginBottom:12}}>
         {client?.name||'—'}
@@ -7571,7 +7558,7 @@ const DuoSessionView = ({ sessionId, clientId, clients, clientSessions, series, 
       {serList.length===0&&<div style={{color:C.mist,fontSize:13,padding:"8px 0"}}>Sem séries.</div>}
       {serList.map(ser=>(
         <div key={ser.id} style={{marginBottom:16}}>
-          <SeriesCard series={ser} onEdit={null} onDelete={null} profileClassTypes={profileClassTypes} aiStyle={null} forceExpanded={teachingMode}/>
+          <SeriesCard series={ser} onEdit={null} onDelete={null} profileClassTypes={profileClassTypes} aiStyle={null} forceExpanded={teachingMode||allExpanded}/>
           {!teachingMode&&(
             <textarea rows={2} style={{...noteTA,marginTop:4}}
               defaultValue={perSerNotes[ser.id]||''}
@@ -7580,16 +7567,10 @@ const DuoSessionView = ({ sessionId, clientId, clients, clientSessions, series, 
           )}
         </div>
       ))}
-      {!teachingMode&&serList.length>0&&(
-        <div style={{marginTop:4}}>
-          <button onClick={onOpenChat} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"5px 12px",borderRadius:8,border:`1px solid ${C.neutral}`,background:"transparent",color:C.neutral,cursor:"pointer"}}>
-            ✦ Conversar com AI
-          </button>
-        </div>
-      )}
     </div>
   );
 
+  const chatSys = {fontFamily:"'Satoshi',sans-serif"};
   return (
     <div style={{display:"flex",flexDirection:"column",gap:16}}>
       {/* Header */}
@@ -7599,11 +7580,12 @@ const DuoSessionView = ({ sessionId, clientId, clients, clientSessions, series, 
           <div style={{fontFamily:"'Clash Display',sans-serif",fontSize:20,fontWeight:500,color:C.crimson}}>Sessão Duo</div>
           <div style={{fontSize:12,color:C.mist}}>{client1?.name||'P1'} & {client2?.name||'P2'}{session.date&&` · ${session.date}`}{session.modality&&` · ${session.modality}`}</div>
         </div>
-        <div style={{display:"flex",gap:6,flexShrink:0}}>
-          <button onClick={()=>setShowEdit(p=>!p)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"5px 10px",borderRadius:8,border:`1px solid ${C.stone}`,background:"transparent",color:C.ink,cursor:"pointer"}}>Editar</button>
-          <button onClick={doDuplicate} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"5px 10px",borderRadius:8,border:`1px solid ${C.stone}`,background:"transparent",color:C.ink,cursor:"pointer"}}>Duplicar</button>
-          <button onClick={doDelete} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"5px 10px",borderRadius:8,border:`1px solid ${C.stone}`,background:"transparent",color:C.mist,cursor:"pointer"}}>Apagar</button>
-          <button onClick={()=>setTeachingMode(p=>!p)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"7px 16px",borderRadius:8,border:`1px solid ${teachingMode?C.crimson:C.stone}`,background:teachingMode?C.crimson:"transparent",color:teachingMode?C.cream:C.ink,cursor:"pointer"}}>
+        <div style={{display:"flex",gap:6,flexShrink:0,flexWrap:"wrap"}}>
+          <button onClick={()=>setShowEdit(p=>!p)} style={{...chatSys,fontSize:11,fontWeight:600,padding:"5px 10px",borderRadius:8,border:`1px solid ${C.stone}`,background:"transparent",color:C.ink,cursor:"pointer"}}>Editar</button>
+          <button onClick={doDuplicate} style={{...chatSys,fontSize:11,fontWeight:600,padding:"5px 10px",borderRadius:8,border:`1px solid ${C.stone}`,background:"transparent",color:C.ink,cursor:"pointer"}}>Duplicar</button>
+          <button onClick={doDelete} style={{...chatSys,fontSize:11,fontWeight:600,padding:"5px 10px",borderRadius:8,border:`1px solid ${C.stone}`,background:"transparent",color:C.mist,cursor:"pointer"}}>Apagar</button>
+          <button onClick={()=>setAllExpanded(p=>!p)} title={allExpanded?"Colapsar todas as séries":"Expandir todas as séries"} style={{...chatSys,fontSize:11,fontWeight:600,padding:"5px 10px",borderRadius:8,border:`1px solid ${allExpanded?C.neutral:C.stone}`,background:allExpanded?`${C.neutral}15`:"transparent",color:allExpanded?C.neutral:C.mist,cursor:"pointer"}}>{allExpanded?'↑ Colapsar':'↕ Expandir'}</button>
+          <button onClick={()=>setTeachingMode(p=>!p)} style={{...chatSys,fontSize:12,fontWeight:600,padding:"7px 16px",borderRadius:8,border:`1px solid ${teachingMode?C.crimson:C.stone}`,background:teachingMode?C.crimson:"transparent",color:teachingMode?C.cream:C.ink,cursor:"pointer"}}>
             {teachingMode?'✓ Modo Aula':'Modo Aula'}
           </button>
         </div>
@@ -7628,44 +7610,11 @@ const DuoSessionView = ({ sessionId, clientId, clients, clientSessions, series, 
       {/* Two-column content */}
       <div style={{display:"flex",gap:20,alignItems:"flex-start"}}>
         {renderCol(client1, p1SeriesList, p1Notes, saveP1Note, p1SesNotes, setP1SesNotes,
-          v=>onSaveClientSession({...session,session_notes:v}),
-          ()=>openChat(client1,p1SeriesList))}
+          v=>onSaveClientSession({...session,session_notes:v}))}
         <div style={{width:1,background:C.stone,alignSelf:"stretch",flexShrink:0}}/>
         {renderCol(client2, p2SeriesList, p2Notes, saveP2Note, p2SesNotes, setP2SesNotes,
-          v=>linkedSession&&onSaveClientSession({...linkedSession,session_notes:v}),
-          ()=>openChat(client2,p2SeriesList))}
+          v=>linkedSession&&onSaveClientSession({...linkedSession,session_notes:v}))}
       </div>
-
-      {/* AI Chat Modal */}
-      {chatOpen&&(
-        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:600,display:'flex',alignItems:'flex-end',justifyContent:'center'}}
-          onClick={()=>setChatOpen(false)}>
-          <div style={{background:C.white,borderRadius:'16px 16px 0 0',padding:20,width:'100%',maxWidth:640,maxHeight:'72vh',display:'flex',flexDirection:'column',gap:12,boxShadow:'0 -8px 32px rgba(0,0,0,0.18)'}}
-            onClick={e=>e.stopPropagation()}>
-            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexShrink:0}}>
-              <span style={{fontFamily:"'Clash Display',sans-serif",fontWeight:600,fontSize:16,color:C.ink}}>✦ AI — {chatClientName}</span>
-              <button onClick={()=>setChatOpen(false)} style={{background:'none',border:'none',cursor:'pointer',color:C.mist,fontSize:18,lineHeight:1}}>✕</button>
-            </div>
-            <div style={{flex:1,overflowY:'auto',display:'flex',flexDirection:'column',gap:10,minHeight:0}}>
-              {chatLoading&&chatMessages.length===0&&<div style={{color:C.mist,fontSize:13,padding:'8px 0'}}>A analisar sessão…</div>}
-              {chatMessages.map((m,i)=>(
-                <div key={i} style={{alignSelf:m.role==='user'?'flex-end':'flex-start',background:m.role==='user'?C.crimson:`${C.stone}60`,color:m.role==='user'?C.cream:C.ink,borderRadius:10,padding:'8px 12px',maxWidth:'88%',fontSize:13,lineHeight:1.6,whiteSpace:'pre-wrap'}}>
-                  {m.content}
-                </div>
-              ))}
-              {chatLoading&&chatMessages.length>0&&<div style={{color:C.mist,fontSize:12,padding:'4px 0'}}>…</div>}
-            </div>
-            <div style={{display:'flex',gap:8,flexShrink:0}}>
-              <input value={chatInput} onChange={e=>setChatInput(e.target.value)}
-                onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendChat();}}}
-                placeholder="Continua a conversa…"
-                style={{flex:1,padding:'8px 12px',borderRadius:8,border:`1px solid ${C.stone}`,fontSize:13,outline:'none',fontFamily:"'Satoshi',sans-serif"}}/>
-              <button onClick={sendChat} disabled={chatLoading||!chatInput.trim()}
-                style={{padding:'8px 16px',borderRadius:8,background:chatLoading||!chatInput.trim()?C.stone:C.crimson,color:C.cream,border:'none',cursor:chatLoading||!chatInput.trim()?'not-allowed':'pointer',fontWeight:700,fontSize:14}}>→</button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
@@ -9018,6 +8967,8 @@ function HavenApp() {
         onNavigate={navigate}
         profile={profile}
         onSaveToProfile={saveToAiProfile}
+        clients={clients}
+        clientSessions={clientSessions}
       />}
       </div>
     {sendModalItem&&<SendModal item={sendModalItem} currentUserId={user?.id} onSend={sendToInstructor} onClose={()=>setSendModalItem(null)}/>}
