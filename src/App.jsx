@@ -6501,7 +6501,8 @@ const InstructorProfileView = ({ profileId, onBack, onCopy, onSend, favorites=[]
 };
 
 // ─── DISCOVER PAGE ────────────────────────────────────────────────────────────
-const DiscoverPage = ({ items, loading, onRefresh, onCopy, onSend, onViewClass, profile, instructors=[], studios=[], onViewInstructor, onJoinStudio, user, favorites=[], onToggleFavorite }) => {
+const DiscoverPage = ({ items, loading, onRefresh, onCopy, onSend, onViewClass, profile, instructors=[], studios=[], onViewInstructor, onJoinStudio, user, favorites=[], onToggleFavorite, onAdminDelete }) => {
+  const isAdmin = profile?.is_platform_admin || ['super_admin','backoffice_admin'].includes(profile?.role);
   const [search, setSearch] = React.useState('');
   const [typeFilter, setTypeFilter] = React.useState('all'); // 'all','series','class','instructors','studios','favorites'
   const [zoneFilter, setZoneFilter] = React.useState('');
@@ -6615,6 +6616,7 @@ const DiscoverPage = ({ items, loading, onRefresh, onCopy, onSend, onViewClass, 
                         <button onClick={()=>setExpandedSeriesId(isSeriesExp?null:item.id)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"6px 14px",borderRadius:8,border:`1px solid ${C.neutral}`,background:isSeriesExp?C.neutral:"transparent",color:isSeriesExp?C.white:C.neutral,cursor:"pointer"}}>Ver</button>
                         <button onClick={()=>onCopy(item)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"6px 14px",borderRadius:8,border:`1px solid ${C.crimson}`,background:"transparent",color:C.crimson,cursor:"pointer"}}>Copiar</button>
                         <button onClick={()=>onSend(item)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"6px 14px",borderRadius:8,border:`1px solid ${C.stone}`,background:C.white,color:C.ink,cursor:"pointer"}}>Enviar →</button>
+                        {isAdmin&&onAdminDelete&&<button onClick={()=>onAdminDelete(item)} title="Remover do Descobrir (admin)" style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"6px 10px",borderRadius:8,border:`1px solid #c00`,background:"transparent",color:"#c00",cursor:"pointer"}}>✕</button>}
                       </div>
                     </div>
                     {isSeriesExp&&(
@@ -6649,6 +6651,7 @@ const DiscoverPage = ({ items, loading, onRefresh, onCopy, onSend, onViewClass, 
                       {onViewClass&&<button onClick={()=>onViewClass(item)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"6px 14px",borderRadius:8,border:`1px solid ${C.neutral}`,background:"transparent",color:C.neutral,cursor:"pointer"}}>Ver →</button>}
                       <button onClick={()=>onCopy(item)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"6px 14px",borderRadius:8,border:`1px solid ${C.crimson}`,background:"transparent",color:C.crimson,cursor:"pointer"}}>Copiar</button>
                       <button onClick={()=>onSend(item)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"6px 14px",borderRadius:8,border:`1px solid ${C.stone}`,background:C.white,color:C.ink,cursor:"pointer"}}>Enviar →</button>
+                      {isAdmin&&onAdminDelete&&<button onClick={()=>onAdminDelete(item)} title="Remover do Descobrir (admin)" style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"6px 10px",borderRadius:8,border:`1px solid #c00`,background:"transparent",color:"#c00",cursor:"pointer"}}>✕</button>}
                     </div>
                   </div>
                 ))}
@@ -7171,7 +7174,7 @@ const ClientsPage = ({ clients, clientSessions, series, onSaveClient, onDeleteCl
 
   const createClient = async () => {
     if (!newName.trim()) return;
-    const c = { id:`cl-${Date.now()}`, name:newName.trim(), contact:'', objectives:'', notes:'', shared_with_studio:false, created_at:new Date().toISOString() };
+    const c = { id:crypto.randomUUID(), name:newName.trim(), contact:'', objectives:'', notes:'', shared_with_studio:false, created_at:new Date().toISOString() };
     await onSaveClient(c);
     setNewName(''); setShowNewClient(false);
     onViewClient(c);
@@ -7492,9 +7495,9 @@ const DuoSessionView = ({ sessionId, clientId, clients, clientSessions, series, 
   };
 
   const doDuplicate = async () => {
-    const gid=crypto.randomUUID(); const now=Date.now();
-    await onSaveClientSession({...session,id:`cs-${now}`,session_group_id:gid,series_notes:{}});
-    if(linkedSession) await onSaveClientSession({...linkedSession,id:`cs-${now+1}`,session_group_id:gid,series_notes:{}});
+    const gid=crypto.randomUUID();
+    await onSaveClientSession({...session,id:crypto.randomUUID(),session_group_id:gid,series_notes:{}});
+    if(linkedSession) await onSaveClientSession({...linkedSession,id:crypto.randomUUID(),session_group_id:gid,series_notes:{}});
     toast_('Sessão duplicada!');
   };
 
@@ -7668,11 +7671,11 @@ const CreateSessionView = ({ clients, clientSessions, series, onSaveClientSessio
     if(!hasClients) return;
     try {
       if(isDuo){
-        const gid=crypto.randomUUID(); const now=Date.now();
-        await onSaveClientSession({id:`cs-${now}`,client_id:p1Client.id,instructor_id:user.id,type:'duo',date:sesDate||null,modality:sesModality||null,session_group_id:gid,series_ids:p1Series.map(s=>s.id),session_notes:sesNotes||null,completed:false});
-        await onSaveClientSession({id:`cs-${now+1}`,client_id:p2Client.id,instructor_id:user.id,type:'duo',date:sesDate||null,modality:sesModality||null,session_group_id:gid,series_ids:p2Series.map(s=>s.id),session_notes:sesNotes||null,completed:false});
+        const gid=crypto.randomUUID();
+        await onSaveClientSession({id:crypto.randomUUID(),client_id:p1Client.id,instructor_id:user.id,type:'duo',date:sesDate||null,modality:sesModality||null,session_group_id:gid,series_ids:p1Series.map(s=>s.id),session_notes:sesNotes||null,completed:false});
+        await onSaveClientSession({id:crypto.randomUUID(),client_id:p2Client.id,instructor_id:user.id,type:'duo',date:sesDate||null,modality:sesModality||null,session_group_id:gid,series_ids:p2Series.map(s=>s.id),session_notes:sesNotes||null,completed:false});
       } else {
-        await onSaveClientSession({id:`cs-${Date.now()}`,client_id:p1Client.id,instructor_id:user.id,type:sesType,date:sesDate||null,modality:sesModality||null,series_ids:selectedSeries.map(s=>s.id),session_notes:sesNotes||null,completed:false});
+        await onSaveClientSession({id:crypto.randomUUID(),client_id:p1Client.id,instructor_id:user.id,type:sesType,date:sesDate||null,modality:sesModality||null,series_ids:selectedSeries.map(s=>s.id),session_notes:sesNotes||null,completed:false});
       }
       toast_('Sessão guardada!');
       onBack();
@@ -8638,6 +8641,11 @@ function HavenApp() {
             onToggleFavorite={toggleFavorite}
             onViewInstructor={p=>navigate({mode:'instructor',profileId:p.id})}
             onViewClass={item=>navigate({mode:"aula",cls:item,readOnly:true,fromLibrary:false})}
+            onAdminDelete={async item => {
+              const tbl = item._discoverType==='series' ? 'series' : 'classes';
+              await supabase.from(tbl).update({ isPublic: false }).eq('id', item.id);
+              loadDiscover();
+            }}
             onJoinStudio={async studioId => {
               if (!user) return;
               const { error: joinErr } = await supabase.from('studio_memberships').upsert(
