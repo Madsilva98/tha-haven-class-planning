@@ -6693,6 +6693,7 @@ const DiscoverPage = ({ items, loading, onRefresh, onCopy, onSend, onViewClass, 
                             style={{background:"none",border:"none",cursor:"pointer",padding:"4px 6px",fontSize:16,lineHeight:1,color:isFav?C.crimson:C.stone,flexShrink:0}}>
                             {isFav?"♥":"♡"}
                           </button>}
+                          {isAdmin&&onAdminDelete&&<button onClick={e=>{e.stopPropagation();onAdminDelete({...p,_discoverType:'instructor'});}} title="Remover do Descobrir (admin)" style={{background:"none",border:"none",cursor:"pointer",padding:"4px 6px",fontSize:13,lineHeight:1,color:"#c00",flexShrink:0}}>✕</button>}
                           <span onClick={()=>setExpandedInstructorId(isExp?null:p.id)} style={{color:C.mist,transition:"transform 0.2s",transform:isExp?"rotate(180deg)":"rotate(0deg)",cursor:"pointer"}}>⌄</span>
                         </div>
                         {isExp&&(
@@ -6719,16 +6720,19 @@ const DiscoverPage = ({ items, loading, onRefresh, onCopy, onSend, onViewClass, 
                   const isExp = expandedStudioId===s.id;
                   return (
                     <div key={s.id} style={{background:C.white,border:`1px solid ${isExp?C.neutral:C.stone}`,borderRadius:12,overflow:"hidden",transition:"border-color 0.15s"}}>
-                      <div onClick={()=>setExpandedStudioId(isExp?null:s.id)} style={{padding:"14px 16px",cursor:"pointer",display:"flex",alignItems:"center",gap:10}}>
-                        {s.logo_url
-                          ? <img src={s.logo_url} alt="" style={{width:40,height:40,borderRadius:8,objectFit:"cover",flexShrink:0}} onError={e=>{e.target.style.display='none';}}/>
-                          : <div style={{width:40,height:40,borderRadius:8,background:C.stone,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,color:C.mist}}>🏛</div>
-                        }
-                        <div style={{flex:1,minWidth:0}}>
-                          <div style={{fontFamily:"'Clash Display',sans-serif",fontSize:14,fontWeight:600,color:C.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.name||"—"}</div>
-                          {s.contact?.instagram&&<div style={{fontSize:11,color:C.mist,marginTop:1}}>{s.contact.instagram}</div>}
+                      <div style={{padding:"14px 16px",display:"flex",alignItems:"center",gap:10}}>
+                        <div onClick={()=>setExpandedStudioId(isExp?null:s.id)} style={{cursor:"pointer",display:"flex",alignItems:"center",gap:10,flex:1,minWidth:0}}>
+                          {s.logo_url
+                            ? <img src={s.logo_url} alt="" style={{width:40,height:40,borderRadius:8,objectFit:"cover",flexShrink:0}} onError={e=>{e.target.style.display='none';}}/>
+                            : <div style={{width:40,height:40,borderRadius:8,background:C.stone,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,color:C.mist}}>🏛</div>
+                          }
+                          <div style={{flex:1,minWidth:0}}>
+                            <div style={{fontFamily:"'Clash Display',sans-serif",fontSize:14,fontWeight:600,color:C.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.name||"—"}</div>
+                            {s.contact?.instagram&&<div style={{fontSize:11,color:C.mist,marginTop:1}}>{s.contact.instagram}</div>}
+                          </div>
+                          <span style={{color:C.mist,transition:"transform 0.2s",transform:isExp?"rotate(180deg)":"rotate(0deg)"}}>⌄</span>
                         </div>
-                        <span style={{color:C.mist,transition:"transform 0.2s",transform:isExp?"rotate(180deg)":"rotate(0deg)"}}>⌄</span>
+                        {isAdmin&&onAdminDelete&&<button onClick={e=>{e.stopPropagation();onAdminDelete({...s,_discoverType:'studio'});}} title="Remover do Descobrir (admin)" style={{background:"none",border:"none",cursor:"pointer",padding:"4px 6px",fontSize:13,lineHeight:1,color:"#c00",flexShrink:0}}>✕</button>}
                       </div>
                       {isExp&&(()=>{
                         const sIsOwn = (profile?.studio_id===s.id) || (profile?.studioMemberships||[]).some(m=>(m.studio_id||m.studios?.id)===s.id);
@@ -7174,7 +7178,7 @@ const ClientsPage = ({ clients, clientSessions, series, onSaveClient, onDeleteCl
 
   const createClient = async () => {
     if (!newName.trim()) return;
-    const c = { id:crypto.randomUUID(), name:newName.trim(), contact:'', objectives:'', notes:'', shared_with_studio:false, created_at:new Date().toISOString() };
+    const c = { id:crypto.randomUUID(), name:newName.trim(), contact:'', objectives:'', notes:'', shared_with_studio:false, studio_id: profile?.studio_id||null, created_at:new Date().toISOString() };
     await onSaveClient(c);
     setNewName(''); setShowNewClient(false);
     onViewClient(c);
@@ -7296,7 +7300,7 @@ const ClientsPage = ({ clients, clientSessions, series, onSaveClient, onDeleteCl
   );
 };
 
-const ClientProfileView = ({ clientId, clients, clientSessions, series, onSaveClient, onSaveClientSession, onDeleteClientSession, onDeleteClient, onBack, onOpenSession, user, clientShares=[], onSaveShare, onDeleteShare }) => {
+const ClientProfileView = ({ clientId, clients, clientSessions, series, onSaveClient, onSaveClientSession, onDeleteClientSession, onDeleteClient, onBack, onOpenSession, user, clientShares=[], onSaveShare, onDeleteShare, profile=null }) => {
   const client = clients.find(c=>c.id===clientId);
   const [name, setName] = useState(client?.name||'');
   const [contact, setContact] = useState(client?.contact||'');
@@ -7392,7 +7396,7 @@ const ClientProfileView = ({ clientId, clients, clientSessions, series, onSaveCl
           <div style={{marginTop:10,display:"flex",flexDirection:"column",gap:12}}>
             {/* Studio visibility */}
             <div style={{display:"flex",alignItems:"center",gap:8}}>
-              <MiniToggle on={!!client.shared_with_studio} onToggle={()=>onSaveClient({...client,shared_with_studio:!client.shared_with_studio})}/>
+              <MiniToggle on={!!client.shared_with_studio} onToggle={()=>{const newShared=!client.shared_with_studio;onSaveClient({...client,shared_with_studio:newShared,studio_id:newShared?(profile?.studio_id||client.studio_id||null):client.studio_id});}}/>
               <span style={{fontSize:12,color:C.ink}}>Visível no Studio</span>
               <span style={{fontSize:11,color:C.mist}}>(membros do studio podem ver este cliente)</span>
             </div>
@@ -8211,18 +8215,24 @@ function HavenApp() {
 
   const loadClients = async () => {
     if (!user) return;
-    const [{ data: c }, { data: s }, { data: sh }] = await Promise.all([
+    const studioId = profile?.studio_id;
+    const [{ data: c }, { data: s }, { data: sh }, { data: studioC }] = await Promise.all([
       supabase.from('clients').select('*').eq('instructor_id', user.id),
       supabase.from('client_sessions').select('*').eq('instructor_id', user.id),
       supabase.from('client_shares').select('*, profiles!to_user_id(id,name)').eq('from_user_id', user.id),
+      studioId
+        ? supabase.from('clients').select('*').eq('shared_with_studio', true).eq('studio_id', studioId).neq('instructor_id', user.id)
+        : Promise.resolve({ data: [] }),
     ]);
-    setClients(c || []);
+    const ownClients = c || [];
+    const sharedStudioClients = (studioC || []).filter(sc => !ownClients.find(x=>x.id===sc.id));
+    setClients([...ownClients, ...sharedStudioClients]);
     setClientSessions(s || []);
     setClientShares(sh || []);
   };
   const saveClient = async c => {
     setClients(p => p.find(x=>x.id===c.id) ? p.map(x=>x.id===c.id?c:x) : [...p, c]);
-    await supabase.from('clients').upsert(c);
+    await supabase.from('clients').upsert({ ...c, instructor_id: user.id });
   };
   const saveClientSession = async s => {
     setClientSessions(p => p.find(x=>x.id===s.id) ? p.map(x=>x.id===s.id?s:x) : [...p, s]);
@@ -8642,8 +8652,14 @@ function HavenApp() {
             onViewInstructor={p=>navigate({mode:'instructor',profileId:p.id})}
             onViewClass={item=>navigate({mode:"aula",cls:item,readOnly:true,fromLibrary:false})}
             onAdminDelete={async item => {
-              const tbl = item._discoverType==='series' ? 'series' : 'classes';
-              await supabase.from(tbl).update({ isPublic: false }).eq('id', item.id);
+              if (item._discoverType==='instructor') {
+                await supabase.from('profiles').update({ is_public: false }).eq('id', item.id);
+              } else if (item._discoverType==='studio') {
+                await supabase.from('studios').update({ is_public: false }).eq('id', item.id);
+              } else {
+                const tbl = item._discoverType==='series' ? 'series' : 'classes';
+                await supabase.from(tbl).update({ is_public: false }).eq('id', item.id);
+              }
               loadDiscover();
             }}
             onJoinStudio={async studioId => {
@@ -8917,7 +8933,7 @@ function HavenApp() {
           />
         )}
         {screen.mode==="client"&&(
-          <ClientProfileView clientId={screen.clientId} clients={clients} clientSessions={clientSessions} series={series} onSaveClient={saveClient} onSaveClientSession={saveClientSession} onDeleteClientSession={deleteClientSession} onDeleteClient={deleteClient} onBack={goBack} user={user} clientShares={clientShares} onSaveShare={saveClientShare} onDeleteShare={deleteClientShare}
+          <ClientProfileView clientId={screen.clientId} clients={clients} clientSessions={clientSessions} series={series} onSaveClient={saveClient} onSaveClientSession={saveClientSession} onDeleteClientSession={deleteClientSession} onDeleteClient={deleteClient} onBack={goBack} user={user} clientShares={clientShares} onSaveShare={saveClientShare} onDeleteShare={deleteClientShare} profile={profile}
             onOpenSession={(ses,cl)=>{
               if(ses.type==='duo') { navigate({mode:"duo_session",sessionId:ses.id,clientId:cl?.id||ses.client_id}); return; }
               navigate({mode:"aula",cls:{id:ses.id,isClientSession:true,clientSessionId:ses.id,type:cl?.type||ses.type,seriesIds:ses.series_ids||[],name:(cl?.name||'Sessão')+' · '+(ses.date||''),date:ses.date},fromLibrary:false});
@@ -8988,12 +9004,18 @@ function HavenApp() {
             {feedbackList&&feedbackList.length===0&&<div style={{fontSize:12,color:C.mist,marginTop:8}}>Sem sugestões ainda.</div>}
             {feedbackList&&feedbackList.length>0&&(
               <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:6,maxHeight:320,overflowY:"auto"}}>
-                {feedbackList.map((f,i)=>(
-                  <div key={f.id||i} style={{padding:"8px 10px",borderRadius:8,border:`1px solid ${C.stone}`,background:C.cream}}>
-                    <div style={{fontSize:11,color:C.mist,marginBottom:4}}>{f.created_at?.slice(0,16).replace('T',' ')||"—"} · {f.user_id?.slice(0,8)||"anon"}</div>
-                    <div style={{fontSize:13,color:C.ink,lineHeight:1.4}}>{f.message}</div>
+                {feedbackList.map((f,i)=>{
+                  const isFbAdmin = profile?.is_platform_admin || ['super_admin','backoffice_admin'].includes(profile?.role);
+                  return (
+                  <div key={f.id||i} style={{padding:"8px 10px",borderRadius:8,border:`1px solid ${C.stone}`,background:C.cream,display:"flex",gap:8,alignItems:"flex-start"}}>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:11,color:C.mist,marginBottom:4}}>{f.created_at?.slice(0,16).replace('T',' ')||"—"} · {f.user_id?.slice(0,8)||"anon"}</div>
+                      <div style={{fontSize:13,color:C.ink,lineHeight:1.4}}>{f.message}</div>
+                    </div>
+                    {isFbAdmin&&f.id&&<button onClick={async()=>{await supabase.from('feedback').delete().eq('id',f.id);setFeedbackList(p=>p.filter(x=>x.id!==f.id));}} title="Apagar" style={{background:"none",border:"none",cursor:"pointer",color:"#c00",fontSize:13,padding:"2px 4px",flexShrink:0}}>✕</button>}
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
