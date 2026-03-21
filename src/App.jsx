@@ -397,7 +397,7 @@ const EMPTY_SERIES = { introCue:"",
   id:"", name:"", type:"reformer", status:"WIP",
   reformer:{ springs:"", props:"", startPosition:"", movements:[{ timing:"", lyric:"", movement:"", breath:"", transitionCue:"", timeReps:"" }] },
   barre:{ props:"", startPosition:"", movements:[{ timing:"", lyric:"", movement:"", breath:"", transitionCue:"", timeReps:"" }] },
-  muscles:[], cues:"", song:"", videoUrl:"", targetZone:"", primaryZone:"", seriesType:"", openCue:"", closeCue:"", createdAt:"", duration: null,
+  muscles:[], cues:"", song:"", videoUrl:"", targetZone:"", primaryZone:"", seriesType:"", propTags:[], openCue:"", closeCue:"", createdAt:"", duration: null,
 };
 
 const DEFAULT_CLASSES = [
@@ -410,7 +410,7 @@ const seriesToDB = (s, userId) => ({
   song: s.song || null, intro_cue: s.introCue || null, open_cue: s.openCue || null,
   close_cue: s.closeCue || null, modifications: s.modifications || null,
   muscles: s.muscles || [], cues: s.cues || null,
-  target_zone: s.targetZone || null, primary_zone: s.primaryZone || null, series_type: s.seriesType || null,
+  target_zone: s.targetZone || null, primary_zone: s.primaryZone || null, series_type: s.seriesType || null, prop_tags: s.propTags || [],
   reformer: s.reformer || null, barre: s.barre || null,
   video_url: s.videoUrl || null, created_by: userId,
   visibility: s.visibility || 'personal', studio_id: s.studioId || null,
@@ -427,7 +427,7 @@ const seriesFromDB = row => ({
   song: row.song || '', introCue: row.intro_cue || '', openCue: row.open_cue || '',
   closeCue: row.close_cue || '', modifications: row.modifications || '',
   muscles: row.muscles || [], cues: row.cues || '',
-  targetZone: row.target_zone || '', primaryZone: row.primary_zone || '', seriesType: row.series_type || '',
+  targetZone: row.target_zone || '', primaryZone: row.primary_zone || '', seriesType: row.series_type || '', propTags: row.prop_tags || [],
   reformer: row.reformer || { springs:'', props:'', startPosition:'', movements:[{ timing:'', lyric:'', movement:'', breath:'', transitionCue:'' }] },
   barre: row.barre || { props:'', startPosition:'', movements:[{ timing:'', lyric:'', movement:'', breath:'', transitionCue:'' }] },
   videoUrl: row.video_url || '', createdAt: row.created_at ? row.created_at.split('T')[0] : '',
@@ -1964,7 +1964,7 @@ Muscles: ${series.muscles?.join(", ")||"-"}${series.cues ? `\nNotes: ${series.cu
 };
 
 // ─── SERIES EDITOR ────────────────────────────────────────────────────────────
-const SeriesEditor = ({ series, onSave, onSaveAsNew, onCancel, onDelete, aiStyle, studioSettings={}, availableZones, availableSeriesTypes, availableClassTypes, onPublish }) => {
+const SeriesEditor = ({ series, onSave, onSaveAsNew, onCancel, onDelete, aiStyle, studioSettings={}, availableZones, availableSeriesTypes, availableClassTypes, availableProps, onPublish }) => {
   const initS = series ? JSON.parse(JSON.stringify(series)) : {...JSON.parse(JSON.stringify(EMPTY_SERIES)), id:`s-${Date.now()}`, createdAt: new Date().toISOString()};
   const [s, setS] = useState(() => {
     if (initS.type === 'signature' && !initS.parallelColumns) {
@@ -2294,6 +2294,21 @@ const SeriesEditor = ({ series, onSave, onSaveAsNew, onCancel, onDelete, aiStyle
                 })}
               </div>
             </div>
+            {/* Props tags */}
+            {(availableProps||[]).length>0&&(
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                <label style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em"}}>Props</label>
+                <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+                  {(availableProps||[]).map(tag=>{
+                    const active=(s.propTags||[]).includes(tag);
+                    return <button key={tag} onClick={()=>setS(p=>({...p,propTags:active?(p.propTags||[]).filter(x=>x!==tag):[...(p.propTags||[]),tag]}))}
+                      style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"3px 10px",borderRadius:20,
+                        border:`1px solid ${active?"#2a6099":C.stone}`,background:active?`${C.neutral}25`:"transparent",
+                        color:active?C.neutral:C.mist,cursor:"pointer"}}>{tag}</button>;
+                  })}
+                </div>
+              </div>
+            )}
             {/* Instructor notes + Video side by side */}
             <div style={{display:"flex",gap:12,alignItems:"flex-start"}}>
               <div style={{flex:1}}>
@@ -2631,6 +2646,8 @@ const AulaView = ({ cls, allSeries, onBack, onDeleteClass, onUpdateSeries, onUpd
   const [editName, setEditName] = useState(cls.name||"");
   const [editDate, setEditDate] = useState(cls.date||"");
   const [editLevel, setEditLevel] = useState(cls.level||"");
+  const [editType, setEditType] = useState(cls.type||"");
+  const [editModality, setEditModality] = useState(cls.modality||"");
   const [showFlowEditor, setShowFlowEditor] = useState(()=>cls.seriesIds.length===0);
   const [flowZoneFilter, setFlowZoneFilter] = useState("all");
   const [flowSearch, setFlowSearch] = useState("");
@@ -2640,7 +2657,7 @@ const AulaView = ({ cls, allSeries, onBack, onDeleteClass, onUpdateSeries, onUpd
   const [showDateLog, setShowDateLog] = useState(false);
   const [commentWithdrawn, setCommentWithdrawn] = useState(false);
   const classLevels = studioSettings?.class_levels || DEFAULT_CLASS_LEVELS;
-  const currentCls = React.useMemo(()=>({...cls, name:editName, date:editDate, level:editLevel, notes, usedDates}), [cls, editName, editDate, editLevel, notes, usedDates]);
+  const currentCls = React.useMemo(()=>({...cls, name:editName, date:editDate, level:editLevel, type:editType, modality:editModality, notes, usedDates}), [cls, editName, editDate, editLevel, editType, editModality, notes, usedDates]);
 
   const addUsedDate = (d) => {
     if (!d || usedDates.includes(d)) return;
@@ -2712,7 +2729,7 @@ const AulaView = ({ cls, allSeries, onBack, onDeleteClass, onUpdateSeries, onUpd
     }
   };
 
-  const isSig   = cls.type==="signature";
+  const isSig   = editType==="signature";
 
   const saveEdit = updated => {
     const usedIn = (allClasses||[]).filter(c => c.seriesIds.includes(updated.id));
@@ -2757,11 +2774,12 @@ const AulaView = ({ cls, allSeries, onBack, onDeleteClass, onUpdateSeries, onUpd
   const availableForFlow = React.useMemo(() => {
     const isStudioClass = cls.visibility==="studio";
     return allSeries.filter(s => {
+      if (s.isArchived) return false;
       if (seriesList.find(x=>x.id===s.id)) return false;
       if (isStudioClass) return s.visibility==="studio" && (s.studioId===cls.studioId||s.studio_id===cls.studio_id);
-      return s.type===cls.type || s.type==="signature";
+      return s.type===editType || s.type==="signature";
     });
-  }, [allSeries, seriesList, cls.type, cls.visibility, cls.studioId, cls.studio_id]);
+  }, [allSeries, seriesList, editType, cls.visibility, cls.studioId, cls.studio_id]);
 
   const flowZones = React.useMemo(() => {
     const zset = new Set();
@@ -2783,8 +2801,9 @@ const AulaView = ({ cls, allSeries, onBack, onDeleteClass, onUpdateSeries, onUpd
   };
 
   const doSave = () => {
-    if (!cls.type) { toast_?.('Escolhe a modalidade antes de guardar a aula.', 'error'); return; }
-    onUpdateClass({...cls, name:editName, date:editDate, level:editLevel, notes, usedDates, warmupNotes, cooldownNotes, seriesIds:seriesList.map(s=>s.id)});
+    if (!cls.isClientSession && !editType) { toast_?.('Escolhe a modalidade antes de guardar a aula.', 'error'); return; }
+    if (cls.isClientSession && !editModality && (profileClassTypes||[]).length > 0) { toast_?.('Escolhe a modalidade antes de guardar.', 'error'); return; }
+    onUpdateClass({...cls, name:editName, date:editDate, level:editLevel, type:editType, modality:editModality, notes, usedDates, warmupNotes, cooldownNotes, seriesIds:seriesList.map(s=>s.id)});
     setIsDirty(false);
   };
 
@@ -2795,7 +2814,7 @@ const AulaView = ({ cls, allSeries, onBack, onDeleteClass, onUpdateSeries, onUpd
       toast_?.(`A aula tem séries de outra modalidade (${names}). Remove-as primeiro.`, 'error');
       return;
     }
-    setCls(p => ({...p, type: newType}));
+    setEditType(newType);
     setIsDirty(true);
   };
 
@@ -3148,21 +3167,36 @@ const AulaView = ({ cls, allSeries, onBack, onDeleteClass, onUpdateSeries, onUpd
               {/* Modalidade — badge (readOnly) or picker */}
               <div style={{padding:"0 0 10px"}}>
                 {readOnly
-                  ? <Badge label={cls.type==="signature"?"✦":(cls.type||'?').slice(0,2).toUpperCase()} color={cls.type==="signature"?"gold":cls.type==="reformer"?"teal":"coral"} hexColor={cls.type!=="signature"?resolveTypeHex(cls.type,profileClassTypes):null}/>
-                  : <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
-                      {(profileClassTypes||[]).map(t=>{
-                        const name = classTypeName(t);
-                        const hex = classTypeColor(t, C.stone);
-                        const isActive = cls.type===name;
-                        return <button key={name} onClick={()=>changeClassType(name)}
-                          style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:700,padding:"4px 10px",borderRadius:20,
-                            border:`1px solid ${isActive?hex:C.stone}`,
-                            background:isActive?`${hex}25`:"transparent",
-                            color:isActive?hex:C.mist,cursor:"pointer"}}>
-                          {name}
-                        </button>;
-                      })}
-                    </div>
+                  ? <Badge label={cls.type==="signature"?"✦":(editType||'?').slice(0,2).toUpperCase()} color={cls.type==="signature"?"gold":editType==="reformer"?"teal":"coral"} hexColor={editType!=="signature"?resolveTypeHex(editType,profileClassTypes):null}/>
+                  : cls.isClientSession
+                    ? <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
+                        {(profileClassTypes||[]).map(t=>{
+                          const name = classTypeName(t);
+                          const hex = classTypeColor(t, C.stone);
+                          const isActive = editModality===name;
+                          return <button key={name} onClick={()=>{ setEditModality(isActive?"":name); setIsDirty(true); }}
+                            style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:700,padding:"4px 10px",borderRadius:20,
+                              border:`1px solid ${isActive?hex:C.stone}`,
+                              background:isActive?`${hex}25`:"transparent",
+                              color:isActive?hex:C.mist,cursor:"pointer"}}>
+                            {name}
+                          </button>;
+                        })}
+                      </div>
+                    : <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
+                        {(profileClassTypes||[]).map(t=>{
+                          const name = classTypeName(t);
+                          const hex = classTypeColor(t, C.stone);
+                          const isActive = editType===name;
+                          return <button key={name} onClick={()=>changeClassType(name)}
+                            style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:700,padding:"4px 10px",borderRadius:20,
+                              border:`1px solid ${isActive?hex:C.stone}`,
+                              background:isActive?`${hex}25`:"transparent",
+                              color:isActive?hex:C.mist,cursor:"pointer"}}>
+                            {name}
+                          </button>;
+                        })}
+                      </div>
                 }
               </div>
 
@@ -3585,7 +3619,8 @@ const ClassBuilder = ({ allSeries, classes, onSave, onDeleteClass, onPermanentDe
 
   if (creating && newCls) {
     const compatSeries = allSeries.filter(s=>
-      newCls.type==='signature' ? s.type==='signature' : s.type===newCls.type || s.type==='signature'
+      !s.isArchived &&
+      (newCls.type==='signature' ? s.type==='signature' : s.type===newCls.type || s.type==='signature')
     );
     const inFlow = newCls.seriesIds || [];
     const toggleSeries = id => setNewCls(p=>({...p, seriesIds: inFlow.includes(id)?inFlow.filter(x=>x!==id):[...inFlow,id]}));
@@ -4185,10 +4220,12 @@ const ProfilePage = ({ profile, user, onProfileUpdate, studioSettings, aiStyle, 
   const [editSeriesTypes, setEditSeriesTypes] = useState(
     profile?.settings?.series_types?.length ? profile.settings.series_types : DEFAULT_STUDIO_SERIES_TYPES
   );
+  const [editPrefProps, setEditPrefProps] = useState(profile?.settings?.props || []);
   const [newPrefZone, setNewPrefZone] = useState('');
   const [newPrefClassType, setNewPrefClassType] = useState('');
   const [newPrefLevel, setNewPrefLevel] = useState('');
   const [newSeriesType, setNewSeriesType] = useState('');
+  const [newPrefProp, setNewPrefProp] = useState('');
   const [isPublic, setIsPublic] = useState(profile?.is_public || false);
   const [editBio, setEditBio] = useState(profile?.bio || '');
   const [editAvatarUrl, setEditAvatarUrl] = useState(profile?.avatar_url || '');
@@ -4233,6 +4270,7 @@ const ProfilePage = ({ profile, user, onProfileUpdate, studioSettings, aiStyle, 
     setEditPrefClassTypes((profile?.settings?.class_types || []).map(normalizeClassType));
     setEditPrefLevels(profile?.settings?.preferred_levels || []);
     setEditSeriesTypes(profile?.settings?.series_types?.length ? profile.settings.series_types : DEFAULT_STUDIO_SERIES_TYPES);
+    setEditPrefProps(profile?.settings?.props || []);
     setAiProfile(profile?.settings?.ai_profile || BLANK_AI);
   // Only reset form when the profile id changes (different user), not on every content update
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -4247,7 +4285,7 @@ const ProfilePage = ({ profile, user, onProfileUpdate, studioSettings, aiStyle, 
       is_public: isPublic,
       bio: editBio || null,
       avatar_url: editAvatarUrl || null,
-      settings: { ...(profile?.settings || {}), preferred_zones: editPrefZones, class_types: editPrefClassTypes, preferred_levels: editPrefLevels, series_types: editSeriesTypes, ai_profile: aiProfile, primary_color: editPrimaryColor },
+      settings: { ...(profile?.settings || {}), preferred_zones: editPrefZones, class_types: editPrefClassTypes, preferred_levels: editPrefLevels, series_types: editSeriesTypes, props: editPrefProps, ai_profile: aiProfile, primary_color: editPrimaryColor },
     }).eq('id', profile.id);
     setSaving(false);
     if (!error) {
@@ -4270,7 +4308,7 @@ const ProfilePage = ({ profile, user, onProfileUpdate, studioSettings, aiStyle, 
     autoSaveTimer.current = setTimeout(() => saveRef.current?.({silent:true}), 1500);
     return () => clearTimeout(autoSaveTimer.current);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editName, editBio, editAvatarUrl, isPublic, editPrimaryColor, JSON.stringify(editPrefZones), JSON.stringify(editPrefClassTypes), JSON.stringify(editPrefLevels), JSON.stringify(editSeriesTypes), JSON.stringify(aiProfile)]);
+  }, [editName, editBio, editAvatarUrl, isPublic, editPrimaryColor, JSON.stringify(editPrefZones), JSON.stringify(editPrefClassTypes), JSON.stringify(editPrefLevels), JSON.stringify(editSeriesTypes), JSON.stringify(editPrefProps), JSON.stringify(aiProfile)]);
 
   const classLevelOptions = studioSettings?.class_levels || DEFAULT_CLASS_LEVELS;
 
@@ -4385,7 +4423,14 @@ const ProfilePage = ({ profile, user, onProfileUpdate, studioSettings, aiStyle, 
             onAdd={() => { const v = newSeriesType.trim(); if (v && !editSeriesTypes.map(x => x.toLowerCase()).includes(v.toLowerCase())) { setEditSeriesTypes(p => [...p, v]); setNewSeriesType(''); } }} />
         </CollapsibleSection>
 
-        {/* 6. Zonas target */}
+        {/* 6. Props */}
+        <CollapsibleSection title="Props" defaultOpen={false}>
+          <PillRow items={editPrefProps} onRemove={p => setEditPrefProps(prev => prev.filter(x => x !== p))}
+            newVal={newPrefProp} onNewVal={setNewPrefProp} placeholder="ex. Magic Circle, Foam Roller, Resistance Band…"
+            onAdd={() => { const v = newPrefProp.trim(); if (v && !editPrefProps.map(x => x.toLowerCase()).includes(v.toLowerCase())) { setEditPrefProps(p => [...p, v]); setNewPrefProp(''); } }} />
+        </CollapsibleSection>
+
+        {/* 7. Zonas target */}
         <CollapsibleSection title="Zonas target" defaultOpen={false}>
           <PillRow items={editPrefZones} onRemove={removeZone}
             newVal={newPrefZone} onNewVal={setNewPrefZone} placeholder="Adicionar zona…"
@@ -7216,6 +7261,7 @@ const ClientsPage = ({ clients, clientSessions, series, onSaveClient, onDeleteCl
 
   const seenGroups = new Set();
   const allSessions = [...clientSessions]
+    .filter(s => !s.is_archived)
     .sort((a,b)=>(b.date||'').localeCompare(a.date||''))
     .filter(s => {
       if (s.session_group_id) {
@@ -7330,7 +7376,7 @@ const ClientsPage = ({ clients, clientSessions, series, onSaveClient, onDeleteCl
   );
 };
 
-const ClientProfileView = ({ clientId, clients, clientSessions, series, onSaveClient, onSaveClientSession, onDeleteClientSession, onDeleteClient, onBack, onOpenSession, user, clientShares=[], onSaveShare, onDeleteShare, profile=null }) => {
+const ClientProfileView = ({ clientId, clients, clientSessions, series, onSaveClient, onSaveClientSession, onDeleteClientSession, onDeleteClient, onBack, onOpenSession, user, clientShares=[], onSaveShare, onDeleteShare, profile=null, onPermanentDeleteClientSession=null }) => {
   const client = clients.find(c=>c.id===clientId);
   const [name, setName] = useState(client?.name||'');
   const [contact, setContact] = useState(client?.contact||'');
@@ -7338,6 +7384,7 @@ const ClientProfileView = ({ clientId, clients, clientSessions, series, onSaveCl
   const [notes, setNotes] = useState(client?.notes||'');
   const [isDirty, setIsDirty] = useState(false);
   const [expandedSesId, setExpandedSesId] = useState(null);
+  const [showArchivedSessions, setShowArchivedSessions] = useState(false);
   const confirm_ = useConfirm();
   // Sharing state
   const [showShare, setShowShare] = useState(false);
@@ -7352,7 +7399,8 @@ const ClientProfileView = ({ clientId, clients, clientSessions, series, onSaveCl
     setShareResults(data||[]);
   };
 
-  const sessions = clientSessions.filter(s=>s.client_id===clientId).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  const sessions = clientSessions.filter(s=>s.client_id===clientId&&!s.is_archived).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  const archivedSessions = clientSessions.filter(s=>s.client_id===clientId&&s.is_archived).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
 
   if (!client) return <div style={{color:C.mist,padding:40,textAlign:"center"}}>Cliente não encontrado.</div>;
 
@@ -7402,7 +7450,7 @@ const ClientProfileView = ({ clientId, clients, clientSessions, series, onSaveCl
                   {s.completed&&<span style={{fontSize:10,fontWeight:700,color:"#16a34a",flexShrink:0}}>✓</span>}
                   <button onClick={()=>setExpandedSesId(isExpanded?null:s.id)} style={{background:"none",border:"none",cursor:"pointer",color:isExpanded?C.neutral:C.mist,padding:"2px 4px",fontSize:11,fontWeight:600,flexShrink:0}}>Notas {isExpanded?'▴':'▸'}</button>
                   {onOpenSession&&<button onClick={()=>onOpenSession(s,client)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"3px 9px",borderRadius:8,border:`1px solid ${C.neutral}`,background:"transparent",color:C.neutral,cursor:"pointer",flexShrink:0}}>Abrir →</button>}
-                  <button onClick={async()=>{ if(await confirm_('Apagar esta sessão?',{confirmLabel:'Apagar'})) await onDeleteClientSession(s.id); }} style={{background:"none",border:"none",cursor:"pointer",color:C.mist,padding:"2px 4px",fontSize:12,flexShrink:0}}>×</button>
+                  <button onClick={async()=>{ if(await confirm_('Arquivar esta sessão?',{confirmLabel:'Arquivar'})) await onDeleteClientSession(s.id); }} style={{background:"none",border:"none",cursor:"pointer",color:C.mist,padding:"2px 4px",fontSize:12,flexShrink:0}} title="Arquivar sessão">×</button>
                 </div>
                 {isExpanded&&(
                   <div style={{borderTop:`1px solid ${C.stone}`,padding:"10px 14px",background:`${C.stone}40`}}>
@@ -7415,6 +7463,27 @@ const ClientProfileView = ({ clientId, clients, clientSessions, series, onSaveCl
             );
           })}
         </div>
+        {archivedSessions.length>0&&(
+          <div style={{marginTop:8}}>
+            <button onClick={()=>setShowArchivedSessions(p=>!p)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,color:C.mist,background:"none",border:"none",cursor:"pointer",padding:"4px 0",textDecoration:"underline"}}>
+              📦 Arquivo ({archivedSessions.length}) {showArchivedSessions?'▴':'▾'}
+            </button>
+            {showArchivedSessions&&(
+              <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:6}}>
+                {archivedSessions.map(s=>(
+                  <div key={s.id} style={{background:`${C.stone}40`,borderRadius:8,padding:"8px 12px",display:"flex",alignItems:"center",gap:8}}>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:12,fontWeight:600,color:C.mist}}>{s.date||'—'}</div>
+                      {(s.series_ids||[]).length>0&&<div style={{fontSize:11,color:C.mist}}>{(s.series_ids||[]).map(id=>series.find(x=>x.id===id)?.name).filter(Boolean).slice(0,3).join(' · ')}</div>}
+                    </div>
+                    <button onClick={()=>onSaveClientSession({...s,is_archived:false})} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"3px 9px",borderRadius:6,border:`1px solid ${C.stone}`,background:"transparent",color:C.neutral,cursor:"pointer",flexShrink:0}}>↺ Restaurar</button>
+                    <button onClick={async()=>{ if(await confirm_('Apagar permanentemente esta sessão?',{confirmLabel:'Apagar',danger:true})) onPermanentDeleteClientSession?.(s.id); }} style={{background:"none",border:"none",cursor:"pointer",color:C.mist,padding:"2px 4px",fontSize:12,flexShrink:0}} title="Apagar permanentemente">🗑</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Partilha */}
@@ -7500,6 +7569,10 @@ const DuoSessionView = ({ sessionId, clientId, clients, clientSessions, series, 
   const [showEdit, setShowEdit] = useState(false);
   const [editDate, setEditDate] = useState(()=>session?.date||'');
   const [editModality, setEditModality] = useState(()=>session?.modality||'');
+  const [editP1Series, setEditP1Series] = useState(()=>(session?.series_ids||[]).map(id=>series.find(s=>s.id===id)).filter(Boolean));
+  const [editP2Series, setEditP2Series] = useState(()=>(linkedSession?.series_ids||[]).map(id=>series.find(s=>s.id===id)).filter(Boolean));
+  const [editLibSearch, setEditLibSearch] = useState('');
+  const [editLibTypeFilter, setEditLibTypeFilter] = useState('all');
   const [allExpanded, setAllExpanded] = useState(false);
   const toast_ = useToast();
   const confirm_ = useConfirm();
@@ -7535,8 +7608,8 @@ const DuoSessionView = ({ sessionId, clientId, clients, clientSessions, series, 
   };
 
   const doSaveEdit = async () => {
-    await onSaveClientSession({...session,date:editDate,modality:editModality});
-    if(linkedSession) await onSaveClientSession({...linkedSession,date:editDate,modality:editModality});
+    await onSaveClientSession({...session,date:editDate,modality:editModality,series_ids:editP1Series.map(s=>s.id)});
+    if(linkedSession) await onSaveClientSession({...linkedSession,date:editDate,modality:editModality,series_ids:editP2Series.map(s=>s.id)});
     setShowEdit(false); toast_('Sessão atualizada!');
   };
 
@@ -7581,7 +7654,7 @@ const DuoSessionView = ({ sessionId, clientId, clients, clientSessions, series, 
           <div style={{fontSize:12,color:C.mist}}>{client1?.name||'P1'} & {client2?.name||'P2'}{session.date&&` · ${session.date}`}{session.modality&&` · ${session.modality}`}</div>
         </div>
         <div style={{display:"flex",gap:6,flexShrink:0,flexWrap:"wrap"}}>
-          <button onClick={()=>setShowEdit(p=>!p)} style={{...chatSys,fontSize:11,fontWeight:600,padding:"5px 10px",borderRadius:8,border:`1px solid ${C.stone}`,background:"transparent",color:C.ink,cursor:"pointer"}}>Editar</button>
+          <button onClick={()=>{ setEditP1Series(p1SeriesList); setEditP2Series(p2SeriesList); setEditLibSearch(''); setEditLibTypeFilter('all'); setShowEdit(p=>!p); }} style={{...chatSys,fontSize:11,fontWeight:600,padding:"5px 10px",borderRadius:8,border:`1px solid ${C.stone}`,background:"transparent",color:C.ink,cursor:"pointer"}}>Editar</button>
           <button onClick={doDuplicate} style={{...chatSys,fontSize:11,fontWeight:600,padding:"5px 10px",borderRadius:8,border:`1px solid ${C.stone}`,background:"transparent",color:C.ink,cursor:"pointer"}}>Duplicar</button>
           <button onClick={doDelete} style={{...chatSys,fontSize:11,fontWeight:600,padding:"5px 10px",borderRadius:8,border:`1px solid ${C.stone}`,background:"transparent",color:C.mist,cursor:"pointer"}}>Apagar</button>
           <button onClick={()=>setAllExpanded(p=>!p)} title={allExpanded?"Colapsar todas as séries":"Expandir todas as séries"} style={{...chatSys,fontSize:11,fontWeight:600,padding:"5px 10px",borderRadius:8,border:`1px solid ${allExpanded?C.neutral:C.stone}`,background:allExpanded?`${C.neutral}15`:"transparent",color:allExpanded?C.neutral:C.mist,cursor:"pointer"}}>{allExpanded?'↑ Colapsar':'↕ Expandir'}</button>
@@ -7591,21 +7664,69 @@ const DuoSessionView = ({ sessionId, clientId, clients, clientSessions, series, 
         </div>
       </div>
 
-      {/* Inline edit panel */}
-      {showEdit&&(
-        <div style={{background:C.white,borderRadius:10,border:`1px solid ${C.stone}`,padding:14,display:"flex",gap:12,flexWrap:"wrap",alignItems:"flex-end"}}>
-          <div>
-            <div style={{fontSize:10,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4}}>Data</div>
-            <input type="date" value={editDate} onChange={e=>setEditDate(e.target.value)} style={{...inp,width:150}}/>
+      {/* Edit panel */}
+      {showEdit&&(()=>{
+        const editLibTypes = [...new Set(series.filter(s=>!s.isArchived).map(s=>s.type).filter(Boolean))];
+        const editFilteredLib = series.filter(s=>{
+          if(s.isArchived) return false;
+          if(editLibTypeFilter!=='all'&&s.type!==editLibTypeFilter) return false;
+          if(editLibSearch&&!s.name.toLowerCase().includes(editLibSearch.toLowerCase())) return false;
+          return true;
+        });
+        const serBtn={fontFamily:"'Satoshi',sans-serif",fontSize:10,fontWeight:600,padding:"2px 6px",borderRadius:4,border:`1px solid ${C.stone}`,background:C.cream,color:C.neutral,cursor:"pointer",whiteSpace:"nowrap"};
+        const lbl2={fontSize:10,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4};
+        return (
+          <div style={{background:C.white,borderRadius:10,border:`1px solid ${C.stone}`,padding:14,display:"flex",flexDirection:"column",gap:14}}>
+            <div style={{display:"flex",gap:12,flexWrap:"wrap",alignItems:"flex-end"}}>
+              <div>
+                <div style={lbl2}>Data</div>
+                <input type="date" value={editDate} onChange={e=>setEditDate(e.target.value)} style={{...inp,width:150}}/>
+              </div>
+              <div>
+                <div style={lbl2}>Modalidade</div>
+                <input value={editModality} onChange={e=>setEditModality(e.target.value)} placeholder="—" style={{...inp,width:140}}/>
+              </div>
+              <Btn small onClick={doSaveEdit}>Guardar</Btn>
+              <Btn small variant="ghost" onClick={()=>setShowEdit(false)}>Cancelar</Btn>
+            </div>
+            <div style={{display:"flex",gap:12,alignItems:"flex-start"}}>
+              {[{label:`P1 · ${client1?.name||''}`,list:editP1Series,setList:setEditP1Series,addKey:'p1'},{label:`P2 · ${client2?.name||'P2'}`,list:editP2Series,setList:setEditP2Series,addKey:'p2'}].map(({label,list,setList,addKey})=>(
+                <div key={addKey} style={{flex:1,display:"flex",flexDirection:"column",gap:6,minWidth:0}}>
+                  <div style={{fontSize:10,fontWeight:700,color:C.ink,textTransform:"uppercase",letterSpacing:"0.08em",padding:"4px 8px",background:`${C.stone}40`,borderRadius:6,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{label}</div>
+                  <div style={{minHeight:60,display:"flex",flexDirection:"column",gap:3}}>
+                    {list.length===0&&<div style={{color:C.mist,fontSize:12,padding:"6px 0",textAlign:"center"}}>—</div>}
+                    {list.map(ser=>(
+                      <div key={ser.id} style={{display:"flex",alignItems:"center",gap:6,padding:"4px 7px",background:C.cream,borderRadius:6,border:`1px solid ${C.stone}`,fontSize:12,color:C.ink}}>
+                        <span style={{flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ser.name}</span>
+                        <button onClick={()=>setList(p=>p.filter(x=>x.id!==ser.id))} style={{background:"none",border:"none",cursor:"pointer",color:C.mist,padding:0,fontSize:13,lineHeight:1}}>×</button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+              <div style={{width:200,flexShrink:0,display:"flex",flexDirection:"column",gap:6,borderLeft:`1px solid ${C.stone}`,paddingLeft:12}}>
+                <span style={{fontSize:10,fontWeight:700,color:C.ink,textTransform:"uppercase",letterSpacing:"0.08em"}}>Biblioteca</span>
+                <input value={editLibSearch} onChange={e=>setEditLibSearch(e.target.value)} placeholder="Pesquisar série…" style={{...inp,fontSize:12}}/>
+                <div style={{display:"flex",gap:3,flexWrap:"wrap"}}>
+                  {[['all','Todas'],...editLibTypes.map(t=>[t,t])].map(([v,l])=>(
+                    <button key={v} onClick={()=>setEditLibTypeFilter(v)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:10,fontWeight:600,padding:"2px 7px",borderRadius:20,border:`1px solid ${editLibTypeFilter===v?C.neutral:C.stone}`,background:editLibTypeFilter===v?C.neutral:"transparent",color:editLibTypeFilter===v?C.white:C.mist,cursor:"pointer"}}>{l}</button>
+                  ))}
+                </div>
+                <div style={{maxHeight:300,overflowY:"auto",display:"flex",flexDirection:"column",gap:2}}>
+                  {editFilteredLib.length===0&&<div style={{color:C.mist,fontSize:12}}>Nenhuma série.</div>}
+                  {editFilteredLib.map(ser=>(
+                    <div key={ser.id} style={{display:"flex",alignItems:"center",gap:3,padding:"3px 0",borderBottom:`1px solid ${C.stone}20`}}>
+                      <span style={{flex:1,fontSize:12,color:C.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ser.name}</span>
+                      <button onClick={()=>setEditP1Series(p=>p.find(x=>x.id===ser.id)?p:[...p,ser])} style={serBtn}>+P1</button>
+                      <button onClick={()=>setEditP2Series(p=>p.find(x=>x.id===ser.id)?p:[...p,ser])} style={serBtn}>+P2</button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
           </div>
-          <div>
-            <div style={{fontSize:10,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4}}>Modalidade</div>
-            <input value={editModality} onChange={e=>setEditModality(e.target.value)} placeholder="—" style={{...inp,width:140}}/>
-          </div>
-          <Btn small onClick={doSaveEdit}>Guardar</Btn>
-          <Btn small variant="ghost" onClick={()=>setShowEdit(false)}>Cancelar</Btn>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Two-column content */}
       <div style={{display:"flex",gap:20,alignItems:"flex-start"}}>
@@ -7620,7 +7741,7 @@ const DuoSessionView = ({ sessionId, clientId, clients, clientSessions, series, 
 };
 
 // ─── CREATE SESSION VIEW ───────────────────────────────────────────────────────
-const CreateSessionView = ({ clients, clientSessions, series, onSaveClientSession, onBack, profile, user }) => {
+const CreateSessionView = ({ clients, clientSessions, series, onSaveClientSession, onBack, profile, user, onOpenSession=null }) => {
   const [sesType, setSesType] = useState('pt');
   const [p1Search, setP1Search] = useState('');
   const [p2Search, setP2Search] = useState('');
@@ -7631,6 +7752,7 @@ const CreateSessionView = ({ clients, clientSessions, series, onSaveClientSessio
   const [p2Series, setP2Series] = useState([]);
   const [libSearch, setLibSearch] = useState('');
   const [libTypeFilter, setLibTypeFilter] = useState('all');
+  const [libPropFilter, setLibPropFilter] = useState('all');
   const [sesDate, setSesDate] = useState(new Date().toISOString().slice(0,10));
   const [sesModality, setSesModality] = useState('');
   const [sesNotes, setSesNotes] = useState('');
@@ -7649,6 +7771,7 @@ const CreateSessionView = ({ clients, clientSessions, series, onSaveClientSessio
     if(s.isArchived) return false;
     if(libSearch&&!s.name.toLowerCase().includes(libSearch.toLowerCase())) return false;
     if(libTypeFilter!=='all'&&s.type!==libTypeFilter) return false;
+    if(libPropFilter!=='all'&&!(s.propTags||[]).includes(libPropFilter)) return false;
     return true;
   });
   const libZoneMap = {};
@@ -7658,7 +7781,7 @@ const CreateSessionView = ({ clients, clientSessions, series, onSaveClientSessio
   });
   const sortedLibZones = Object.keys(libZoneMap).sort((a,b)=>a.localeCompare(b,'pt'));
   const libNoZone = filteredLib.filter(s=>!s.primaryZone&&!(s.targetZone||'').trim());
-  const libTypes = [...new Set(series.map(s=>s.type).filter(Boolean))];
+  const libTypes = [...new Set(series.filter(s=>!s.isArchived).map(s=>s.type).filter(Boolean))];
 
   const p1Results = p1Search ? clients.filter(c=>c.name.toLowerCase().includes(p1Search.toLowerCase())).slice(0,6) : [];
   const p2Results = p2Search ? clients.filter(c=>c.name.toLowerCase().includes(p2Search.toLowerCase())&&c.id!==p1Client?.id).slice(0,6) : [];
@@ -7672,16 +7795,21 @@ const CreateSessionView = ({ clients, clientSessions, series, onSaveClientSessio
 
   const doSave = async () => {
     if(!hasClients) return;
+    if(classTypes.length>0 && !sesModality) { toast_('Escolhe a modalidade antes de guardar.', 'error'); return; }
     try {
       if(isDuo){
         const gid=crypto.randomUUID();
-        await onSaveClientSession({id:crypto.randomUUID(),client_id:p1Client.id,instructor_id:user.id,type:'duo',date:sesDate||null,modality:sesModality||null,session_group_id:gid,series_ids:p1Series.map(s=>s.id),session_notes:sesNotes||null,completed:false});
+        const s1={id:crypto.randomUUID(),client_id:p1Client.id,instructor_id:user.id,type:'duo',date:sesDate||null,modality:sesModality||null,session_group_id:gid,series_ids:p1Series.map(s=>s.id),session_notes:sesNotes||null,completed:false};
+        await onSaveClientSession(s1);
         await onSaveClientSession({id:crypto.randomUUID(),client_id:p2Client.id,instructor_id:user.id,type:'duo',date:sesDate||null,modality:sesModality||null,session_group_id:gid,series_ids:p2Series.map(s=>s.id),session_notes:sesNotes||null,completed:false});
+        toast_('Sessão guardada!');
+        onOpenSession?.(s1, p1Client);
       } else {
-        await onSaveClientSession({id:crypto.randomUUID(),client_id:p1Client.id,instructor_id:user.id,type:sesType,date:sesDate||null,modality:sesModality||null,series_ids:selectedSeries.map(s=>s.id),session_notes:sesNotes||null,completed:false});
+        const newSes={id:crypto.randomUUID(),client_id:p1Client.id,instructor_id:user.id,type:sesType,date:sesDate||null,modality:sesModality||null,series_ids:selectedSeries.map(s=>s.id),session_notes:sesNotes||null,completed:false};
+        await onSaveClientSession(newSes);
+        toast_('Sessão guardada!');
+        onOpenSession?.(newSes, p1Client);
       }
-      toast_('Sessão guardada!');
-      onBack();
     } catch(e){ toast_('Erro ao guardar sessão.','error'); }
   };
 
@@ -7740,6 +7868,13 @@ const CreateSessionView = ({ clients, clientSessions, series, onSaveClientSessio
           <button key={v} onClick={()=>setLibTypeFilter(v)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"2px 8px",borderRadius:20,border:`1px solid ${libTypeFilter===v?C.neutral:C.stone}`,background:libTypeFilter===v?C.neutral:"transparent",color:libTypeFilter===v?C.white:C.mist,cursor:"pointer"}}>{l}</button>
         ))}
       </div>
+      {(profile?.settings?.props||[]).length>0&&(
+        <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+          {[['all','Props: todas'],...(profile?.settings?.props||[]).map(p=>[p,p])].map(([v,l])=>(
+            <button key={v} onClick={()=>setLibPropFilter(v)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"2px 8px",borderRadius:20,border:`1px solid ${libPropFilter===v?C.neutral:C.stone}`,background:libPropFilter===v?C.neutral:"transparent",color:libPropFilter===v?C.white:C.mist,cursor:"pointer"}}>{l}</button>
+          ))}
+        </div>
+      )}
       <div style={{maxHeight:360,overflowY:"auto"}}>
         {filteredLib.length===0&&<div style={{color:C.mist,fontSize:12}}>Nenhuma série.</div>}
         {sortedLibZones.map(z=>(
@@ -7758,6 +7893,7 @@ const CreateSessionView = ({ clients, clientSessions, series, onSaveClientSessio
       <div style={{display:"flex",alignItems:"center",gap:12}}>
         <Btn variant="ghost" small onClick={onBack}><Icon name="back" size={13}/></Btn>
         <div style={{fontFamily:"'Clash Display',sans-serif",fontSize:22,fontWeight:500,color:C.crimson,flex:1}}>Nova Sessão</div>
+        <Btn onClick={doSave} disabled={!hasClients}>Guardar sessão</Btn>
       </div>
 
       {/* Type */}
@@ -7767,6 +7903,15 @@ const CreateSessionView = ({ clients, clientSessions, series, onSaveClientSessio
           {[['pt','PT'],['duo','Duo'],['group','Grupo']].map(([v,l])=>(
             <button key={v} onClick={()=>handleTypeChange(v)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:13,fontWeight:700,padding:"8px 20px",borderRadius:8,border:`1px solid ${sesType===v?C.crimson:C.stone}`,background:sesType===v?C.crimson:"transparent",color:sesType===v?C.cream:C.ink,cursor:"pointer"}}>{l}</button>
           ))}
+        </div>
+      </div>
+
+      {/* Clients */}
+      <div style={{background:C.white,borderRadius:12,border:`1px solid ${C.stone}`,padding:16}}>
+        <span style={lbl}>Cliente{isDuo?'s':''}</span>
+        <div style={{display:"flex",gap:12,marginTop:8,flexWrap:"wrap"}}>
+          {renderClientSearch(p1Search,setP1Search,p1Results,p1Client,setP1Client,isDuo?'Pessoa 1':'Cliente')}
+          {isDuo&&renderClientSearch(p2Search,setP2Search,p2Results,p2Client,setP2Client,'Pessoa 2')}
         </div>
       </div>
 
@@ -7780,7 +7925,7 @@ const CreateSessionView = ({ clients, clientSessions, series, onSaveClientSessio
           </div>
           {classTypes.length>0&&(
             <div>
-              <span style={{...lbl,marginBottom:4}}>Modalidade</span>
+              <span style={{...lbl,marginBottom:4}}>Modalidade {!sesModality&&<span style={{color:C.crimson}}>*</span>}</span>
               <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
                 {classTypes.map(ct=>(
                   <button key={ct.name} onClick={()=>setSesModality(sesModality===ct.name?'':ct.name)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"3px 10px",borderRadius:20,border:`1px solid ${sesModality===ct.name?C.crimson:C.stone}`,background:sesModality===ct.name?`${C.crimson}15`:"transparent",color:sesModality===ct.name?C.crimson:C.mist,cursor:"pointer"}}>{ct.name}</button>
@@ -7791,19 +7936,7 @@ const CreateSessionView = ({ clients, clientSessions, series, onSaveClientSessio
         </div>
         <div>
           <span style={{...lbl,marginBottom:4}}>Notas</span>
-          <textarea value={sesNotes} onChange={e=>setSesNotes(e.target.value)} rows={3} placeholder="Notas gerais da sessão…" style={{...inp,resize:"vertical"}}/>
-        </div>
-        <div style={{display:"flex",justifyContent:"flex-end"}}>
-          <Btn onClick={doSave} disabled={!hasClients}>Guardar sessão</Btn>
-        </div>
-      </div>
-
-      {/* Clients */}
-      <div style={{background:C.white,borderRadius:12,border:`1px solid ${C.stone}`,padding:16}}>
-        <span style={lbl}>Cliente{isDuo?'s':''}</span>
-        <div style={{display:"flex",gap:12,marginTop:8,flexWrap:"wrap"}}>
-          {renderClientSearch(p1Search,setP1Search,p1Results,p1Client,setP1Client,isDuo?'Pessoa 1':'Cliente')}
-          {isDuo&&renderClientSearch(p2Search,setP2Search,p2Results,p2Client,setP2Client,'Pessoa 2')}
+          <textarea value={sesNotes} onChange={e=>setSesNotes(e.target.value)} rows={2} placeholder="Notas gerais da sessão…" style={{...inp,resize:"vertical"}}/>
         </div>
       </div>
 
@@ -7889,9 +8022,10 @@ function HavenApp() {
     ].filter(Boolean);
     return parts.join('\n\n');
   }, [profile?.studios?.settings?.guidelines, aiStyle]);
-  const [filterType,    setFilterType]    = useState(() => { try { return localStorage.getItem('haven_filterType') || "all"; } catch { return "all"; } });
+  const [filterType,    setFilterType]    = useState(() => { try { const v = localStorage.getItem('haven_filterType') || "all"; return v === "archive" ? "all" : v; } catch { return "all"; } });
   const [filterStatus,  setFilterStatus]  = useState(() => { try { return localStorage.getItem('haven_filterStatus') || "all"; } catch { return "all"; } }); // 'all','approved','wip'
   const [filterChoreo,  setFilterChoreo]  = useState(() => { try { return localStorage.getItem('haven_filterChoreo') || "all"; } catch { return "all"; } }); // 'all','simple','choreo'
+  const [filterProp,    setFilterProp]    = useState("all");
   const [selectedArchive, setSelectedArchive] = useState([]);
   const [showChoreo,    setShowChoreo]    = useState(() => { try { return localStorage.getItem('showChoreo') !== 'false'; } catch(e) { return true; } });
   const [sortBy,        setSortBy]        = useState(() => { try { return localStorage.getItem('haven_sortBy') || "targetZone"; } catch { return "targetZone"; } });
@@ -7965,7 +8099,7 @@ function HavenApp() {
     try { localStorage.setItem('haven_screen', JSON.stringify(toSave)); } catch(e) {}
   }, [screen, user, dataLoaded]);
 
-  useEffect(() => { try { localStorage.setItem('haven_filterType', filterType); } catch {} }, [filterType]);
+  useEffect(() => { try { if(filterType !== "archive") localStorage.setItem('haven_filterType', filterType); } catch {} }, [filterType]);
   useEffect(() => { try { localStorage.setItem('haven_filterStatus', filterStatus); } catch {} }, [filterStatus]);
   useEffect(() => { try { localStorage.setItem('haven_filterChoreo', filterChoreo); } catch {} }, [filterChoreo]);
   useEffect(() => { try { localStorage.setItem('haven_sortBy', sortBy); } catch {} }, [sortBy]);
@@ -8129,7 +8263,7 @@ function HavenApp() {
   const updateClass = async c => {
     if (c.isClientSession) {
       const existing = clientSessions.find(s=>s.id===c.clientSessionId);
-      if (existing) await saveClientSession({...existing, series_ids: c.seriesIds});
+      if (existing) await saveClientSession({...existing, series_ids: c.seriesIds, modality: c.modality||existing.modality||null});
       return;
     }
     setClasses(p=>p.map(x=>x.id===c.id?c:x)); toast("Aula guardada"); if (user) api.upsertClass(c, user.id);
@@ -8242,6 +8376,10 @@ function HavenApp() {
     await supabase.from('clients').delete().eq('id', id);
   };
   const deleteClientSession = async id => {
+    setClientSessions(p => p.map(s => s.id===id ? {...s, is_archived:true} : s));
+    await supabase.from('client_sessions').update({is_archived:true}).eq('id', id);
+  };
+  const permanentDeleteClientSession = async id => {
     setClientSessions(p => p.filter(s=>s.id!==id));
     await supabase.from('client_sessions').delete().eq('id', id);
   };
@@ -8448,6 +8586,8 @@ function HavenApp() {
     // Choreo filter
     if(filterChoreo==="choreo" && !isChoreoSeries(s))  return false;
     if(filterChoreo==="simple" && isChoreoSeries(s))   return false;
+    // Prop filter
+    if(filterProp!=="all" && !(s.propTags||[]).includes(filterProp)) return false;
     return true;
   }).sort((a,b)=>{
     let va="", vb="";
@@ -8650,14 +8790,16 @@ function HavenApp() {
             onViewInstructor={p=>navigate({mode:'instructor',profileId:p.id})}
             onViewClass={item=>navigate({mode:"aula",cls:item,readOnly:true,fromLibrary:false})}
             onAdminDelete={async item => {
+              let error;
               if (item._discoverType==='instructor') {
-                await supabase.from('profiles').update({ is_public: false }).eq('id', item.id);
+                ({ error } = await supabase.from('profiles').update({ is_public: false }).eq('id', item.id));
               } else if (item._discoverType==='studio') {
-                await supabase.from('studios').update({ is_public: false }).eq('id', item.id);
+                ({ error } = await supabase.from('studios').update({ is_public: false }).eq('id', item.id));
               } else {
                 const tbl = item._discoverType==='series' ? 'series' : 'classes';
-                await supabase.from(tbl).update({ is_public: false }).eq('id', item.id);
+                ({ error } = await supabase.from(tbl).update({ is_public: false }).eq('id', item.id));
               }
+              if (error) { toast('Erro ao remover: ' + (error.message||error.code), 'error'); return; }
               loadDiscover();
             }}
             onJoinStudio={async studioId => {
@@ -8698,7 +8840,7 @@ function HavenApp() {
         {/* ── LIBRARY ── */}
         {screen.mode==="library"&&(
           editingSeries||addingSeries
-            ? <SeriesEditor series={editingSeries} onSave={saveSeries} onSaveAsNew={s=>{saveSeries(s);}} onCancel={()=>{setEditingSeries(null);setAddingSeries(false);}} onDelete={id=>{deleteSeries(id);setEditingSeries(null);setAddingSeries(false);}} aiStyle={effectiveAiStyle} studioSettings={profile?.studios?.settings} availableZones={profile?.settings?.preferred_zones?.length?profile.settings.preferred_zones:undefined} availableSeriesTypes={profile?.settings?.series_types?.length?profile.settings.series_types:undefined} availableClassTypes={profile?.settings?.class_types?.length?profile.settings.class_types.map(t=>typeof t==='string'?t:t?.name).filter(Boolean):undefined} onPublish={profile?.studio_id?publishToStudio:undefined}/>
+            ? <SeriesEditor series={editingSeries} onSave={saveSeries} onSaveAsNew={s=>{saveSeries(s);}} onCancel={()=>{setEditingSeries(null);setAddingSeries(false);}} onDelete={id=>{deleteSeries(id);setEditingSeries(null);setAddingSeries(false);}} aiStyle={effectiveAiStyle} studioSettings={profile?.studios?.settings} availableZones={profile?.settings?.preferred_zones?.length?profile.settings.preferred_zones:undefined} availableSeriesTypes={profile?.settings?.series_types?.length?profile.settings.series_types:undefined} availableClassTypes={profile?.settings?.class_types?.length?profile.settings.class_types.map(t=>typeof t==='string'?t:t?.name).filter(Boolean):undefined} availableProps={profile?.settings?.props?.length?profile.settings.props:undefined} onPublish={profile?.studio_id?publishToStudio:undefined}/>
             : <>
                 {/* Top bar: title + search + new */}
                 <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16,flexWrap:"wrap"}}>
@@ -8733,6 +8875,16 @@ function HavenApp() {
                         ))}
                       </div>
                     </CollapsibleSection>
+
+                    {(profile?.settings?.props||[]).length>0&&(
+                      <CollapsibleSection title="Props" defaultOpen={false}>
+                        <div style={{display:"flex",flexDirection:"column",gap:4,paddingBottom:8}}>
+                          {[["all","Todas"],...(profile?.settings?.props||[]).map(p=>[p,p])].map(([val,lbl])=>(
+                            <button key={val} onClick={()=>setFilterProp(val)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 12px",borderRadius:8,border:`1px solid ${filterProp===val?C.neutral:C.stone}`,background:filterProp===val?C.neutral:"transparent",color:filterProp===val?C.white:C.ink,cursor:"pointer",textAlign:"left"}}>{lbl}</button>
+                          ))}
+                        </div>
+                      </CollapsibleSection>
+                    )}
 
                     <CollapsibleSection title="Ordenar" defaultOpen={false}>
                       <div style={{display:"flex",flexDirection:"column",gap:4,paddingBottom:8}}>
@@ -8932,7 +9084,7 @@ function HavenApp() {
           />
         )}
         {screen.mode==="client"&&(
-          <ClientProfileView clientId={screen.clientId} clients={clients} clientSessions={clientSessions} series={series} onSaveClient={saveClient} onSaveClientSession={saveClientSession} onDeleteClientSession={deleteClientSession} onDeleteClient={deleteClient} onBack={goBack} user={user} clientShares={clientShares} onSaveShare={saveClientShare} onDeleteShare={deleteClientShare} profile={profile}
+          <ClientProfileView clientId={screen.clientId} clients={clients} clientSessions={clientSessions} series={series} onSaveClient={saveClient} onSaveClientSession={saveClientSession} onDeleteClientSession={deleteClientSession} onPermanentDeleteClientSession={permanentDeleteClientSession} onDeleteClient={deleteClient} onBack={goBack} user={user} clientShares={clientShares} onSaveShare={saveClientShare} onDeleteShare={deleteClientShare} profile={profile}
             onOpenSession={(ses,cl)=>{
               if(ses.type==='duo') { navigate({mode:"duo_session",sessionId:ses.id,clientId:cl?.id||ses.client_id}); return; }
               navigate({mode:"aula",cls:{id:ses.id,isClientSession:true,clientSessionId:ses.id,type:cl?.type||ses.type,seriesIds:ses.series_ids||[],name:(cl?.name||'Sessão')+' · '+(ses.date||''),date:ses.date},fromLibrary:false});
@@ -8941,7 +9093,12 @@ function HavenApp() {
         )}
 
         {screen.mode==="create_session"&&(
-          <CreateSessionView clients={clients} clientSessions={clientSessions} series={series} onSaveClientSession={saveClientSession} onBack={goBack} profile={profile} user={user}/>
+          <CreateSessionView clients={clients} clientSessions={clientSessions} series={series} onSaveClientSession={saveClientSession} onBack={goBack} profile={profile} user={user}
+            onOpenSession={(ses,cl)=>{
+              if(ses.type==='duo') { navigate({mode:"duo_session",sessionId:ses.id,clientId:cl?.id||ses.client_id}); return; }
+              navigate({mode:"aula",cls:{id:ses.id,isClientSession:true,clientSessionId:ses.id,type:cl?.type||ses.type,seriesIds:ses.series_ids||[],name:(cl?.name||'Sessão')+' · '+(ses.date||''),date:ses.date},fromLibrary:false});
+            }}
+          />
         )}
 
         {screen.mode==="duo_session"&&(
