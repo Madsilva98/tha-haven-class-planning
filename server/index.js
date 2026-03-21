@@ -37,7 +37,7 @@ router.post('/ai', async (req, res) => {
 
 // POST /api/admin/delete-user
 // Deletes a user from auth.users (requires service role key).
-// Only callable by super_admin / backoffice_admin — verified via the caller's JWT.
+// Only callable by platform admins (is_platform_admin=true) — verified via the caller's JWT.
 router.post('/admin/delete-user', async (req, res) => {
   if (!SUPABASE_SERVICE_KEY) {
     return res.status(500).json({ error: 'SUPABASE_SERVICE_ROLE_KEY not set in .env' });
@@ -53,14 +53,16 @@ router.post('/admin/delete-user', async (req, res) => {
     const { data: { user: caller }, error: authErr } = await adminClient.auth.getUser(callerToken);
     if (authErr || !caller) return res.status(401).json({ error: 'Invalid token' });
 
-    const { data: callerProfile } = await adminClient.from('profiles').select('role').eq('id', caller.id).maybeSingle();
-    if (!['super_admin', 'backoffice_admin'].includes(callerProfile?.role)) {
+    const { data: callerProfile } = await adminClient.from('profiles').select('is_platform_admin, role').eq('id', caller.id).maybeSingle();
+    if (!callerProfile?.is_platform_admin && !['super_admin','backoffice_admin'].includes(callerProfile?.role)) {
       return res.status(403).json({ error: 'Forbidden' });
     }
 
     const { userId } = req.body;
     if (!userId) return res.status(400).json({ error: 'userId required' });
 
+    // Delete profile first (cascades to related rows), then delete auth user
+    await adminClient.from('profiles').delete().eq('id', userId);
     const { error } = await adminClient.auth.admin.deleteUser(userId);
     if (error) return res.status(500).json({ error: error.message });
 

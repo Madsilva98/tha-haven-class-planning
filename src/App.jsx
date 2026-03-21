@@ -522,7 +522,7 @@ const api = {
       '*, studios(*), studio_memberships(id, role, status, studio_id, joined_at, studios(id, name, is_public, settings, logo_url, contact, description, studio_code))'
     ).eq('id', userId).maybeSingle();
     if (error) console.error('[loadProfile error]', error);
-    if (!data) return data;
+    if (!data) { console.warn('[loadProfile] no row returned for uid:', userId, '— error:', error); return data; }
     const activeMemberships = (data.studio_memberships || []).filter(m => m.status === 'active');
     const pendingMemberships = (data.studio_memberships || []).filter(m => m.status === 'pending');
     // Ensure profile.studio_id is set from primary membership if not already
@@ -781,15 +781,20 @@ const IntroCue = ({ series, onChange, aiStyle, stopProp, readOnly }) => {
       const allMovements = isSig
         ? (series.reformer?.movements||[]).map((m,i)=>{
             const b = (series.barre?.movements||[])[i];
-            return `${m.timing||i+1}: R: ${m.movement}${b?" / B: "+b.movement:""}`;
+            const lyric = m.lyric ? ` [lyric: "${m.lyric}"]` : "";
+            return `${m.timing||i+1}: R: ${m.movement}${b?" / B: "+b.movement:""}${lyric}`;
           }).join(", ")
-        : (series.type==="barre"?series.barre:series.reformer)?.movements?.map((m,i)=>`${m.timing||i+1}: ${m.movement}`).join(", ")||"-";
+        : (series.type==="barre"?series.barre:series.reformer)?.movements?.map((m,i)=>{
+            const lyric = m.lyric ? ` [lyric: "${m.lyric}"]` : "";
+            return `${m.timing||i+1}: ${m.movement}${lyric}`;
+          }).join(", ")||"-";
       const muscleList = series.muscles?.join(", ")||"";
+      const cuesCtx = series.cues ? `\nSeries notes: ${series.cues}` : "";
       const prompt = isChoreo
         ? `You are a Pilates instructor writing a spoken intro cue for a CHOREOGRAPHED series set to music.${styleCtx}
 
 Series: "${series.name}"
-Setup: ${setup}
+Setup: ${setup}${cuesCtx}
 Movements in order: ${allMovements}
 
 STRICT RULES — follow exactly:
@@ -803,7 +808,7 @@ Return ONLY the spoken cue text. No titles, no formatting.`
         : `You are a Pilates instructor writing a spoken intro cue for a NON-CHOREOGRAPHED series.${styleCtx}
 
 Series: "${series.name}"
-Setup: ${setup}
+Setup: ${setup}${cuesCtx}
 Muscles targeted: ${muscleList||"—"}
 Movements: ${allMovements}
 
@@ -831,7 +836,7 @@ Return ONLY the spoken cue text. No titles, no formatting.`;
             placeholder="Intro / setup cue… (o que vais dizer antes de começar)"
             onClick={stopProp ? e=>e.stopPropagation() : undefined}
             onChange={e=>{ if(stopProp) e.stopPropagation(); onChange(e.target.value); }}
-            style={{flex:1,fontSize:13,color:C.ink,lineHeight:1.6}}
+            style={{flex:1,fontSize:13,color:C.ink,lineHeight:1.6,maxHeight:160,overflowY:"auto"}}
             minRows={2}
           />
       }
@@ -854,8 +859,14 @@ const CardInstrNotesAI = ({ series, aiStyle, onUpdate }) => {
     try {
       const examples = await examplesStore.getRelevant('instructor');
       const styleCtx = (aiStyle ? `\nInstructor style: ${aiStyle}` : "") + examplesStore.formatExamples(examples);
-      const movList = (series.type==="barre"?series.barre:series.reformer)?.movements?.map(m=>m.movement).filter(Boolean).join(", ")||"-";
-      const prompt = `Pilates instructor. Write concise instructor notes for this series.${styleCtx}\nSeries: "${series.name}"\nMuscles: ${series.muscles?.join(", ")||"-"}\nMovements: ${movList}\nFocus on key technique cues, common mistakes, and modifications. Return ONLY the notes text.`;
+      const movList = (series.type==="barre"?series.barre:series.reformer)?.movements?.map((m,i)=>{
+        const parts = [m.movement].filter(Boolean);
+        if (m.lyric) parts.push(`lyric: "${m.lyric}"`);
+        if (m.breath) parts.push(`breath: ${m.breath}`);
+        return `${i+1}. ${parts.join(" | ")}`;
+      }).filter(Boolean).join("\n")||"-";
+      const cuesCtx = series.cues ? `\nExisting cues/notes: ${series.cues}` : "";
+      const prompt = `Pilates instructor. Write concise instructor notes for this series.${styleCtx}\nSeries: "${series.name}"\nMuscles: ${series.muscles?.join(", ")||"-"}${cuesCtx}\nMovements:\n${movList}\nFocus on key technique cues, common mistakes, and modifications. Return ONLY the notes text.`;
       const text = (await aiCall(prompt)).trim().replace(/^["']|["']$/g,"");
       onUpdate(text);
     } catch(e) { console.error(e); toast_?.('Erro ao gerar com IA', 'error'); }
@@ -905,10 +916,14 @@ const CardCueGen = ({ series, rowIndex, rows, aiStyle, onUpdate, nonsig, getCurr
       if (nonsig) {
         const k = series.type === "barre" ? "barre" : "reformer";
         const movs = series[k]?.movements || [];
-        const prev = movs[rowIndex - 1]?.movement || "-";
-        const curr = movs[rowIndex]?.movement || "-";
+        const prevMov = movs[rowIndex - 1] || {};
+        const currMov = movs[rowIndex] || {};
+        const prev = prevMov.movement || "-";
+        const curr = currMov.movement || "-";
+        const prevExtras = [prevMov.lyric && `lyric: "${prevMov.lyric}"`, prevMov.breath && `breath: ${prevMov.breath}`].filter(Boolean).join(", ");
+        const currExtras = [currMov.lyric && `lyric: "${currMov.lyric}"`].filter(Boolean).join(", ");
         context = `${prev} → ${curr}`;
-        prompt = `Pilates ${series.type} class. Write ONE short transition cue (max 10 words) to announce this movement.${styleCtx}\nPrevious: ${prev}\nComing: ${curr}\nReturn ONLY the cue text.`;
+        prompt = `Pilates ${series.type} class. Write ONE short transition cue (max 10 words) to announce this movement.${styleCtx}\nPrevious: ${prev}${prevExtras ? ` (${prevExtras})` : ""}\nComing: ${curr}${currExtras ? ` (${currExtras})` : ""}\nReturn ONLY the cue text.`;
         newCue = (await aiCall(prompt)).trim().replace(/^["']|["']$/g, "");
         const newM = [...movs];
         newM[rowIndex] = { ...newM[rowIndex], transitionCue: newCue };
@@ -942,10 +957,11 @@ const CardCueGen = ({ series, rowIndex, rows, aiStyle, onUpdate, nonsig, getCurr
 };
 
 // ─── SERIES CARD (expandable) ─────────────────────────────────────────────────
-const SeriesCard = ({ series, onEdit, onDelete, onUpdateSeries, aiStyle, modalityFilter=null, currentUserId=null, hasStudio=false, onCopy=null, onPublish=null, onUnpublish=null, onMakePublic=null, compact=false, onTogglePublic=null, onSend=null }) => {
+const SeriesCard = ({ series, onEdit, onDelete, onUpdateSeries, aiStyle, modalityFilter=null, currentUserId=null, hasStudio=false, onCopy=null, onPublish=null, onUnpublish=null, onMakePublic=null, compact=false, onTogglePublic=null, onSend=null, profileClassTypes=null, forceExpanded=false }) => {
   const isOwner = !currentUserId || series.createdBy === currentUserId;
   const isSig = series.type === "signature";
   const [expanded, setExpanded] = useState(false);
+  const isExpanded = forceExpanded || expanded;
   const [showR, setShowR] = useState(modalityFilter !== "barre");
   const [showB, setShowB] = useState(modalityFilter !== "reformer");
   // localSeries: in-card live copy so edits are reflected immediately
@@ -1119,9 +1135,9 @@ const SeriesCard = ({ series, onEdit, onDelete, onUpdateSeries, aiStyle, modalit
   };
 
   return (
-    <div style={{ background:C.white, borderRadius:14, border:`1px solid ${expanded?C.neutral:C.stone}`,
+    <div style={{ background:C.white, borderRadius:14, border:`1px solid ${isExpanded?C.neutral:C.stone}`,
       overflow:"hidden", transition:"border-color 0.2s, box-shadow 0.2s",
-      boxShadow:expanded?"0 4px 24px rgba(0,0,0,0.09)":"none" }}>
+      boxShadow:isExpanded?"0 4px 24px rgba(0,0,0,0.09)":"none" }}>
 
       {/* Collapsed header */}
       <div style={{ padding:"8px 14px", display:"flex", alignItems:"center", gap:10, cursor:"pointer" }}
@@ -1131,9 +1147,10 @@ const SeriesCard = ({ series, onEdit, onDelete, onUpdateSeries, aiStyle, modalit
           const t = series.type || "";
           const isRef = t.toLowerCase()==="reformer";
           const isBar = t.toLowerCase()==="barre";
-          const bg = isSig?`${C.sig}40`:isRef?`${C.reformer}20`:isBar?`${C.barre}30`:`${C.neutral}20`;
-          const border = isSig?C.sig:isRef?`${C.reformer}50`:isBar?`${C.barre}60`:`${C.neutral}50`;
-          const color = isSig?"#7a4010":isRef?C.reformer:isBar?"#c0507a":C.mist;
+          const typeHex = !isSig ? resolveTypeHex(t, profileClassTypes) : null;
+          const bg = typeHex?`${typeHex}25`:isSig?`${C.sig}40`:isRef?`${C.reformer}20`:isBar?`${C.barre}30`:`${C.neutral}20`;
+          const border = typeHex?`${typeHex}60`:isSig?C.sig:isRef?`${C.reformer}50`:isBar?`${C.barre}60`:`${C.neutral}50`;
+          const color = typeHex?typeHex:isSig?"#7a4010":isRef?C.reformer:isBar?"#c0507a":C.mist;
           const label = isSig?"✦":t.slice(0,2).toUpperCase()||"?";
           return <div style={{width:36,height:36,borderRadius:"50%",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",background:bg,border:`1.5px solid ${border}`}}>
             <span style={{fontSize:label==="✦"?14:11,fontWeight:700,color,lineHeight:1}}>{label}</span>
@@ -1154,13 +1171,13 @@ const SeriesCard = ({ series, onEdit, onDelete, onUpdateSeries, aiStyle, modalit
           })()}
         </div>
         {/* Chevron */}
-        <span style={{ color:C.mist, display:"inline-flex", transition:"transform 0.2s", transform:expanded?"rotate(180deg)":"rotate(0deg)", flexShrink:0 }}>
+        <span style={{ color:C.mist, display:"inline-flex", transition:"transform 0.2s", transform:isExpanded?"rotate(180deg)":"rotate(0deg)", flexShrink:0 }}>
           <Icon name="chevron" size={16}/>
         </span>
       </div>
 
       {/* Expanded body */}
-      {expanded&&(
+      {isExpanded&&(
         <>
           {/* Controls row — right-aligned, above the divider */}
           {isOwner && (hasStudio&&(onPublish||onUnpublish) || onTogglePublic || onSend || onEdit || onCopy) && (
@@ -1233,6 +1250,24 @@ const SeriesCard = ({ series, onEdit, onDelete, onUpdateSeries, aiStyle, modalit
               );})()}
             </div>
           ):isSig?null:null}
+
+          {/* Non-signature setup: springs / props / start position */}
+          {!isSig&&(()=>{
+            const d=localSeries.type==="barre"?localSeries.barre:localSeries.reformer;
+            if(!d?.springs&&!d?.props&&!d?.startPosition) return null;
+            const isBar=localSeries.type==="barre";
+            const color=isBar?"#c0507a":C.reformer;
+            return (
+              <div style={{background:isBar?`${C.barre}25`:`${C.reformer}10`,borderRadius:8,padding:"8px 12px",border:`1px solid ${isBar?C.barre+'60':C.reformer+'30'}`,fontSize:13,color:C.ink}}>
+                <div style={{fontWeight:700,color,textTransform:"uppercase",fontSize:11,letterSpacing:"0.06em",marginBottom:4}}>{isBar?'Barre':'Reformer'} — Setup</div>
+                <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
+                  {d?.springs&&<span><b>Springs:</b> {d.springs}</span>}
+                  {d?.props&&<span><b>Props:</b> {d.props}</span>}
+                  {d?.startPosition&&<span><b>Posição:</b> {d.startPosition}</span>}
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Movements */}
           {renderExpanded()}
@@ -1494,8 +1529,8 @@ const EditorMovTable = ({ side, data, chore, upMov, addMov, delMov, reorderMov, 
   const dragIdx = React.useRef(null);
   const [dragOver, setDragOver] = React.useState(null);
   const cols = chore
-    ? "18px minmax(65px,80px) minmax(80px,1fr) 2fr 28px"
-    : "18px 2fr minmax(80px,110px) 28px";
+    ? "26px minmax(65px,80px) minmax(80px,1fr) 2fr 28px"
+    : "26px 2fr minmax(80px,110px) 28px";
   return (
     <div style={{display:"flex",flexDirection:"column"}}>
       <div style={{display:"grid",gap:5,gridTemplateColumns:cols,marginBottom:3}}>
@@ -1520,7 +1555,10 @@ const EditorMovTable = ({ side, data, chore, upMov, addMov, delMov, reorderMov, 
               background:dragOver===i?`${C.sig}25`:"transparent",
               borderRadius:4,padding:"2px 0",
               outline:dragOver===i?`2px dashed ${C.sig}`:"none"}}>
-            <span style={{color:C.stone,fontSize:13,cursor:"grab",textAlign:"center",userSelect:"none",paddingTop:1}}>⠿</span>
+            <span style={{color:C.stone,fontSize:11,cursor:"grab",textAlign:"center",userSelect:"none",display:"flex",flexDirection:"column",alignItems:"center",lineHeight:1,gap:1}}>
+              <span style={{fontSize:9,color:C.mist,lineHeight:1}}>{i+1}</span>
+              <span>⠿</span>
+            </span>
             {chore&&<EditorInp ph="0''-30''" val={m.timing}  onChange={v=>upMov(side,i,"timing",v)}/>}
             {chore&&<EditorInp ph="Lyric"    val={m.lyric}   onChange={v=>upMov(side,i,"lyric",v)}/>}
             <EditorInp ph="Movimento"        val={m.movement} onChange={v=>upMov(side,i,"movement",v)} listId="mov-library"/>
@@ -1543,8 +1581,8 @@ const EditorSigTable = ({ columns=[], onColUpdate, onAddRow, onDelRow, onReorder
   const [noteModal, setNoteModal] = React.useState(null);
   const n = columns.length;
   const cols = chore
-    ? `18px minmax(65px,75px) minmax(80px,110px) ${Array(n).fill('1fr').join(' ')} 28px`
-    : `18px minmax(70px,100px) ${Array(n).fill('1fr').join(' ')} 28px`;
+    ? `26px minmax(65px,75px) minmax(80px,110px) ${Array(n).fill('1fr').join(' ')} 28px`
+    : `26px minmax(70px,100px) ${Array(n).fill('1fr').join(' ')} 28px`;
   return (
     <div style={{overflowX:"auto"}}>
       <div style={{minWidth:200+n*180}}>
@@ -1574,7 +1612,10 @@ const EditorSigTable = ({ columns=[], onColUpdate, onAddRow, onDelRow, onReorder
                   background:dragOver===i?`${C.sig}25`:"transparent",
                   borderRadius:4,padding:"3px 0",
                   outline:dragOver===i?`2px dashed ${C.sig}`:"none"}}>
-                <span style={{color:C.stone,fontSize:13,cursor:"grab",textAlign:"center",userSelect:"none"}}>⠿</span>
+                <span style={{color:C.stone,fontSize:11,cursor:"grab",textAlign:"center",userSelect:"none",display:"flex",flexDirection:"column",alignItems:"center",lineHeight:1,gap:1}}>
+                  <span style={{fontSize:9,color:C.mist,lineHeight:1}}>{i+1}</span>
+                  <span>⠿</span>
+                </span>
                 {chore&&<EditorInp ph="0''-30''" val={rm.timing||""} onChange={v=>columns.forEach((_,ci)=>onColUpdate(ci,i,"timing",v))}/>}
                 {chore&&<EditorInp ph="Lyric" val={rm.lyric||""} onChange={v=>columns.forEach((_,ci)=>onColUpdate(ci,i,"lyric",v))}/>}
                 {!chore&&<EditorInp ph="ex. 8 reps" val={rm.timeReps||""} onChange={v=>columns.forEach((_,ci)=>onColUpdate(ci,i,"timeReps",v))}/>}
@@ -1723,16 +1764,23 @@ Song: ${series.song || "none"}
 Reformer setup: springs ${series.reformer?.springs||"-"}, props ${series.reformer?.props||"-"}, start: ${series.reformer?.startPosition||"-"}
 Barre setup: props ${series.barre?.props||"-"}, start: ${series.barre?.startPosition||"-"}
 Movements (Reformer | Barre):
-${rMovs.map((m,i) => `  ${m.timing||i+1}: R: ${m.movement} | B: ${(bMovs[i]||{}).movement||"-"}`).join("\n")}
-Muscles: ${series.muscles?.join(", ")||"-"}`;
+${rMovs.map((m,i) => {
+  const b = bMovs[i]||{};
+  const extras = [m.lyric && `lyric: "${m.lyric}"`, m.breath && `breath: ${m.breath}`, m.transitionCue && `cue: "${m.transitionCue}"`].filter(Boolean);
+  return `  ${m.timing||i+1}: R: ${m.movement} | B: ${b.movement||"-"}${extras.length ? ` [${extras.join(", ")}]` : ""}`;
+}).join("\n")}
+Muscles: ${series.muscles?.join(", ")||"-"}${series.cues ? `\nNotes: ${series.cues}` : ""}`;
     }
     const d = series.type === "barre" ? series.barre : series.reformer;
     return `Series: "${series.name}" (${series.type})
 Song: ${series.song || "none"}
 Setup: springs ${series.reformer?.springs||"-"}, props ${d?.props||"-"}, start: ${d?.startPosition||"-"}
 Movements:
-${(d?.movements||[]).map((m,i)=>`  ${m.timing||i+1}: ${m.movement}`).join("\n")}
-Muscles: ${series.muscles?.join(", ")||"-"}`;
+${(d?.movements||[]).map((m,i)=>{
+  const extras = [m.lyric && `lyric: "${m.lyric}"`, m.breath && `breath: ${m.breath}`, m.transitionCue && `→ "${m.transitionCue}"`].filter(Boolean);
+  return `  ${m.timing||i+1}: ${m.movement}${extras.length ? ` [${extras.join(", ")}]` : ""}`;
+}).join("\n")}
+Muscles: ${series.muscles?.join(", ")||"-"}${series.cues ? `\nNotes: ${series.cues}` : ""}`;
   };
 
   const analyse = async (userMsg, actionType) => {
@@ -2097,7 +2145,7 @@ const SeriesEditor = ({ series, onSave, onSaveAsNew, onCancel, onDelete, aiStyle
         </div>
         <div style={{display:"flex",gap:8,flexShrink:0}}>
           <Btn small onClick={()=>{
-            if(!s.type&&!isParallel){toast_?.('Escolhe o tipo da série antes de guardar.','error');return;}
+            if(!s.type&&!isParallel){toast_?.('Escolhe a modalidade da série antes de guardar.','error');return;}
             let toSave=s;
             if(isParallel&&s.parallelColumns?.length>0){
               const[c0,c1]=s.parallelColumns;
@@ -2114,7 +2162,7 @@ const SeriesEditor = ({ series, onSave, onSaveAsNew, onCancel, onDelete, aiStyle
 
       {/* Type row — always visible, required */}
       <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",padding:"8px 0",borderBottom:`1px solid ${C.stone}`}}>
-        <span style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em",flexShrink:0}}>Tipo:</span>
+        <span style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em",flexShrink:0}}>Modalidade:</span>
         {!isParallel&&(availableClassTypes||[]).map(t=>{
           const isActive = s.type===t;
           return <button key={t} onClick={()=>up("type",t)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 14px",borderRadius:20,
@@ -2424,8 +2472,14 @@ const AulaSeriesCard = ({
     try {
       const examples = await examplesStore.getRelevant('instructor');
       const styleCtx = (aiStyle ? `\nInstructor style: ${aiStyle}` : "") + examplesStore.formatExamples(examples);
-      const movList = (ser.type==="barre"?ser.barre:ser.reformer)?.movements?.map(m=>m.movement).filter(Boolean).join(", ")||"-";
-      const prompt = `Pilates instructor. Write concise instructor notes for this series.${styleCtx}\nSeries: "${ser.name}"\nMuscles: ${ser.muscles?.join(", ")||"-"}\nMovements: ${movList}\nFocus on key technique cues, common mistakes, and modifications. Return ONLY the notes text.`;
+      const movList = (ser.type==="barre"?ser.barre:ser.reformer)?.movements?.map((m,i)=>{
+        const parts = [m.movement].filter(Boolean);
+        if (m.lyric) parts.push(`lyric: "${m.lyric}"`);
+        if (m.breath) parts.push(`breath: ${m.breath}`);
+        return `${i+1}. ${parts.join(" | ")}`;
+      }).filter(Boolean).join("\n")||"-";
+      const cuesCtx = ser.cues ? `\nExisting notes: ${ser.cues}` : "";
+      const prompt = `Pilates instructor. Write concise instructor notes for this series.${styleCtx}\nSeries: "${ser.name}"\nMuscles: ${ser.muscles?.join(", ")||"-"}${cuesCtx}\nMovements:\n${movList}\nFocus on key technique cues, common mistakes, and modifications. Return ONLY the notes text.`;
       const text = (await aiCall(prompt)).trim().replace(/^["']|["']$/g,"");
       setLocalCues(text);
       updateSer({...ser, cues:text});
@@ -2577,8 +2631,10 @@ const AulaView = ({ cls, allSeries, onBack, onDeleteClass, onUpdateSeries, onUpd
   const [editName, setEditName] = useState(cls.name||"");
   const [editDate, setEditDate] = useState(cls.date||"");
   const [editLevel, setEditLevel] = useState(cls.level||"");
-  const [showFlowEditor, setShowFlowEditor] = useState(false);
+  const [showFlowEditor, setShowFlowEditor] = useState(()=>cls.seriesIds.length===0);
   const [flowZoneFilter, setFlowZoneFilter] = useState("all");
+  const [flowSearch, setFlowSearch] = useState("");
+  const [flowTypeFilter, setFlowTypeFilter] = useState("all");
   const flowDragRef = React.useRef(null);
   const [usedDates, setUsedDates] = useState(()=>cls.usedDates||[]);
   const [showDateLog, setShowDateLog] = useState(false);
@@ -2628,6 +2684,8 @@ const AulaView = ({ cls, allSeries, onBack, onDeleteClass, onUpdateSeries, onUpd
   const toggleCueRow = key => setOpenCueRows(prev => { const s=new Set(prev); s.has(key)?s.delete(key):s.add(key); return s; });
   const [movHovCell, setMovHovCell] = React.useState(null);
   const [studioCheckClass, setStudioCheckClass] = React.useState(null);
+  const [isDirty, setIsDirty] = useState(false);
+  const [showExitWarn, setShowExitWarn] = useState(false);
 
   const checkClassVsStudio = async () => {
     if (!studioSettings) return;
@@ -2716,14 +2774,33 @@ const AulaView = ({ cls, allSeries, onBack, onDeleteClass, onUpdateSeries, onUpd
   const addToFlow = (id) => {
     const ser = allSeries.find(s=>s.id===id);
     if (!ser) return;
-    const newList = [...seriesList, ser];
-    setSeriesList(newList);
-    onUpdateClass({...currentCls, seriesIds: newList.map(s=>s.id)});
+    setSeriesList(prev => [...prev, ser]);
+    setIsDirty(true);
   };
   const removeFromFlow = (id) => {
-    const newList = seriesList.filter(s=>s.id!==id);
-    setSeriesList(newList);
-    onUpdateClass({...currentCls, seriesIds: newList.map(s=>s.id)});
+    setSeriesList(prev => prev.filter(s=>s.id!==id));
+    setIsDirty(true);
+  };
+
+  const doSave = () => {
+    if (!cls.type) { toast_?.('Escolhe a modalidade antes de guardar a aula.', 'error'); return; }
+    onUpdateClass({...cls, name:editName, date:editDate, level:editLevel, notes, usedDates, warmupNotes, cooldownNotes, seriesIds:seriesList.map(s=>s.id)});
+    setIsDirty(false);
+  };
+
+  const changeClassType = (newType) => {
+    const mismatched = seriesList.filter(s => s.type && s.type !== newType && s.type !== 'signature');
+    if (mismatched.length > 0) {
+      const names = [...new Set(mismatched.map(s=>s.type))].join(', ');
+      toast_?.(`A aula tem séries de outra modalidade (${names}). Remove-as primeiro.`, 'error');
+      return;
+    }
+    setCls(p => ({...p, type: newType}));
+    setIsDirty(true);
+  };
+
+  const handleBack = () => {
+    if (isDirty) { setShowExitWarn(true); } else { onBack(); }
   };
 
   const buildRows = ser => {
@@ -3031,16 +3108,29 @@ const AulaView = ({ cls, allSeries, onBack, onDeleteClass, onUpdateSeries, onUpd
           </div>
         ) : (
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:8}}>
-          <Btn variant="ghost" onClick={onBack}><Icon name="back" size={14}/> Voltar</Btn>
+          <Btn variant="ghost" onClick={handleBack}><Icon name="back" size={14}/> Voltar</Btn>
           <div style={{display:"flex",gap:8,alignItems:"center"}}>
             {!readOnly&&<Btn small variant="ghost" onClick={()=>setShowFlowEditor(p=>!p)} style={{color:showFlowEditor?C.crimson:C.mist,borderColor:showFlowEditor?C.crimson:C.stone}}>
               <Icon name="edit" size={13}/> {showFlowEditor?"Fechar fluxo":"Editar fluxo"}
             </Btn>}
-            {!readOnly&&<Btn small onClick={()=>onTeachingModeChange(true)} style={{background:C.crimson,color:C.cream}}>▶ Modo Aula</Btn>}
+            {!readOnly&&isDirty&&<Btn small onClick={doSave} style={{background:C.crimson,color:C.cream}}><Icon name="save" size={13}/> Guardar aula</Btn>}
+            {!readOnly&&<Btn small onClick={()=>onTeachingModeChange(true)} style={{background:C.neutral,color:C.cream}}>▶ Modo Aula</Btn>}
           </div>
         </div>
         )}
       </div>
+      {showExitWarn&&(
+        <div style={{padding:"12px 24px",background:C.cream,borderBottom:`1px solid ${C.stone}`}}>
+          <div style={{background:C.white,border:`1px solid ${C.stone}`,borderRadius:10,padding:"14px 18px",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+            <span style={{fontSize:13,color:C.slate,flex:1}}>Tens alterações não guardadas. Tens a certeza que queres sair?</span>
+            <div style={{display:"flex",gap:8}}>
+              <Btn small variant="ghost" onClick={()=>setShowExitWarn(false)}>Continuar a editar</Btn>
+              <Btn small onClick={()=>{doSave();onBack();}}>Guardar e sair</Btn>
+              <Btn small variant="danger" onClick={()=>{setShowExitWarn(false);onBack();}}>Sair sem guardar</Btn>
+            </div>
+          </div>
+        </div>
+      )}
       <div style={{padding:"0 24px 32px", background:C.cream, minHeight:"100vh"}}>
         {/* PDF-only header */}
         <div className="print-only" style={{display:"none",textAlign:"left",marginBottom:8}}>
@@ -3055,9 +3145,25 @@ const AulaView = ({ cls, allSeries, onBack, onDeleteClass, onUpdateSeries, onUpd
           {/* Left sidebar — meta, filters, toggles */}
           {!teachingMode&&(
             <div style={{width:170,flexShrink:0,display:"flex",flexDirection:"column",gap:0}}>
-              {/* Tipo de aula — always visible */}
+              {/* Modalidade — badge (readOnly) or picker */}
               <div style={{padding:"0 0 10px"}}>
-                <Badge label={cls.type==="signature"?"✦":(cls.type||'?').slice(0,2).toUpperCase()} color={cls.type==="signature"?"gold":cls.type==="reformer"?"teal":"coral"} hexColor={cls.type!=="signature"?resolveTypeHex(cls.type,profileClassTypes):null}/>
+                {readOnly
+                  ? <Badge label={cls.type==="signature"?"✦":(cls.type||'?').slice(0,2).toUpperCase()} color={cls.type==="signature"?"gold":cls.type==="reformer"?"teal":"coral"} hexColor={cls.type!=="signature"?resolveTypeHex(cls.type,profileClassTypes):null}/>
+                  : <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
+                      {(profileClassTypes||[]).map(t=>{
+                        const name = classTypeName(t);
+                        const hex = classTypeColor(t, C.stone);
+                        const isActive = cls.type===name;
+                        return <button key={name} onClick={()=>changeClassType(name)}
+                          style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:700,padding:"4px 10px",borderRadius:20,
+                            border:`1px solid ${isActive?hex:C.stone}`,
+                            background:isActive?`${hex}25`:"transparent",
+                            color:isActive?hex:C.mist,cursor:"pointer"}}>
+                          {name}
+                        </button>;
+                      })}
+                    </div>
+                }
               </div>
 
 
@@ -3070,7 +3176,7 @@ const AulaView = ({ cls, allSeries, onBack, onDeleteClass, onUpdateSeries, onUpd
                     {readOnly ? (
                       <div style={{fontSize:12,color:C.ink}}>{editDate||'—'}</div>
                     ) : (
-                      <input type="date" value={editDate} onChange={e=>{ setEditDate(e.target.value); onUpdateClass({...currentCls, date:e.target.value}); }}
+                      <input type="date" value={editDate} onChange={e=>{ setEditDate(e.target.value); setIsDirty(true); }}
                         style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,padding:"5px 8px",borderRadius:6,border:`1px solid ${C.stone}`,color:C.ink,width:"100%",boxSizing:"border-box",background:C.white}}/>
                     )}
                   </div>
@@ -3107,7 +3213,7 @@ const AulaView = ({ cls, allSeries, onBack, onDeleteClass, onUpdateSeries, onUpd
                         readOnly ? (
                           <span key={lvl} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 12px",borderRadius:8,border:`1px solid ${editLevel===lvl?C.neutral:C.stone}`,background:editLevel===lvl?C.neutral:"transparent",color:editLevel===lvl?C.white:C.ink,display:"block"}}>{lvl}</span>
                         ) : (
-                          <button key={lvl} onClick={()=>{ const n=editLevel===lvl?"":lvl; setEditLevel(n); onUpdateClass({...currentCls, level:n}); }}
+                          <button key={lvl} onClick={()=>{ const n=editLevel===lvl?"":lvl; setEditLevel(n); setIsDirty(true); }}
                             style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 12px",borderRadius:8,border:`1px solid ${editLevel===lvl?C.neutral:C.stone}`,background:editLevel===lvl?C.neutral:"transparent",color:editLevel===lvl?C.white:C.ink,cursor:"pointer",textAlign:"left"}}>
                             {lvl}
                           </button>
@@ -3152,10 +3258,10 @@ const AulaView = ({ cls, allSeries, onBack, onDeleteClass, onUpdateSeries, onUpd
                 {readOnly ? (
                   <div style={{fontFamily:"'Clash Display',sans-serif",fontSize:22,fontWeight:500,color:C.ink,padding:"2px 4px",marginBottom:4}}>{editName||cls.name||'(sem título)'}</div>
                 ) : (
-                  <input value={editName} onChange={e=>setEditName(e.target.value)}
+                  <input value={editName} onChange={e=>{ setEditName(e.target.value); setIsDirty(true); }}
                     style={{fontFamily:"'Clash Display',sans-serif",fontSize:22,fontWeight:500,color:C.ink,border:"none",borderBottom:`1px solid transparent`,background:"transparent",outline:"none",width:"100%",display:"block",padding:"2px 4px",borderRadius:4,transition:"border-color 0.15s",boxSizing:"border-box"}}
                     onFocus={e=>e.target.style.borderBottomColor=C.stone}
-                    onBlur={e=>{ e.target.style.borderBottomColor="transparent"; if(editName!==cls.name) onUpdateClass({...currentCls, name:editName}); }}
+                    onBlur={e=>{ e.target.style.borderBottomColor="transparent"; if(editName!==cls.name) setIsDirty(true); }}
                     placeholder="Nome da aula"/>
                 )}
                 {cls.studioComment&&(
@@ -3179,7 +3285,7 @@ const AulaView = ({ cls, allSeries, onBack, onDeleteClass, onUpdateSeries, onUpd
             {showAulaNotes&&(
               <div style={{background:C.white,borderRadius:12,border:`1px solid ${C.stone}`,padding:16,marginBottom:20}}>
                 <label style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em",display:"block",marginBottom:6}}>Notas da aula</label>
-                <AutoTextarea value={notes} onChange={e=>{setNotes(e.target.value);onUpdateClass({...cls,notes:e.target.value});}}
+                <AutoTextarea value={notes} onChange={e=>{setNotes(e.target.value);setIsDirty(true);}}
                   placeholder="Notas gerais, reminders, modificações…"
                   style={{fontSize:13,color:C.ink,padding:"8px 0"}}
                   disabled={readOnly}
@@ -3190,9 +3296,10 @@ const AulaView = ({ cls, allSeries, onBack, onDeleteClass, onUpdateSeries, onUpd
         {showFlowEditor&&(
           <div className="no-print" style={{background:C.white,borderRadius:12,border:`2px solid ${C.crimson}30`,padding:16,marginBottom:20}}>
             <div style={{fontFamily:"'Clash Display',sans-serif",fontSize:15,fontWeight:500,color:C.crimson,marginBottom:12}}>Editar fluxo da aula</div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,alignItems:"flex-start"}}>
               {/* Current flow */}
-              <div>
+              <div style={{maxHeight:420,overflowY:"auto"}}>
+
                 <div style={{fontSize:11,fontWeight:700,color:C.ink,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Fluxo atual ({seriesList.length})</div>
                 {seriesList.length===0&&<div style={{color:C.mist,fontSize:13,padding:"12px 0"}}>Adiciona séries da biblioteca →</div>}
                 {seriesList.map((ser,i)=>(
@@ -3202,7 +3309,7 @@ const AulaView = ({ cls, allSeries, onBack, onDeleteClass, onUpdateSeries, onUpd
                     onDrop={()=>{
                       if(flowDragRef.current!=null&&flowDragRef.current!==i){
                         const newList=[...seriesList]; const [item]=newList.splice(flowDragRef.current,1); newList.splice(i,0,item);
-                        setSeriesList(newList); onUpdateClass({...currentCls,seriesIds:newList.map(s=>s.id)});
+                        setSeriesList(newList); setIsDirty(true);
                       } flowDragRef.current=null;
                     }}
                     style={{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",background:C.cream,borderRadius:8,border:`1px solid ${C.stone}`,marginBottom:5,cursor:"grab"}}>
@@ -3216,24 +3323,58 @@ const AulaView = ({ cls, allSeries, onBack, onDeleteClass, onUpdateSeries, onUpd
                 {(()=>{ const total=seriesList.reduce((acc,s)=>{ const d=parseDuration(s)??s.duration??null; return d!==null?acc+d:acc; },0); if(!total)return null; const m=Math.floor(total/60),s=total%60; return <div style={{fontSize:11,color:C.mist,marginTop:6,fontWeight:600}}>Duração estimada: {s>0?`${m}'${String(s).padStart(2,'0')}''`:`${m}'`}</div>; })()}
               </div>
               {/* Available series */}
-              <div>
-                <div style={{fontSize:11,fontWeight:700,color:C.ink,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Biblioteca disponível</div>
-                {flowZones.length>0&&(
-                  <div style={{display:"flex",gap:4,flexWrap:"wrap",marginBottom:8}}>
-                    <button onClick={()=>setFlowZoneFilter("all")} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"3px 9px",borderRadius:20,border:`1px solid ${flowZoneFilter==="all"?C.neutral:C.stone}`,background:flowZoneFilter==="all"?C.neutral:"transparent",color:flowZoneFilter==="all"?C.white:C.mist,cursor:"pointer"}}>Todas</button>
-                    {flowZones.map(z=>(
-                      <button key={z} onClick={()=>setFlowZoneFilter(p=>p===z?"all":z)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"3px 9px",borderRadius:20,border:`1px solid ${flowZoneFilter===z?C.neutral:C.stone}`,background:flowZoneFilter===z?C.neutral:"transparent",color:flowZoneFilter===z?C.white:C.mist,cursor:"pointer"}}>{z}</button>
-                    ))}
-                  </div>
-                )}
-                {availableFlowFiltered.map(ser=>(
-                  <div key={ser.id} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",background:C.cream,borderRadius:8,border:`1px solid ${C.stone}`,marginBottom:5}}>
-                    <span style={{flex:1,fontSize:13,color:C.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ser.name}</span>
-                    <Badge label={ser.type==="signature"?"✦":ser.type?.slice(0,2)?.toUpperCase()||"?"} color={ser.type==="signature"?"gold":ser.type?.toLowerCase()==="reformer"?"teal":ser.type?.toLowerCase()==="barre"?"coral":"neutral"} hexColor={ser.type!=="signature"?resolveTypeHex(ser.type,profileClassTypes):null}/>
-                    <Btn small variant="ghost" onClick={()=>addToFlow(ser.id)}><Icon name="plus" size={12}/></Btn>
-                  </div>
-                ))}
-                {availableFlowFiltered.length===0&&<div style={{color:C.mist,fontSize:13}}>{flowZoneFilter!=="all"?"Nenhuma série com esta zona.":"Todas as séries disponíveis foram adicionadas."}</div>}
+              <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                <div style={{fontSize:11,fontWeight:700,color:C.ink,textTransform:"uppercase",letterSpacing:"0.08em"}}>Biblioteca disponível</div>
+                {/* Search */}
+                <input value={flowSearch} onChange={e=>setFlowSearch(e.target.value)} placeholder="Pesquisar série…"
+                  style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,padding:"6px 10px",borderRadius:8,border:`1px solid ${C.stone}`,outline:"none",background:C.white,color:C.ink,width:"100%",boxSizing:"border-box"}}/>
+                {/* Type filter */}
+                <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+                  {[["all","Todas"],...DEFAULT_SERIES_TYPES.map(t=>[t,t])].map(([val,lbl])=>(
+                    <button key={val} onClick={()=>setFlowTypeFilter(val)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"3px 9px",borderRadius:20,border:`1px solid ${flowTypeFilter===val?C.neutral:C.stone}`,background:flowTypeFilter===val?C.neutral:"transparent",color:flowTypeFilter===val?C.white:C.mist,cursor:"pointer"}}>{lbl}</button>
+                  ))}
+                </div>
+                {/* Grouped list */}
+                {(()=>{
+                  const baseFiltered = availableForFlow.filter(s=>{
+                    const matchSearch = !flowSearch || s.name.toLowerCase().includes(flowSearch.toLowerCase());
+                    const matchType = flowTypeFilter==="all" || s.seriesType===flowTypeFilter;
+                    return matchSearch && matchType;
+                  });
+                  const withZone = baseFiltered.filter(s=>s.primaryZone||s.targetZone);
+                  const withoutZone = baseFiltered.filter(s=>!s.primaryZone&&!s.targetZone);
+                  const zoneGroups = {};
+                  withZone.forEach(s=>{
+                    const zone = s.primaryZone||(s.targetZone||"").split(",")[0].trim()||"Outras";
+                    if(!zoneGroups[zone]) zoneGroups[zone]=[];
+                    zoneGroups[zone].push(s);
+                  });
+                  const sortedZones = Object.keys(zoneGroups).sort((a,b)=>a.localeCompare(b,"pt"));
+                  const renderCard = s=>(
+                    <div key={s.id} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",background:C.cream,borderRadius:8,border:`1px solid ${C.stone}`,marginBottom:4}}>
+                      <span style={{flex:1,fontSize:13,color:C.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.name}</span>
+                      <Badge label={s.type==="signature"?"✦":s.type?.slice(0,2)?.toUpperCase()||"?"} color={s.type==="signature"?"gold":s.type?.toLowerCase()==="reformer"?"teal":s.type?.toLowerCase()==="barre"?"coral":"neutral"} hexColor={s.type!=="signature"?resolveTypeHex(s.type,profileClassTypes):null}/>
+                      <Btn small variant="ghost" onClick={()=>addToFlow(s.id)}><Icon name="plus" size={12}/></Btn>
+                    </div>
+                  );
+                  if(baseFiltered.length===0) return <div style={{color:C.mist,fontSize:13}}>Nenhuma série encontrada.</div>;
+                  return (
+                    <div style={{maxHeight:360,overflowY:"auto"}}>
+                      {sortedZones.map(zone=>(
+                        <div key={zone}>
+                          <div style={{fontSize:10,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em",padding:"6px 0 4px",borderBottom:`1px solid ${C.stone}`,marginBottom:4}}>{zone}</div>
+                          {zoneGroups[zone].map(renderCard)}
+                        </div>
+                      ))}
+                      {withoutZone.length>0&&(
+                        <div>
+                          {sortedZones.length>0&&<div style={{fontSize:10,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em",padding:"6px 0 4px",borderBottom:`1px solid ${C.stone}`,marginBottom:4}}>Outras</div>}
+                          {withoutZone.map(renderCard)}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           </div>
@@ -3244,7 +3385,7 @@ const AulaView = ({ cls, allSeries, onBack, onDeleteClass, onUpdateSeries, onUpd
           <WarmCoolGhostRow
             label="Warm-up"
             value={warmupNotes}
-            onChange={v=>{setWarmupNotes(v);onUpdateClass({...currentCls,warmupNotes:v,cooldownNotes});}}
+            onChange={v=>{setWarmupNotes(v);setIsDirty(true);}}
             generating={generatingWC}
             readOnly={readOnly}
           />
@@ -3281,7 +3422,7 @@ const AulaView = ({ cls, allSeries, onBack, onDeleteClass, onUpdateSeries, onUpd
           <WarmCoolGhostRow
             label="Cool-down"
             value={cooldownNotes}
-            onChange={v=>{setCooldownNotes(v);onUpdateClass({...currentCls,warmupNotes,cooldownNotes:v});}}
+            onChange={v=>{setCooldownNotes(v);setIsDirty(true);}}
             generating={generatingWC}
             readOnly={readOnly}
           />
@@ -3418,7 +3559,7 @@ Only use IDs from the available list. Return only the JSON array, no explanation
 };
 
 // ─── CLASS BUILDER ────────────────────────────────────────────────────────────
-const ClassBuilder = ({ allSeries, classes, onSave, onDeleteClass, onPermanentDeleteClass, onViewAula, studioSettings, profileClassTypes, onPublishClass, onUnpublishClass, hasStudio, onToggleClassPublic, onSendClass, onUpdateClass, pendingNewClass, onPendingConsumed }) => {
+const ClassBuilder = ({ allSeries, classes, onSave, onDeleteClass, onPermanentDeleteClass, onViewAula, studioSettings, profileClassTypes, profileLevels, onPublishClass, onUnpublishClass, hasStudio, onToggleClassPublic, onSendClass, onUpdateClass, pendingNewClass, onPendingConsumed }) => {
   const [creating, setCreating] = useState(false);
   const [newCls, setNewCls] = useState(null);
   const [classSearch, setClassSearch] = useState("");
@@ -3427,11 +3568,12 @@ const ClassBuilder = ({ allSeries, classes, onSave, onDeleteClass, onPermanentDe
   const [showTypePicker, setShowTypePicker] = React.useState(false);
   const [confirmRemoveClassId, setConfirmRemoveClassId] = useState(null);
   const [flowSearch, setFlowSearch] = useState("");
+  const [flowTypeFilter, setFlowTypeFilter] = useState("all");
   const [showArchive, setShowArchive] = useState(false);
   const [classSortBy, setClassSortBy] = useState("date"); // 'name','date','level'
   const [classSortOrder, setClassSortOrder] = useState("desc");
   const [expandedClassIds, setExpandedClassIds] = React.useState(new Set());
-  const classLevels = studioSettings?.class_levels || DEFAULT_CLASS_LEVELS;
+  const classLevels = profileLevels?.length ? profileLevels : (studioSettings?.class_levels || []);
 
   useEffect(() => { if (pendingNewClass) { setShowTypePicker(true); onPendingConsumed?.(); } }, [pendingNewClass]);
 
@@ -3497,8 +3639,19 @@ const ClassBuilder = ({ allSeries, classes, onSave, onDeleteClass, onPermanentDe
           )}
           <input value={flowSearch} onChange={e=>setFlowSearch(e.target.value)} placeholder="Pesquisar séries…"
             style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,padding:"6px 10px",borderRadius:8,border:`1px solid ${C.stone}`,outline:"none",width:"100%",boxSizing:"border-box",marginBottom:6}}/>
-          <div style={{display:"flex",flexDirection:"column",gap:4,maxHeight:260,overflowY:"auto"}}>
-            {compatSeries.filter(s=>!inFlow.includes(s.id)&&(!flowSearch||s.name.toLowerCase().includes(flowSearch.toLowerCase()))).map(s=>(
+          <div style={{display:"flex",gap:4,flexWrap:"wrap",marginBottom:6}}>
+            {[["all","Todas"],...DEFAULT_SERIES_TYPES.map(t=>[t,t])].map(([val,lbl])=>(
+              <button key={val} onClick={()=>setFlowTypeFilter(val)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"3px 9px",borderRadius:20,border:`1px solid ${flowTypeFilter===val?C.neutral:C.stone}`,background:flowTypeFilter===val?C.neutral:"transparent",color:flowTypeFilter===val?C.white:C.mist,cursor:"pointer"}}>{lbl}</button>
+            ))}
+          </div>
+          {(()=>{
+            const baseFiltered = compatSeries.filter(s=>!inFlow.includes(s.id)&&(!flowSearch||s.name.toLowerCase().includes(flowSearch.toLowerCase()))&&(flowTypeFilter==="all"||s.seriesType===flowTypeFilter));
+            const withZone = baseFiltered.filter(s=>s.primaryZone||s.targetZone);
+            const noZone = baseFiltered.filter(s=>!s.primaryZone&&!s.targetZone);
+            const grouped = {};
+            withZone.forEach(s=>{ const z=s.primaryZone||(s.targetZone||"").split(",")[0]?.trim()||""; if(!grouped[z]) grouped[z]=[]; grouped[z].push(s); });
+            const zones = Object.keys(grouped).sort();
+            const renderRow = s => (
               <div key={s.id} onClick={()=>toggleSeries(s.id)}
                 style={{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",background:C.white,borderRadius:8,border:`1px solid ${C.stone}`,cursor:"pointer",fontSize:12}}
                 onMouseEnter={e=>e.currentTarget.style.borderColor=C.neutral}
@@ -3507,9 +3660,17 @@ const ClassBuilder = ({ allSeries, classes, onSave, onDeleteClass, onPermanentDe
                 <Badge label={s.type==="signature"?"✦":s.type==="reformer"?"R":"B"} color={s.type==="signature"?"gold":s.type==="reformer"?"teal":"coral"} hexColor={s.type!=="signature"?resolveTypeHex(s.type,profileClassTypes):null}/>
                 <span style={{color:C.crimson,fontWeight:700,fontSize:14,lineHeight:1}}>+</span>
               </div>
-            ))}
-            {compatSeries.length===0&&<div style={{color:C.mist,fontSize:12,padding:8}}>Sem séries disponíveis para este tipo.</div>}
-          </div>
+            );
+            const renderDivider = z => <div key={`div-${z}`} style={{display:"flex",alignItems:"center",gap:8,margin:"4px 0 2px"}}><div style={{flex:1,height:1,background:C.stone}}/><span style={{fontSize:10,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.1em",whiteSpace:"nowrap"}}>{z}</span><div style={{flex:1,height:1,background:C.stone}}/></div>;
+            return (
+              <div style={{display:"flex",flexDirection:"column",gap:4,maxHeight:260,overflowY:"auto"}}>
+                {zones.map(z=>[renderDivider(z),...grouped[z].map(renderRow)])}
+                {noZone.length>0&&zones.length>0&&renderDivider("Outras")}
+                {noZone.map(renderRow)}
+                {baseFiltered.length===0&&<div style={{color:C.mist,fontSize:12,padding:8}}>Sem séries disponíveis para este tipo.</div>}
+              </div>
+            );
+          })()}
         </div>
       </div>
     </div>
@@ -3542,13 +3703,13 @@ const ClassBuilder = ({ allSeries, classes, onSave, onDeleteClass, onPermanentDe
       </div>
       {showTypePicker&&(
         <div style={{display:"flex",gap:8,marginBottom:16,padding:"12px 16px",background:C.white,borderRadius:10,border:`1px solid ${C.stone}`,flexWrap:"wrap",alignItems:"center"}}>
-          <span style={{fontSize:12,fontWeight:700,color:C.mist,fontFamily:"'Satoshi',sans-serif",marginRight:4}}>Tipo:</span>
+          <span style={{fontSize:12,fontWeight:700,color:C.mist,fontFamily:"'Satoshi',sans-serif",marginRight:4}}>Modalidade:</span>
           {(profileClassTypes?.length ? profileClassTypes : []).map(t=>{
             const tn=classTypeName(t); const tc=classTypeColor(t,null);
             return <button key={tn} onClick={()=>{startCreate(tn);setShowTypePicker(false);}} style={{padding:"7px 18px",borderRadius:20,border:`1.5px solid ${tc||C.stone}`,background:tc?`${tc}15`:"transparent",color:C.ink,fontWeight:600,fontSize:13,cursor:"pointer",fontFamily:"'Satoshi',sans-serif"}}>{tn}</button>;
           })}
           {!(profileClassTypes?.length) && (
-            <span style={{fontSize:12,color:C.mist,fontFamily:"'Satoshi',sans-serif"}}>Configura os tipos de aula no perfil primeiro.</span>
+            <span style={{fontSize:12,color:C.mist,fontFamily:"'Satoshi',sans-serif"}}>Configura as modalidades no perfil primeiro.</span>
           )}
           <button onClick={()=>setShowTypePicker(false)} style={{marginLeft:"auto",background:"none",border:"none",cursor:"pointer",color:C.mist,fontSize:16,padding:"0 4px"}}>×</button>
         </div>
@@ -3558,7 +3719,7 @@ const ClassBuilder = ({ allSeries, classes, onSave, onDeleteClass, onPermanentDe
         {/* Left column: filters */}
         <div style={{width:170,flexShrink:0}}>
           {(profileClassTypes?.length>0) && (
-            <CollapsibleSection title="Tipo de Aula" defaultOpen={true}>
+            <CollapsibleSection title="Modalidade" defaultOpen={true}>
               <div style={{display:"flex",flexDirection:"column",gap:4,paddingBottom:8}}>
                 <button onClick={()=>setClassTypeFilter("")} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 12px",borderRadius:8,border:`1px solid ${!classTypeFilter?C.neutral:C.stone}`,background:!classTypeFilter?C.neutral:"transparent",color:!classTypeFilter?C.white:C.ink,cursor:"pointer",textAlign:"left"}}>Todas</button>
                 {profileClassTypes.map(t=>{const n=(typeof t==='string'?t:t?.name)||''; if(!n) return null; return(<button key={n} onClick={()=>setClassTypeFilter(p=>p===n?"":n)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 12px",borderRadius:8,border:`1px solid ${classTypeFilter===n?C.neutral:C.stone}`,background:classTypeFilter===n?C.neutral:"transparent",color:classTypeFilter===n?C.white:C.ink,cursor:"pointer",textAlign:"left"}}>{n[0].toUpperCase()+n.slice(1)}</button>);})}
@@ -3627,10 +3788,11 @@ const ClassBuilder = ({ allSeries, classes, onSave, onDeleteClass, onPermanentDe
                   <div onClick={toggleExpand} style={{cursor:"pointer",padding:"8px 14px",display:"flex",alignItems:"center",gap:10}}>
                     {(()=>{
                       const t = c.type||"";
-                      const isSig=t==="signature";const isRef=t.toLowerCase()==="reformer";const isBar=t.toLowerCase()==="barre";
-                      const bg=isSig?`${C.sig}40`:isRef?`${C.reformer}20`:isBar?`${C.barre}30`:`${C.neutral}20`;
-                      const bdr=isSig?C.sig:isRef?`${C.reformer}50`:isBar?`${C.barre}60`:`${C.neutral}50`;
-                      const color=isSig?"#7a4010":isRef?C.reformer:isBar?"#c0507a":C.mist;
+                      const isSig=t==="signature";
+                      const typeHex = !isSig ? resolveTypeHex(t, profileClassTypes) : null;
+                      const bg=typeHex?`${typeHex}25`:isSig?`${C.sig}40`:`${C.neutral}20`;
+                      const bdr=typeHex?`${typeHex}60`:isSig?C.sig:`${C.neutral}50`;
+                      const color=typeHex?typeHex:isSig?"#7a4010":C.mist;
                       const lbl=isSig?"✦":t.slice(0,2).toUpperCase()||"?";
                       return <div style={{width:36,height:36,borderRadius:"50%",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",background:bg,border:`1.5px solid ${bdr}`}}>
                         <span style={{fontSize:lbl==="✦"?14:11,fontWeight:700,color,lineHeight:1}}>{lbl}</span>
@@ -3647,6 +3809,8 @@ const ClassBuilder = ({ allSeries, classes, onSave, onDeleteClass, onPermanentDe
                   </div>
                   {/* Expanded controls */}
                   {isExpanded && (
+                    <>
+                    {(()=>{const names=c.seriesIds?.map(id=>allSeries.find(s=>s.id===id)?.name).filter(Boolean);return names?.length?<div style={{padding:"6px 14px 0",display:"flex",flexWrap:"wrap",gap:"2px 4px"}} onClick={e=>e.stopPropagation()}>{names.map((n,i)=><span key={i} style={{fontSize:11,color:C.mist}}>{i>0&&<span style={{margin:"0 2px",color:C.stone}}>→</span>}{n}</span>)}</div>:null;})()}
                     <div style={{padding:"6px 14px 10px",display:"flex",gap:6,alignItems:"center",justifyContent:"flex-end",flexWrap:"wrap"}} onClick={e=>e.stopPropagation()}>
                       {c.visibility==='pending_studio'&&<span style={{fontSize:10,fontWeight:700,color:"#b45309",background:"#fef9ec",borderRadius:10,padding:"2px 8px",whiteSpace:"nowrap"}}>Em revisão</span>}
                       {c.visibility==='studio'&&<span style={{fontSize:10,fontWeight:700,color:C.white,background:"#16a34a",borderRadius:10,padding:"2px 8px",whiteSpace:"nowrap"}}>Studio ✓</span>}
@@ -3669,6 +3833,7 @@ const ClassBuilder = ({ allSeries, classes, onSave, onDeleteClass, onPermanentDe
                       {onSendClass&&<button onClick={()=>onSendClass({...c,_discoverType:'class'})} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"3px 10px",borderRadius:20,border:`1px solid ${C.stone}`,background:"transparent",color:C.mist,cursor:"pointer",whiteSpace:"nowrap"}}>Enviar →</button>}
                       <button onClick={()=>onViewAula(c)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"3px 10px",borderRadius:20,border:`1px solid ${C.crimson}`,background:C.crimson,color:C.cream,cursor:"pointer",whiteSpace:"nowrap"}}>Abrir</button>
                     </div>
+                    </>
                   )}
                 </div>
                 </React.Fragment>
@@ -4187,8 +4352,8 @@ const ProfilePage = ({ profile, user, onProfileUpdate, studioSettings, aiStyle, 
           </label>
         </CollapsibleSection>
 
-        {/* 3. Tipos de aula */}
-        <CollapsibleSection title="Tipos de aula" defaultOpen={false}>
+        {/* 3. Modalidades */}
+        <CollapsibleSection title="Modalidades" defaultOpen={false}>
           <p style={{margin:'0 0 10px',fontSize:12,color:C.mist,fontFamily:"'Satoshi',sans-serif"}}>as modalidades que dás</p>
           <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:10}}>
             {editPrefClassTypes.map(t => (
@@ -4208,22 +4373,8 @@ const ProfilePage = ({ profile, user, onProfileUpdate, studioSettings, aiStyle, 
 
         {/* 4. Níveis de aula */}
         <CollapsibleSection title="Níveis de aula" defaultOpen={false}>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
-            {classLevelOptions.map(lvl => {
-              const active = editPrefLevels.includes(lvl);
-              return (
-                <span key={lvl} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '5px 14px', borderRadius: 20, border: `1px solid ${active ? C.crimson : C.stone}`, background: active ? `${C.crimson}15` : 'transparent', fontFamily: "'Satoshi',sans-serif" }}>
-                  <button onClick={() => setEditPrefLevels(p => active ? p.filter(x => x !== lvl) : [...p, lvl])}
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: active ? C.crimson : C.mist, fontWeight: active ? 700 : 500, fontSize: 13, padding: 0, fontFamily: "'Satoshi',sans-serif" }}>
-                    {lvl}
-                  </button>
-                </span>
-              );
-            })}
-          </div>
-          <PillRow items={editPrefLevels.filter(l => !classLevelOptions.includes(l))}
-            onRemove={l => setEditPrefLevels(p => p.filter(x => x !== l))}
-            newVal={newPrefLevel} onNewVal={setNewPrefLevel} placeholder="Adicionar nível personalizado…"
+          <PillRow items={editPrefLevels} onRemove={l => setEditPrefLevels(p => p.filter(x => x !== l))}
+            newVal={newPrefLevel} onNewVal={setNewPrefLevel} placeholder="ex. Foundations, Intermediate, Advanced…"
             onAdd={() => { const v = newPrefLevel.trim(); if (v && !editPrefLevels.map(x => x.toLowerCase()).includes(v.toLowerCase())) { setEditPrefLevels(p => [...p, v]); setNewPrefLevel(''); } }} />
         </CollapsibleSection>
 
@@ -4302,7 +4453,7 @@ const buildTourSlides = (isInst, isStud, isOwner) => {
   return s;
 };
 
-const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotification, onSaveSeries, onSaveClass, onSaveStudioSeries, onSaveStudioClass, onDeleteSeries, onDeleteClass, onViewAula, allSeries=[], allClasses=[], onPublishSeries, onPublishClass, activeTab='series', onTabChange, brandColor }) => {
+const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotification, onSaveSeries, onSaveClass, onSaveStudioSeries, onSaveStudioClass, onDeleteSeries, onDeleteClass, onViewAula, allSeries=[], allClasses=[], onPublishSeries, onPublishClass, activeTab='series', onTabChange, brandColor, studioClients=[], studioClientSessions=[] }) => {
   const bc = brandColor ?? bc;
   const setActiveTab = onTabChange || (() => {});
   const [submitModal, setSubmitModal] = useState(false); // picker modal
@@ -4354,9 +4505,12 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
 
   const studio = profile?.studios;
   const memberRole = profile?.studioMemberships?.find(m => (m.studio_id || m.studios?.id) === profile?.studio_id)?.role;
-  const isAdmin = ['admin', 'studio_owner', 'super_admin', 'backoffice_admin'].includes(profile?.role)
+  const isPlatAdmin = !!(profile?.is_platform_admin || ['super_admin','backoffice_admin'].includes(profile?.role));
+  const isAdmin = ['admin', 'studio_owner'].includes(profile?.role)
+    || isPlatAdmin
     || ['admin', 'owner', 'studio_owner'].includes(memberRole);
-  const isOwner = ['studio_owner', 'super_admin', 'backoffice_admin', 'owner'].includes(profile?.role)
+  const isOwner = ['studio_owner', 'owner'].includes(profile?.role)
+    || isPlatAdmin
     || ['owner', 'studio_owner'].includes(memberRole);
 
   useEffect(() => {
@@ -4698,6 +4852,7 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
     { key: 'series', label: 'Séries do Studio' },
     { key: 'classes', label: 'Aulas do Studio' },
     { key: 'members', label: `Membros${pendingMembers.length > 0 ? ` (${pendingMembers.length})` : ''}` },
+    { key: 'clients', label: `Clientes${studioClients.length>0?` (${studioClients.length})`:''}` },
     { key: 'notices', label: 'Avisos' },
     ...(isAdmin ? [{ key: 'reviews', label: `Revisões${pendingSeries.length+pendingClasses.length+pendingDeletion.length>0?' ('+(pendingSeries.length+pendingClasses.length+pendingDeletion.length)+')':''}` }] : []),
     ...(isOwner ? [{ key: 'settings', label: 'Definições' }] : []),
@@ -4985,6 +5140,32 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
         </div>
       )}
 
+      {/* ── Clientes Partilhados ── */}
+      {activeTab==='clients'&&(
+        <div style={{display:'flex',flexDirection:'column',gap:12}}>
+          <div style={{fontSize:12,color:C.mist,marginBottom:4}}>Clientes partilhados com o studio pelos instrutores da equipa.</div>
+          {studioClients.length===0&&(
+            <div style={{fontSize:13,color:C.mist,textAlign:'center',padding:32}}>Nenhum cliente partilhado com o studio ainda.</div>
+          )}
+          {studioClients.map(c=>{
+            const sessions=studioClientSessions.filter(s=>s.client_id===c.id).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+            const last=sessions[0];
+            return (
+              <div key={c.id} style={{background:C.white,borderRadius:12,border:`1px solid ${C.stone}`,padding:'14px 16px',display:'flex',alignItems:'center',gap:12}}>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontFamily:"'Clash Display',sans-serif",fontSize:15,fontWeight:500,color:C.ink}}>{c.name}</div>
+                  {c.objectives&&<div style={{fontSize:12,color:C.mist,marginTop:2,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{c.objectives}</div>}
+                  <div style={{fontSize:11,color:C.stone,marginTop:2,display:'flex',gap:8}}>
+                    {last&&<span>Última sessão: {last.date||'—'}</span>}
+                    <span>{sessions.length} sessõe{sessions.length===1?'':'s'}</span>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {/* ── Revisões (admin only) ── */}
       {activeTab==='reviews'&&isAdmin&&(
         <div>
@@ -5181,8 +5362,8 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
               <span style={{fontSize:12,color:C.mist}}>{editStudioCode.length}/8</span>
             </div>
           </CollapsibleSection>
-          {/* 3. Tipos de Aula */}
-          <CollapsibleSection title="Tipos de Aula" defaultOpen={false}>
+          {/* 3. Modalidades */}
+          <CollapsibleSection title="Modalidades" defaultOpen={false}>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
               {editClassTypes.map(t => {
                 const tn=classTypeName(t); const tc=classTypeColor(t,null);
@@ -6042,7 +6223,7 @@ const HomePage = ({ series, classes, profile, onNewSeries, onNewClass, onViewSer
                   <div style={{fontSize:13,fontWeight:600,color:C.ink,fontFamily:"'Clash Display',sans-serif",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name||"Sem nome"}</div>
                   <div style={{fontSize:11,color:C.mist,marginTop:1}}>{c.date||"Sem data"}{c.type?` · ${c.type}`:""}{c.level?` · ${c.level}`:""}</div>
                 </div>
-                <Badge label={c.type==="signature"?"✦":c.type==="reformer"?"R":"B"} color={c.type==="signature"?"gold":c.type==="reformer"?"teal":"coral"} hexColor={c.type!=="signature"?resolveTypeHex(c.type,profile?.settings?.class_types):null}/>
+                <Badge label={c.type==="signature"?"✦":c.type?.slice(0,2)?.toUpperCase()||"?"} color={c.type==="signature"?"gold":c.type==="reformer"?"teal":"coral"} hexColor={c.type!=="signature"?resolveTypeHex(c.type,profile?.settings?.class_types):null}/>
               </div>
             ))}
           </div>
@@ -6222,7 +6403,7 @@ const NotifPanel = ({ notifications, onDismiss, onMarkAllRead, onClose, onNotifC
 };
 
 // ─── INSTRUCTOR PROFILE VIEW ──────────────────────────────────────────────────
-const InstructorProfileView = ({ profileId, onBack, onCopy, onSend }) => {
+const InstructorProfileView = ({ profileId, onBack, onCopy, onSend, favorites=[], onToggleFavorite }) => {
   const [prof, setProf] = React.useState(null);
   const [pubSeries, setPubSeries] = React.useState([]);
   const [pubClasses, setPubClasses] = React.useState([]);
@@ -6250,7 +6431,15 @@ const InstructorProfileView = ({ profileId, onBack, onCopy, onSend }) => {
 
   return (
     <div style={{maxWidth:720}}>
-      <button onClick={onBack} style={{fontFamily:"'Satoshi',sans-serif",fontSize:13,fontWeight:600,padding:"6px 12px",borderRadius:8,border:`1px solid ${C.stone}`,background:"transparent",color:C.ink,cursor:"pointer",display:"inline-flex",alignItems:"center",gap:6,marginBottom:24}}>← Voltar</button>
+      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:24}}>
+        <button onClick={onBack} style={{fontFamily:"'Satoshi',sans-serif",fontSize:13,fontWeight:600,padding:"6px 12px",borderRadius:8,border:`1px solid ${C.stone}`,background:"transparent",color:C.ink,cursor:"pointer",display:"inline-flex",alignItems:"center",gap:6}}>← Voltar</button>
+        {onToggleFavorite&&(
+          <button onClick={()=>onToggleFavorite(profileId)} title={favorites.includes(profileId)?"Remover dos favoritos":"Adicionar aos favoritos"}
+            style={{background:"none",border:`1px solid ${C.stone}`,borderRadius:8,cursor:"pointer",padding:"6px 12px",fontSize:16,lineHeight:1,color:favorites.includes(profileId)?C.crimson:C.mist,transition:"color 0.15s,border-color 0.15s",borderColor:favorites.includes(profileId)?C.crimson:C.stone}}>
+            {favorites.includes(profileId)?"♥":"♡"}
+          </button>
+        )}
+      </div>
       {/* Profile header */}
       <div style={{display:'flex',gap:20,alignItems:'flex-start',marginBottom:32}}>
         {prof.avatar_url&&<img src={prof.avatar_url} alt="" style={{width:80,height:80,borderRadius:'50%',objectFit:'cover',flexShrink:0,border:`2px solid ${C.stone}`}} onError={e=>{e.target.style.display='none';}}/>}
@@ -6312,12 +6501,13 @@ const InstructorProfileView = ({ profileId, onBack, onCopy, onSend }) => {
 };
 
 // ─── DISCOVER PAGE ────────────────────────────────────────────────────────────
-const DiscoverPage = ({ items, loading, onRefresh, onCopy, onSend, profile, instructors=[], studios=[], onViewInstructor, onJoinStudio, user }) => {
+const DiscoverPage = ({ items, loading, onRefresh, onCopy, onSend, onViewClass, profile, instructors=[], studios=[], onViewInstructor, onJoinStudio, user, favorites=[], onToggleFavorite }) => {
   const [search, setSearch] = React.useState('');
-  const [typeFilter, setTypeFilter] = React.useState('all'); // 'all','series','class','instructors','studios'
+  const [typeFilter, setTypeFilter] = React.useState('all'); // 'all','series','class','instructors','studios','favorites'
   const [zoneFilter, setZoneFilter] = React.useState('');
   const [expandedStudioId, setExpandedStudioId] = React.useState(null);
   const [expandedInstructorId, setExpandedInstructorId] = React.useState(null);
+  const [expandedSeriesId, setExpandedSeriesId] = React.useState(null);
   const [joinedStudioIds, setJoinedStudioIds] = React.useState(new Set()); // local optimistic state
 
   const memberStudioIds = React.useMemo(() => {
@@ -6361,33 +6551,24 @@ const DiscoverPage = ({ items, loading, onRefresh, onCopy, onSend, profile, inst
         <button onClick={onRefresh} disabled={loading} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"7px 14px",borderRadius:8,border:`1px solid ${C.stone}`,background:C.white,color:C.ink,cursor:"pointer",opacity:loading?0.5:1}}>{loading?"A carregar…":"↻ Atualizar"}</button>
       </div>
 
-      {/* Two-column layout */}
-      <div style={{display:"flex",gap:20,alignItems:"flex-start"}}>
-        {/* Left: filters */}
-        <div style={{width:160,flexShrink:0,display:"flex",flexDirection:"column",gap:16}}>
-          <div>
-            <div style={{fontSize:10,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Tipo</div>
-            <div style={{display:"flex",flexDirection:"column",gap:4}}>
-              {[['all','Tudo'],['series','Séries'],['class','Aulas'],['instructors','Instrutores'],['studios','Estúdios']].map(([v,l])=>(
-                <button key={v} onClick={()=>setTypeFilter(v)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 12px",borderRadius:8,border:`1px solid ${typeFilter===v?C.neutral:C.stone}`,background:typeFilter===v?C.neutral:"transparent",color:typeFilter===v?C.white:C.ink,cursor:"pointer",textAlign:"left"}}>{l}</button>
-              ))}
-            </div>
-          </div>
-          {(typeFilter==='all'||typeFilter==='series') && zones.length > 0 && (
-            <div>
-              <div style={{fontSize:10,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Zona</div>
-              <div style={{display:"flex",flexDirection:"column",gap:4}}>
-                <button onClick={()=>setZoneFilter('')} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 12px",borderRadius:8,border:`1px solid ${!zoneFilter?C.neutral:C.stone}`,background:!zoneFilter?C.neutral:"transparent",color:!zoneFilter?C.white:C.ink,cursor:"pointer",textAlign:"left"}}>Todas</button>
-                {zones.map(z=>(
-                  <button key={z} onClick={()=>setZoneFilter(z===zoneFilter?'':z)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 12px",borderRadius:8,border:`1px solid ${zoneFilter===z?C.neutral:C.stone}`,background:zoneFilter===z?C.neutral:"transparent",color:zoneFilter===z?C.white:C.ink,cursor:"pointer",textAlign:"left"}}>{z}</button>
-                ))}
-              </div>
-            </div>
-          )}
+      {/* Type filter tabs — underline style */}
+      <div style={{display:"flex",gap:20,borderBottom:`1px solid ${C.stone}`,marginBottom:16}}>
+        {[['all','Tudo'],['series','Séries'],['class','Aulas'],['instructors','Instrutores'],['studios','Estúdios'],['favorites','♥ Favoritos']].map(([v,l])=>(
+          <button key={v} onClick={()=>setTypeFilter(v)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:13,fontWeight:typeFilter===v?700:500,padding:"8px 4px",background:"none",border:"none",borderBottom:`2px solid ${typeFilter===v?C.crimson:"transparent"}`,color:typeFilter===v?C.crimson:C.mist,cursor:"pointer",whiteSpace:"nowrap"}}>{l}</button>
+        ))}
+      </div>
+      {/* Zone filter pills (series only) */}
+      {(typeFilter==='all'||typeFilter==='series') && zones.length > 0 && (
+        <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:16}}>
+          <button onClick={()=>setZoneFilter('')} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"4px 12px",borderRadius:20,border:`1px solid ${!zoneFilter?C.neutral:C.stone}`,background:!zoneFilter?C.neutral:"transparent",color:!zoneFilter?C.white:C.ink,cursor:"pointer"}}>Todas</button>
+          {zones.map(z=>(
+            <button key={z} onClick={()=>setZoneFilter(z===zoneFilter?'':z)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"4px 12px",borderRadius:20,border:`1px solid ${zoneFilter===z?C.neutral:C.stone}`,background:zoneFilter===z?C.neutral:"transparent",color:zoneFilter===z?C.white:C.ink,cursor:"pointer"}}>{z}</button>
+          ))}
         </div>
+      )}
 
-        {/* Right: content */}
-        <div style={{flex:1,minWidth:0}}>
+      {/* Content */}
+      <div style={{minWidth:0}}>
           {loading && <div style={{color:C.mist,fontSize:14,padding:"40px 0",textAlign:"center"}}>A carregar conteúdo público…</div>}
 
           {!loading && typeFilter!=='instructors' && typeFilter!=='studios' && filtered.length===0 && (
@@ -6416,23 +6597,34 @@ const DiscoverPage = ({ items, loading, onRefresh, onCopy, onSend, profile, inst
             <div style={{marginBottom:28}}>
               {typeFilter==='all'&&<div style={{fontSize:10,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:10}}>Séries</div>}
               <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                {seriesItems.map(item=>(
-                  <div key={item.id} style={{background:C.white,border:`1px solid ${C.stone}`,borderRadius:12,padding:"14px 18px",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-                    <div style={{flex:1,minWidth:0}}>
-                      <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:4}}>
-                        <span style={{fontFamily:"'Clash Display',sans-serif",fontSize:16,fontWeight:600,color:C.ink}}>{item.name}</span>
-                        {item.type&&<span style={{fontSize:11,fontWeight:700,color:C.white,background:discoverTypeColor(item.type),borderRadius:20,padding:"2px 8px"}}>{item.type}</span>}
-                        {item.primaryZone&&<span style={{fontSize:11,color:C.mist,background:C.stone,borderRadius:20,padding:"2px 8px"}}>{item.primaryZone}</span>}
-                        {item.seriesType&&<span style={{fontSize:11,fontWeight:600,color:"#5a2a00",background:`${C.sig}50`,border:`1px solid ${C.sig}`,borderRadius:20,padding:"2px 8px"}}>{item.seriesType}</span>}
+                {seriesItems.map(item=>{
+                  const isSeriesExp = expandedSeriesId===item.id;
+                  return (
+                  <div key={item.id} style={{background:C.white,border:`1px solid ${isSeriesExp?C.neutral:C.stone}`,borderRadius:12,overflow:"hidden"}}>
+                    <div style={{padding:"14px 18px",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:4}}>
+                          <span style={{fontFamily:"'Clash Display',sans-serif",fontSize:16,fontWeight:600,color:C.ink}}>{item.name}</span>
+                          {item.type&&<span style={{fontSize:11,fontWeight:700,color:C.white,background:discoverTypeColor(item.type),borderRadius:20,padding:"2px 8px"}}>{item.type}</span>}
+                          {item.primaryZone&&<span style={{fontSize:11,color:C.mist,background:C.stone,borderRadius:20,padding:"2px 8px"}}>{item.primaryZone}</span>}
+                          {item.seriesType&&<span style={{fontSize:11,fontWeight:600,color:"#5a2a00",background:`${C.sig}50`,border:`1px solid ${C.sig}`,borderRadius:20,padding:"2px 8px"}}>{item.seriesType}</span>}
+                        </div>
+                        {authorLabel(item)&&<div style={{fontSize:12,color:C.mist}}>{authorLabel(item)}</div>}
                       </div>
-                      {authorLabel(item)&&<div style={{fontSize:12,color:C.mist}}>{authorLabel(item)}</div>}
+                      <div style={{display:"flex",gap:8,flexShrink:0}}>
+                        <button onClick={()=>setExpandedSeriesId(isSeriesExp?null:item.id)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"6px 14px",borderRadius:8,border:`1px solid ${C.neutral}`,background:isSeriesExp?C.neutral:"transparent",color:isSeriesExp?C.white:C.neutral,cursor:"pointer"}}>Ver</button>
+                        <button onClick={()=>onCopy(item)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"6px 14px",borderRadius:8,border:`1px solid ${C.crimson}`,background:"transparent",color:C.crimson,cursor:"pointer"}}>Copiar</button>
+                        <button onClick={()=>onSend(item)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"6px 14px",borderRadius:8,border:`1px solid ${C.stone}`,background:C.white,color:C.ink,cursor:"pointer"}}>Enviar →</button>
+                      </div>
                     </div>
-                    <div style={{display:"flex",gap:8,flexShrink:0}}>
-                      <button onClick={()=>onCopy(item)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"6px 14px",borderRadius:8,border:`1px solid ${C.crimson}`,background:"transparent",color:C.crimson,cursor:"pointer"}}>Copiar</button>
-                      <button onClick={()=>onSend(item)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"6px 14px",borderRadius:8,border:`1px solid ${C.stone}`,background:C.white,color:C.ink,cursor:"pointer"}}>Enviar →</button>
-                    </div>
+                    {isSeriesExp&&(
+                      <div style={{borderTop:`1px solid ${C.stone}`,padding:"0 8px 8px"}}>
+                        <SeriesCard series={item} onEdit={null} onDelete={null} onUpdateSeries={()=>{}} aiStyle="" hasStudio={false} currentUserId={user?.id} compact={false}/>
+                      </div>
+                    )}
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
@@ -6454,6 +6646,7 @@ const DiscoverPage = ({ items, loading, onRefresh, onCopy, onSend, profile, inst
                       {authorLabel(item)&&<div style={{fontSize:12,color:C.mist}}>{authorLabel(item)}</div>}
                     </div>
                     <div style={{display:"flex",gap:8,flexShrink:0}}>
+                      {onViewClass&&<button onClick={()=>onViewClass(item)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"6px 14px",borderRadius:8,border:`1px solid ${C.neutral}`,background:"transparent",color:C.neutral,cursor:"pointer"}}>Ver →</button>}
                       <button onClick={()=>onCopy(item)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"6px 14px",borderRadius:8,border:`1px solid ${C.crimson}`,background:"transparent",color:C.crimson,cursor:"pointer"}}>Copiar</button>
                       <button onClick={()=>onSend(item)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"6px 14px",borderRadius:8,border:`1px solid ${C.stone}`,background:C.white,color:C.ink,cursor:"pointer"}}>Enviar →</button>
                     </div>
@@ -6464,38 +6657,55 @@ const DiscoverPage = ({ items, loading, onRefresh, onCopy, onSend, profile, inst
           )}
 
           {/* Instructors section — 2-per-row expandable cards */}
-          {(typeFilter==='all'||typeFilter==='instructors') && instructors.filter(p=>!search||(p.name||'').toLowerCase().includes(search.toLowerCase())||(p.bio||'').toLowerCase().includes(search.toLowerCase())).length>0 && (
-            <div style={{marginBottom:28}}>
-              {typeFilter==='all'&&<div style={{fontSize:10,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:10}}>Instrutores</div>}
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-                {instructors.filter(p=>!search||(p.name||'').toLowerCase().includes(search.toLowerCase())||(p.bio||'').toLowerCase().includes(search.toLowerCase())).map(p=>{
-                  const isExp = expandedInstructorId===p.id;
-                  return (
-                    <div key={p.id} style={{background:C.white,border:`1px solid ${isExp?C.neutral:C.stone}`,borderRadius:12,overflow:"hidden",transition:"border-color 0.15s"}}>
-                      <div onClick={()=>setExpandedInstructorId(isExp?null:p.id)} style={{padding:"14px 16px",cursor:"pointer",display:"flex",alignItems:"center",gap:10}}>
-                        {p.avatar_url
-                          ? <img src={p.avatar_url} alt="" style={{width:40,height:40,borderRadius:"50%",objectFit:"cover",flexShrink:0}}/>
-                          : <div style={{width:40,height:40,borderRadius:"50%",background:C.stone,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,color:C.mist}}>✦</div>
-                        }
-                        <div style={{flex:1,minWidth:0}}>
-                          <div style={{fontFamily:"'Clash Display',sans-serif",fontSize:14,fontWeight:600,color:C.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name||"—"}</div>
-                          {p.studios?.name&&<div style={{fontSize:11,color:C.mist,marginTop:1}}>{p.studios.name}</div>}
+          {(typeFilter==='all'||typeFilter==='instructors'||typeFilter==='favorites') && (()=>{
+            const visibleInstructors = instructors.filter(p=>{
+              const matchSearch = !search||(p.name||'').toLowerCase().includes(search.toLowerCase())||(p.bio||'').toLowerCase().includes(search.toLowerCase());
+              const matchFav = typeFilter!=='favorites' || favorites.includes(p.id);
+              return matchSearch && matchFav;
+            });
+            if (visibleInstructors.length===0) return typeFilter==='favorites'
+              ? <div style={{textAlign:"center",padding:"40px 0",color:C.mist}}><div style={{fontSize:24,marginBottom:8}}>♡</div><div>Ainda não tens instrutores favoritos.</div></div>
+              : null;
+            return (
+              <div style={{marginBottom:28}}>
+                {(typeFilter==='all'||typeFilter==='favorites')&&<div style={{fontSize:10,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:10}}>{typeFilter==='favorites'?"Instrutores favoritos":"Instrutores"}</div>}
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                  {visibleInstructors.map(p=>{
+                    const isExp = expandedInstructorId===p.id;
+                    const isFav = favorites.includes(p.id);
+                    return (
+                      <div key={p.id} style={{background:C.white,border:`1px solid ${isExp?C.neutral:C.stone}`,borderRadius:12,overflow:"hidden",transition:"border-color 0.15s"}}>
+                        <div style={{padding:"14px 16px",display:"flex",alignItems:"center",gap:10}}>
+                          <div onClick={()=>setExpandedInstructorId(isExp?null:p.id)} style={{display:"flex",alignItems:"center",gap:10,flex:1,minWidth:0,cursor:"pointer"}}>
+                            {p.avatar_url
+                              ? <img src={p.avatar_url} alt="" style={{width:40,height:40,borderRadius:"50%",objectFit:"cover",flexShrink:0}}/>
+                              : <div style={{width:40,height:40,borderRadius:"50%",background:C.stone,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,color:C.mist}}>✦</div>
+                            }
+                            <div style={{flex:1,minWidth:0}}>
+                              <div style={{fontFamily:"'Clash Display',sans-serif",fontSize:14,fontWeight:600,color:C.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name||"—"}</div>
+                              {p.studios?.name&&<div style={{fontSize:11,color:C.mist,marginTop:1}}>{p.studios.name}</div>}
+                            </div>
+                          </div>
+                          {onToggleFavorite&&<button onClick={e=>{e.stopPropagation();onToggleFavorite(p.id);}} title={isFav?"Remover dos favoritos":"Adicionar aos favoritos"}
+                            style={{background:"none",border:"none",cursor:"pointer",padding:"4px 6px",fontSize:16,lineHeight:1,color:isFav?C.crimson:C.stone,flexShrink:0}}>
+                            {isFav?"♥":"♡"}
+                          </button>}
+                          <span onClick={()=>setExpandedInstructorId(isExp?null:p.id)} style={{color:C.mist,transition:"transform 0.2s",transform:isExp?"rotate(180deg)":"rotate(0deg)",cursor:"pointer"}}>⌄</span>
                         </div>
-                        <span style={{color:C.mist,transition:"transform 0.2s",transform:isExp?"rotate(180deg)":"rotate(0deg)"}}>⌄</span>
+                        {isExp&&(
+                          <div style={{borderTop:`1px solid ${C.stone}`,padding:"12px 16px",display:"flex",flexDirection:"column",gap:8}}>
+                            {p.bio&&<div style={{fontSize:12,color:C.ink,lineHeight:1.5}}>{p.bio}</div>}
+                            {p.settings?.class_types?.length>0&&<div style={{display:"flex",gap:4,flexWrap:"wrap"}}>{(p.settings.class_types).map(t=><span key={classTypeName(t)} style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:20,background:`${classTypeColor(t,C.stone)}20`,border:`1px solid ${classTypeColor(t,C.stone)}`,color:C.ink}}>{classTypeName(t)}</span>)}</div>}
+                            {onViewInstructor&&<button onClick={()=>onViewInstructor(p)} style={{alignSelf:"flex-start",fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"5px 12px",borderRadius:8,border:`1px solid ${C.stone}`,background:"transparent",color:C.ink,cursor:"pointer"}}>Ver perfil →</button>}
+                          </div>
+                        )}
                       </div>
-                      {isExp&&(
-                        <div style={{borderTop:`1px solid ${C.stone}`,padding:"12px 16px",display:"flex",flexDirection:"column",gap:8}}>
-                          {p.bio&&<div style={{fontSize:12,color:C.ink,lineHeight:1.5}}>{p.bio}</div>}
-                          {p.settings?.class_types?.length>0&&<div style={{display:"flex",gap:4,flexWrap:"wrap"}}>{(p.settings.class_types).map(t=><span key={classTypeName(t)} style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:20,background:`${classTypeColor(t,C.stone)}20`,border:`1px solid ${classTypeColor(t,C.stone)}`,color:C.ink}}>{classTypeName(t)}</span>)}</div>}
-                          {onViewInstructor&&<button onClick={()=>onViewInstructor(p)} style={{alignSelf:"flex-start",fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"5px 12px",borderRadius:8,border:`1px solid ${C.stone}`,background:"transparent",color:C.ink,cursor:"pointer"}}>Ver perfil →</button>}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* Studios section — 2-per-row expandable cards */}
           {(typeFilter==='all'||typeFilter==='studios') && studios.filter(s=>!search||(s.name||'').toLowerCase().includes(search.toLowerCase())).length>0 && (
@@ -6539,7 +6749,6 @@ const DiscoverPage = ({ items, loading, onRefresh, onCopy, onSend, profile, inst
             </div>
           )}
         </div>
-      </div>
     </div>
   );
 };
@@ -6617,6 +6826,11 @@ const AdminPage = ({ user }) => {
   const [loading, setLoading] = React.useState(true);
   const [search, setSearch] = React.useState('');
   const [stats, setStats] = React.useState({ users: 0, studios: 0, series: 0, classes: 0 });
+  const [editingCodeId, setEditingCodeId] = React.useState(null);
+  const [editCodeVal, setEditCodeVal] = React.useState('');
+  const [showNewStudio, setShowNewStudio] = React.useState(false);
+  const [newStudioName, setNewStudioName] = React.useState('');
+  const [newStudioCode, setNewStudioCode] = React.useState('');
   const toast_ = useToast();
   const confirm_ = useConfirm();
 
@@ -6626,22 +6840,37 @@ const AdminPage = ({ user }) => {
       { data: profilesData },
       { data: studiosData },
       { data: pendingData },
+      { data: activeMemberships },
       { count: userCount },
       { count: studioCount },
       { count: seriesCount },
       { count: classCount },
     ] = await Promise.all([
-      supabase.from('profiles').select('id, name, role, studio_id, onboarded, created_at, studios(name)').order('created_at', { ascending: false }),
-      supabase.from('studios').select('id, name, studio_code, is_public, settings, studio_memberships(count)').order('created_at', { ascending: false }),
-      supabase.from('studio_memberships').select('id, user_id, studio_id, role, status, joined_at, profiles(name), studios(name)').eq('status', 'pending').order('joined_at', { ascending: false }),
+      supabase.from('profiles').select('id, name, role, is_platform_admin, studio_id, onboarded, created_at').order('created_at', { ascending: false }),
+      supabase.from('studios').select('id, name, studio_code, is_public, settings').order('created_at', { ascending: false }),
+      supabase.from('studio_memberships').select('id, user_id, studio_id, role, status, joined_at').eq('status', 'pending').order('joined_at', { ascending: false }),
+      supabase.from('studio_memberships').select('studio_id').eq('status', 'active'),
       supabase.from('profiles').select('id', { count: 'exact', head: true }),
       supabase.from('studios').select('id', { count: 'exact', head: true }),
       supabase.from('series').select('id', { count: 'exact', head: true }),
       supabase.from('classes').select('id', { count: 'exact', head: true }),
     ]);
-    setUsers(profilesData || []);
-    setStudios(studiosData || []);
-    setPendingMemberships(pendingData || []);
+    // Build studio name map for user list and pending memberships
+    const studioNameMap = Object.fromEntries((studiosData || []).map(s => [s.id, s.name]));
+    // Build profile name map for pending memberships
+    const profileNameMap = Object.fromEntries((profilesData || []).map(p => [p.id, p.name]));
+    // Count active members per studio
+    const memberCountMap = {};
+    (activeMemberships || []).forEach(m => {
+      memberCountMap[m.studio_id] = (memberCountMap[m.studio_id] || 0) + 1;
+    });
+    setUsers((profilesData || []).map(u => ({ ...u, studioName: u.studio_id ? studioNameMap[u.studio_id] : null })));
+    setStudios((studiosData || []).map(s => ({ ...s, memberCount: memberCountMap[s.id] || 0 })));
+    setPendingMemberships((pendingData || []).map(m => ({
+      ...m,
+      userName: profileNameMap[m.user_id] || m.user_id?.slice(0, 8),
+      studioName: studioNameMap[m.studio_id] || m.studio_id?.slice(0, 8),
+    })));
     setStats({ users: userCount||0, studios: studioCount||0, series: seriesCount||0, classes: classCount||0 });
     setLoading(false);
   }, []);
@@ -6653,6 +6882,13 @@ const AdminPage = ({ user }) => {
     if (error) { toast_('Erro: ' + error.message, 'error'); return; }
     setUsers(prev => prev.map(u => u.id === userId ? { ...u, role: newRole } : u));
     toast_('Papel atualizado');
+  };
+
+  const togglePlatformAdmin = async (userId, current) => {
+    const { error } = await supabase.from('profiles').update({ is_platform_admin: !current }).eq('id', userId);
+    if (error) { toast_('Erro: ' + error.message, 'error'); return; }
+    setUsers(prev => prev.map(u => u.id === userId ? { ...u, is_platform_admin: !current } : u));
+    toast_(current ? 'Acesso backoffice removido' : 'Acesso backoffice ativado');
   };
 
   const resetOnboarding = async (userId) => {
@@ -6705,7 +6941,38 @@ const AdminPage = ({ user }) => {
     setStudios(prev => prev.map(s => s.id === studioId ? { ...s, is_public: !currentVal } : s));
   };
 
-  const ROLES = ['instructor', 'admin', 'studio_owner', 'super_admin', 'backoffice_admin'];
+  const saveStudioCode = async (studioId) => {
+    const code = editCodeVal.trim().toUpperCase();
+    const { error } = await supabase.from('studios').update({ studio_code: code || null }).eq('id', studioId);
+    if (error) { toast_('Erro: ' + error.message, 'error'); return; }
+    setStudios(prev => prev.map(s => s.id === studioId ? { ...s, studio_code: code || null } : s));
+    setEditingCodeId(null);
+    toast_('Código atualizado');
+  };
+
+  const deleteStudio = async (s) => {
+    const ok = await confirm_(`Apagar o studio "${s.name}"? Todos os membros serão dissociados.`);
+    if (!ok) return;
+    const ok2 = await confirm_('Última confirmação — apagar definitivamente?', { confirmLabel: 'Apagar', cancelLabel: 'Cancelar' });
+    if (!ok2) return;
+    const { error } = await supabase.from('studios').delete().eq('id', s.id);
+    if (error) { toast_('Erro: ' + error.message, 'error'); return; }
+    setStudios(prev => prev.filter(x => x.id !== s.id));
+    toast_('Studio apagado');
+  };
+
+  const createStudio = async () => {
+    const name = newStudioName.trim();
+    if (!name) { toast_('Nome obrigatório', 'error'); return; }
+    const code = newStudioCode.trim().toUpperCase() || null;
+    const { data, error } = await supabase.from('studios').insert({ name, studio_code: code, is_public: false }).select().maybeSingle();
+    if (error) { toast_('Erro: ' + error.message, 'error'); return; }
+    setStudios(prev => [{ ...data, memberCount: 0 }, ...prev]);
+    setNewStudioName(''); setNewStudioCode(''); setShowNewStudio(false);
+    toast_('Studio criado');
+  };
+
+  const ROLES = ['instructor', 'admin', 'studio_owner'];
   const filteredUsers = users.filter(u => !search || u.name?.toLowerCase().includes(search.toLowerCase()));
 
   const tabStyle = active => ({
@@ -6751,14 +7018,14 @@ const AdminPage = ({ user }) => {
             style={{ fontFamily: "'Satoshi',sans-serif", fontSize: 13, padding: '8px 14px', borderRadius: 20, border: `1px solid ${C.stone}`, outline: 'none', background: C.white, color: C.ink, width: 240, marginBottom: 16 }} />
           <div style={{ background: C.white, borderRadius: 12, border: `1px solid ${C.stone}`, overflow: 'hidden' }}>
             {/* Table header */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 120px 140px 80px 1fr', gap: 0, background: C.stone, padding: '8px 16px' }}>
-              {['Nome', 'Papel', 'Studio', 'Onboard', 'Ações'].map(h => (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 120px 140px 60px 80px 1fr', gap: 0, background: C.stone, padding: '8px 16px' }}>
+              {['Nome', 'Papel', 'Studio', 'Admin', 'Onboard', 'Ações'].map(h => (
                 <span key={h} style={{ fontSize: 10, fontWeight: 700, color: C.mist, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{h}</span>
               ))}
             </div>
             {filteredUsers.length === 0 && <div style={{ padding: '24px 16px', color: C.mist, fontSize: 13 }}>Nenhum utilizador encontrado.</div>}
             {filteredUsers.map((u, i) => (
-              <div key={u.id} style={{ display: 'grid', gridTemplateColumns: '1fr 120px 140px 80px 1fr', gap: 0, padding: '10px 16px', borderTop: i > 0 ? `1px solid ${C.stone}` : 'none', alignItems: 'center' }}>
+              <div key={u.id} style={{ display: 'grid', gridTemplateColumns: '1fr 120px 140px 60px 80px 1fr', gap: 0, padding: '10px 16px', borderTop: i > 0 ? `1px solid ${C.stone}` : 'none', alignItems: 'center' }}>
                 <div>
                   <div style={{ fontSize: 13, fontWeight: 600, color: C.ink }}>{u.name || '(sem nome)'}</div>
                   <div style={{ fontSize: 11, color: C.mist, fontFamily: 'monospace' }}>{u.id.slice(0, 8)}…</div>
@@ -6767,7 +7034,10 @@ const AdminPage = ({ user }) => {
                   style={{ fontFamily: "'Satoshi',sans-serif", fontSize: 12, padding: '4px 8px', borderRadius: 6, border: `1px solid ${C.stone}`, background: C.white, color: C.ink, cursor: 'pointer' }}>
                   {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
                 </select>
-                <div style={{ fontSize: 12, color: C.mist, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.studios?.name || '—'}</div>
+                <div style={{ fontSize: 12, color: C.mist, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.studioName || '—'}</div>
+                <div style={{ textAlign: 'center' }}>
+                  <MiniToggle on={!!u.is_platform_admin} onToggle={() => togglePlatformAdmin(u.id, u.is_platform_admin)} onColor={C.crimson} />
+                </div>
                 <div style={{ fontSize: 11, fontWeight: 700, color: u.onboarded ? '#16a34a' : '#b91c1c' }}>{u.onboarded ? '✓' : '✗'}</div>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                   <button onClick={() => resetOnboarding(u.id)} title="Repor onboarding"
@@ -6789,24 +7059,65 @@ const AdminPage = ({ user }) => {
 
       {/* ── STUDIOS TAB ── */}
       {!loading && activeTab === 'studios' && (
-        <div style={{ background: C.white, borderRadius: 12, border: `1px solid ${C.stone}`, overflow: 'hidden' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 100px 80px 80px 80px', gap: 0, background: C.stone, padding: '8px 16px' }}>
-            {['Nome', 'Código', 'Membros', 'Público', ''].map(h => (
-              <span key={h} style={{ fontSize: 10, fontWeight: 700, color: C.mist, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{h}</span>
+        <div>
+          {/* Novo Studio button + inline form */}
+          <div style={{ marginBottom: 12 }}>
+            {!showNewStudio
+              ? <button onClick={() => setShowNewStudio(true)} style={{ fontFamily: "'Satoshi',sans-serif", fontSize: 12, fontWeight: 600, padding: '7px 16px', borderRadius: 8, border: `1px solid ${C.neutral}`, background: 'transparent', color: C.neutral, cursor: 'pointer' }}>+ Novo Studio</button>
+              : <div style={{ background: C.white, border: `1px solid ${C.neutral}`, borderRadius: 12, padding: '14px 16px', display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    <label style={{ fontSize: 10, fontWeight: 700, color: C.mist, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Nome *</label>
+                    <input value={newStudioName} onChange={e => setNewStudioName(e.target.value)} placeholder="Nome do studio"
+                      style={{ fontFamily: "'Satoshi',sans-serif", fontSize: 13, padding: '6px 10px', borderRadius: 8, border: `1px solid ${C.stone}`, outline: 'none', width: 200 }} />
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    <label style={{ fontSize: 10, fontWeight: 700, color: C.mist, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Código (opcional)</label>
+                    <input value={newStudioCode} onChange={e => setNewStudioCode(e.target.value.toUpperCase())} placeholder="Ex: HAVEN"
+                      style={{ fontFamily: 'monospace', fontSize: 13, padding: '6px 10px', borderRadius: 8, border: `1px solid ${C.stone}`, outline: 'none', width: 120 }} />
+                  </div>
+                  <button onClick={createStudio} style={{ fontFamily: "'Satoshi',sans-serif", fontSize: 12, fontWeight: 700, padding: '7px 16px', borderRadius: 8, border: 'none', background: C.neutral, color: C.white, cursor: 'pointer' }}>Criar</button>
+                  <button onClick={() => { setShowNewStudio(false); setNewStudioName(''); setNewStudioCode(''); }} style={{ fontFamily: "'Satoshi',sans-serif", fontSize: 12, fontWeight: 600, padding: '7px 12px', borderRadius: 8, border: `1px solid ${C.stone}`, background: 'transparent', color: C.mist, cursor: 'pointer' }}>Cancelar</button>
+                </div>
+            }
+          </div>
+          <div style={{ background: C.white, borderRadius: 12, border: `1px solid ${C.stone}`, overflow: 'hidden' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px 70px 60px 1fr', gap: 0, background: C.stone, padding: '8px 16px' }}>
+              {['Nome', 'Código', 'Membros', 'Público', 'Ações'].map(h => (
+                <span key={h} style={{ fontSize: 10, fontWeight: 700, color: C.mist, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{h}</span>
+              ))}
+            </div>
+            {studios.length === 0 && <div style={{ padding: '24px 16px', color: C.mist, fontSize: 13 }}>Nenhum studio.</div>}
+            {studios.map((s, i) => (
+              <div key={s.id} style={{ display: 'grid', gridTemplateColumns: '1fr 160px 70px 60px 1fr', gap: 0, padding: '10px 16px', borderTop: i > 0 ? `1px solid ${C.stone}` : 'none', alignItems: 'center' }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: C.ink }}>{s.name}</div>
+                <div>
+                  {editingCodeId === s.id
+                    ? <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                        <input value={editCodeVal} onChange={e => setEditCodeVal(e.target.value.toUpperCase())} autoFocus
+                          style={{ fontFamily: 'monospace', fontSize: 12, padding: '3px 6px', borderRadius: 6, border: `1px solid ${C.neutral}`, outline: 'none', width: 80 }} />
+                        <button onClick={() => saveStudioCode(s.id)} style={{ fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 6, border: 'none', background: C.neutral, color: C.white, cursor: 'pointer' }}>✓</button>
+                        <button onClick={() => setEditingCodeId(null)} style={{ fontSize: 11, padding: '3px 6px', borderRadius: 6, border: `1px solid ${C.stone}`, background: 'transparent', color: C.mist, cursor: 'pointer' }}>✕</button>
+                      </div>
+                    : <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <code style={{ fontSize: 12, color: C.mist, background: C.stone, padding: '2px 6px', borderRadius: 4 }}>{s.studio_code || '—'}</code>
+                        <button onClick={() => { setEditingCodeId(s.id); setEditCodeVal(s.studio_code || ''); }} title="Editar código"
+                          style={{ fontSize: 11, background: 'none', border: 'none', cursor: 'pointer', color: C.mist, padding: '2px 4px' }}>✎</button>
+                      </div>
+                  }
+                </div>
+                <div style={{ fontSize: 13, color: C.mist, textAlign: 'center' }}>{s.memberCount ?? '—'}</div>
+                <div style={{ textAlign: 'center' }}>
+                  <MiniToggle on={!!s.is_public} onToggle={() => toggleStudioPublic(s.id, s.is_public)} onColor={C.crimson} />
+                </div>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button onClick={() => deleteStudio(s)}
+                    style={{ fontFamily: "'Satoshi',sans-serif", fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 6, border: '1px solid #fca5a5', background: '#fef2f2', color: '#b91c1c', cursor: 'pointer' }}>
+                    Apagar
+                  </button>
+                </div>
+              </div>
             ))}
           </div>
-          {studios.length === 0 && <div style={{ padding: '24px 16px', color: C.mist, fontSize: 13 }}>Nenhum studio.</div>}
-          {studios.map((s, i) => (
-            <div key={s.id} style={{ display: 'grid', gridTemplateColumns: '1fr 100px 80px 80px 80px', gap: 0, padding: '10px 16px', borderTop: i > 0 ? `1px solid ${C.stone}` : 'none', alignItems: 'center' }}>
-              <div style={{ fontSize: 13, fontWeight: 600, color: C.ink }}>{s.name}</div>
-              <code style={{ fontSize: 12, color: C.mist, background: C.stone, padding: '2px 6px', borderRadius: 4 }}>{s.studio_code || '—'}</code>
-              <div style={{ fontSize: 13, color: C.mist, textAlign: 'center' }}>{Array.isArray(s.studio_memberships) ? s.studio_memberships[0]?.count ?? s.studio_memberships.length : '—'}</div>
-              <div style={{ textAlign: 'center' }}>
-                <MiniToggle on={!!s.is_public} onToggle={() => toggleStudioPublic(s.id, s.is_public)} onColor={C.crimson} />
-              </div>
-              <div style={{ fontSize: 11, color: s.is_public ? '#16a34a' : C.mist }}>{s.is_public ? 'Público' : 'Privado'}</div>
-            </div>
-          ))}
         </div>
       )}
 
@@ -6823,9 +7134,9 @@ const AdminPage = ({ user }) => {
               {pendingMemberships.map(m => (
                 <div key={m.id} style={{ background: C.white, border: `1px solid ${C.stone}`, borderRadius: 12, padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 14, fontWeight: 600, color: C.ink }}>{m.profiles?.name || m.user_id?.slice(0, 8)}</div>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: C.ink }}>{m.userName}</div>
                     <div style={{ fontSize: 12, color: C.mist, marginTop: 2 }}>
-                      quer entrar em <b style={{ color: C.ink }}>{m.studios?.name || m.studio_id?.slice(0, 8)}</b>
+                      quer entrar em <b style={{ color: C.ink }}>{m.studioName}</b>
                       {m.joined_at && <span> · {new Date(m.joined_at).toLocaleDateString('pt-PT', { day: '2-digit', month: 'short', year: 'numeric' })}</span>}
                     </div>
                   </div>
@@ -6837,6 +7148,714 @@ const AdminPage = ({ user }) => {
               ))}
             </div>
           )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ─── PT CLIENTS ───────────────────────────────────────────────────────────────
+const CLIENT_TYPES = [['pt','PT'],['duo','Duo'],['group','Grupo']];
+
+const ClientsPage = ({ clients, clientSessions, series, onSaveClient, onDeleteClient, onViewClient, onCreateSession, onOpenSession, profile }) => {
+  const [tab, setTab] = useState('sessions');
+  // Sessions tab
+  const [sesSearch, setSesSearch] = useState('');
+  const [typeFilter, setTypeFilter] = useState('all');
+  const [modalityFilter, setModalityFilter] = useState('all');
+  // Clients tab
+  const [clientSearch, setClientSearch] = useState('');
+  const [showNewClient, setShowNewClient] = useState(false);
+  const [newName, setNewName] = useState('');
+  const classTypes = (profile?.settings?.class_types||[]).map(normalizeClassType);
+
+  const createClient = async () => {
+    if (!newName.trim()) return;
+    const c = { id:`cl-${Date.now()}`, name:newName.trim(), contact:'', objectives:'', notes:'', shared_with_studio:false, created_at:new Date().toISOString() };
+    await onSaveClient(c);
+    setNewName(''); setShowNewClient(false);
+    onViewClient(c);
+  };
+
+  const seenGroups = new Set();
+  const allSessions = [...clientSessions]
+    .sort((a,b)=>(b.date||'').localeCompare(a.date||''))
+    .filter(s => {
+      if (s.session_group_id) {
+        if (seenGroups.has(s.session_group_id)) return false;
+        seenGroups.add(s.session_group_id);
+      }
+      return true;
+    });
+  const filteredSessions = allSessions.filter(s => {
+    const cl = clients.find(c=>c.id===s.client_id);
+    const linked = s.session_group_id ? clientSessions.find(s2=>s2.session_group_id===s.session_group_id&&s2.id!==s.id) : null;
+    const cl2 = linked ? clients.find(c=>c.id===linked.client_id) : null;
+    const displayName = cl2 ? `${cl?.name||'?'} & ${cl2.name}` : (cl?.name||'');
+    if (sesSearch && !displayName.toLowerCase().includes(sesSearch.toLowerCase())) return false;
+    if (typeFilter!=='all' && s.type!==typeFilter) return false;
+    if (modalityFilter!=='all' && s.modality!==modalityFilter) return false;
+    return true;
+  });
+  const filteredClients = clients.filter(c => !clientSearch || c.name.toLowerCase().includes(clientSearch.toLowerCase()));
+
+  const tabBtn = (v,l) => (
+    <button key={v} onClick={()=>setTab(v)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:13,fontWeight:tab===v?700:500,padding:"8px 4px",background:"none",border:"none",borderBottom:`2px solid ${tab===v?C.crimson:"transparent"}`,color:tab===v?C.crimson:C.mist,cursor:"pointer",whiteSpace:"nowrap"}}>{l}</button>
+  );
+
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:0}}>
+      {/* Header */}
+      <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",marginBottom:12}}>
+        <h2 style={{fontFamily:"'Clash Display',sans-serif",fontSize:26,fontWeight:500,color:C.crimson,margin:0,flex:1}}>Clientes</h2>
+        {tab==='sessions'&&<Btn onClick={onCreateSession}><Icon name="plus" size={14}/> Nova Sessão</Btn>}
+        {tab==='clients'&&<Btn onClick={()=>setShowNewClient(p=>!p)}><Icon name="plus" size={14}/> Novo Cliente</Btn>}
+      </div>
+
+      {/* Tabs */}
+      <div style={{display:"flex",gap:20,borderBottom:`1px solid ${C.stone}`,marginBottom:16}}>
+        {tabBtn('sessions','Sessões')}{tabBtn('clients','Clientes')}
+      </div>
+
+      {tab==='sessions'&&(
+        <>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:12,alignItems:"center"}}>
+            <input value={sesSearch} onChange={e=>setSesSearch(e.target.value)} placeholder="Pesquisar cliente…"
+              style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,padding:"5px 12px",borderRadius:20,border:`1px solid ${C.stone}`,outline:"none",width:160,color:C.ink}}/>
+            {[['all','Todos'],['pt','PT'],['duo','Duo'],['group','Grupo']].map(([v,l])=>(
+              <button key={v} onClick={()=>setTypeFilter(v)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"3px 10px",borderRadius:20,border:`1px solid ${typeFilter===v?C.neutral:C.stone}`,background:typeFilter===v?`${C.neutral}20`:"transparent",color:typeFilter===v?C.neutral:C.mist,cursor:"pointer"}}>{l}</button>
+            ))}
+            {classTypes.map(t=>{const tn=classTypeName(t);const hex=classTypeColor(t,C.stone);const isA=modalityFilter===tn;return(<button key={tn} onClick={()=>setModalityFilter(isA?'all':tn)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"3px 10px",borderRadius:20,border:`1px solid ${isA?hex:C.stone}`,background:isA?`${hex}25`:"transparent",color:isA?hex:C.mist,cursor:"pointer"}}>{tn}</button>);})}
+          </div>
+          {filteredSessions.length===0&&<div style={{textAlign:"center",padding:40,color:C.mist,fontSize:14}}>Sem sessões{sesSearch||typeFilter!=='all'?' encontradas':' ainda.'}.</div>}
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            {filteredSessions.map(s=>{
+              const cl = clients.find(c=>c.id===s.client_id);
+              const linked = s.session_group_id ? clientSessions.find(s2=>s2.session_group_id===s.session_group_id&&s2.id!==s.id) : null;
+              const cl2 = linked ? clients.find(c=>c.id===linked.client_id) : null;
+              const displayName = cl2 ? `${cl?.name||'?'} & ${cl2.name}` : (cl?.name||'—');
+              const seriesNames = (s.series_ids||[]).slice(0,3).map(id=>series.find(x=>x.id===id)?.name).filter(Boolean);
+              return (
+                <div key={s.id} style={{background:C.white,borderRadius:12,border:`1px solid ${C.stone}`,padding:"12px 16px",display:"flex",alignItems:"center",gap:12}}>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:2}}>
+                      <span style={{fontFamily:"'Clash Display',sans-serif",fontSize:14,fontWeight:500,color:C.ink}}>{displayName}</span>
+                      <span style={{fontSize:10,fontWeight:700,padding:"1px 6px",borderRadius:20,background:`${C.crimson}15`,color:C.crimson}}>{CLIENT_TYPES.find(([v])=>v===s.type)?.[1]||s.type||'PT'}</span>
+                      {s.modality&&<span style={{fontSize:10,fontWeight:600,color:C.neutral}}>{s.modality}</span>}
+                    </div>
+                    <div style={{fontSize:11,color:C.mist}}>{s.date||'—'}{seriesNames.length>0&&' · '+seriesNames.join(', ')+(s.series_ids?.length>3?'…':'')}</div>
+                  </div>
+                  <button onClick={()=>onOpenSession(s,cl)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"4px 10px",borderRadius:8,border:`1px solid ${C.neutral}`,background:"transparent",color:C.neutral,cursor:"pointer",flexShrink:0}}>Abrir →</button>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+
+      {tab==='clients'&&(
+        <>
+          {showNewClient&&(
+            <div style={{background:C.white,borderRadius:12,border:`1px solid ${C.stone}`,padding:16,display:"flex",flexDirection:"column",gap:10,marginBottom:12}}>
+              <div style={{fontSize:13,fontWeight:700,color:C.ink,fontFamily:"'Clash Display',sans-serif"}}>Novo cliente</div>
+              <input value={newName} onChange={e=>setNewName(e.target.value)} placeholder="Nome do cliente" onKeyDown={e=>e.key==='Enter'&&createClient()}
+                autoFocus style={{fontFamily:"'Satoshi',sans-serif",fontSize:13,padding:"8px 12px",borderRadius:8,border:`1px solid ${C.stone}`,outline:"none",color:C.ink}}/>
+              <div style={{display:"flex",gap:8}}>
+                <Btn small onClick={createClient} disabled={!newName.trim()}>Criar</Btn>
+                <Btn small variant="ghost" onClick={()=>{setShowNewClient(false);setNewName('');}}>Cancelar</Btn>
+              </div>
+            </div>
+          )}
+          <input value={clientSearch} onChange={e=>setClientSearch(e.target.value)} placeholder="Pesquisar cliente…"
+            style={{fontFamily:"'Satoshi',sans-serif",fontSize:13,padding:"6px 14px",borderRadius:20,border:`1px solid ${C.stone}`,outline:"none",width:"100%",boxSizing:"border-box",marginBottom:12,color:C.ink}}/>
+          {filteredClients.length===0&&<div style={{textAlign:"center",padding:40,color:C.mist,fontSize:14}}>Sem clientes{clientSearch?' encontrados':' ainda.'}.</div>}
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            {filteredClients.map(c=>{
+              const sessions = clientSessions.filter(s=>s.client_id===c.id).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+              const last = sessions[0];
+              return (
+                <div key={c.id} onClick={()=>onViewClient(c)} style={{background:C.white,borderRadius:12,border:`1px solid ${C.stone}`,padding:"12px 16px",cursor:"pointer",display:"flex",alignItems:"center",gap:12}}
+                  onMouseEnter={e=>e.currentTarget.style.borderColor=C.neutral}
+                  onMouseLeave={e=>e.currentTarget.style.borderColor=C.stone}>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontFamily:"'Clash Display',sans-serif",fontSize:15,fontWeight:500,color:C.ink}}>{c.name}</div>
+                    {c.objectives&&<div style={{fontSize:12,color:C.mist,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.objectives}</div>}
+                    {last&&<div style={{fontSize:11,color:C.stone,marginTop:2}}>Última sessão: {last.date||'—'}</div>}
+                  </div>
+                  <span style={{fontSize:12,color:C.mist}}>›</span>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
+
+const ClientProfileView = ({ clientId, clients, clientSessions, series, onSaveClient, onSaveClientSession, onDeleteClientSession, onDeleteClient, onBack, onOpenSession, user, clientShares=[], onSaveShare, onDeleteShare }) => {
+  const client = clients.find(c=>c.id===clientId);
+  const [name, setName] = useState(client?.name||'');
+  const [contact, setContact] = useState(client?.contact||'');
+  const [objectives, setObjectives] = useState(client?.objectives||'');
+  const [notes, setNotes] = useState(client?.notes||'');
+  const [isDirty, setIsDirty] = useState(false);
+  const [expandedSesId, setExpandedSesId] = useState(null);
+  const confirm_ = useConfirm();
+  // Sharing state
+  const [showShare, setShowShare] = useState(false);
+  const [shareSearch, setShareSearch] = useState('');
+  const [shareResults, setShareResults] = useState([]);
+  const [sharePermission, setSharePermission] = useState('view');
+  const myShares = clientShares.filter(sh=>sh.client_id===clientId);
+
+  const searchInstructors = async q => {
+    if (!q || q.length < 2) { setShareResults([]); return; }
+    const { data } = await supabase.from('profiles').select('id,name').eq('is_public', true).neq('id', user?.id||'').ilike('name', `%${q}%`).limit(8);
+    setShareResults(data||[]);
+  };
+
+  const sessions = clientSessions.filter(s=>s.client_id===clientId).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+
+  if (!client) return <div style={{color:C.mist,padding:40,textAlign:"center"}}>Cliente não encontrado.</div>;
+
+  const up = (k, v) => { if(k==='name') setName(v); else if(k==='contact') setContact(v); else if(k==='objectives') setObjectives(v); else if(k==='notes') setNotes(v); setIsDirty(true); };
+
+  const doSave = async () => {
+    await onSaveClient({...client, name, contact, objectives, notes});
+    setIsDirty(false);
+  };
+
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:16}}>
+      {/* Header */}
+      <div style={{display:"flex",alignItems:"center",gap:12}}>
+        <Btn variant="ghost" small onClick={onBack}><Icon name="back" size={13}/></Btn>
+        <input value={name} onChange={e=>up('name',e.target.value)} style={{flex:1,fontFamily:"'Clash Display',sans-serif",fontSize:22,fontWeight:500,color:C.crimson,border:"none",background:"transparent",outline:"none",padding:0}}/>
+        {isDirty&&<Btn small onClick={doSave}><Icon name="save" size={13}/> Guardar</Btn>}
+      </div>
+
+      {/* Info card */}
+      <div style={{background:C.white,borderRadius:12,border:`1px solid ${C.stone}`,padding:16,display:"flex",flexDirection:"column",gap:12}}>
+        <Field label="Contacto" val={contact} onChange={v=>up('contact',v)} placeholder="Email ou telefone"/>
+        <Field label="Objetivos e necessidades" val={objectives} onChange={v=>up('objectives',v)} multiline placeholder="O que o cliente quer trabalhar, lesões, restrições…"/>
+        <Field label="Notas" val={notes} onChange={v=>up('notes',v)} multiline placeholder="Evolução, observações pessoais…"/>
+      </div>
+
+      {/* Sessions */}
+      <div>
+        <div style={{fontSize:12,fontWeight:700,color:C.neutral,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:10}}>Sessões ({sessions.length})</div>
+        {sessions.length===0&&<div style={{color:C.mist,fontSize:13,padding:"8px 0"}}>Sem sessões ainda. Cria uma na tab Sessões.</div>}
+        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+          {sessions.map(s=>{
+            const sesSeriesNames = (s.series_ids||[]).map(id=>series.find(x=>x.id===id)?.name).filter(Boolean);
+            const isExpanded = expandedSesId===s.id;
+            const isDuo = s.type==='duo';
+            const linked = isDuo ? clientSessions.find(s2=>s2.session_group_id===s.session_group_id&&s2.id!==s.id) : null;
+            const linkedClient = linked ? clients.find(c=>c.id===linked.client_id) : null;
+            return (
+              <div key={s.id} style={{background:C.white,borderRadius:10,border:`1px solid ${C.stone}`,overflow:"hidden"}}>
+                <div style={{padding:"10px 14px",display:"flex",alignItems:"center",gap:8}}>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontWeight:600,fontSize:13,color:C.ink}}>{s.date||'—'}{linkedClient&&<span style={{color:C.mist,fontWeight:400}}> · {linkedClient.name}</span>}</div>
+                    {sesSeriesNames.length>0&&<div style={{fontSize:11,color:C.mist,marginTop:1}}>{sesSeriesNames.slice(0,4).join(' · ')}{sesSeriesNames.length>4&&'…'}</div>}
+                  </div>
+                  <span style={{fontSize:10,fontWeight:700,padding:"1px 6px",borderRadius:20,background:`${C.crimson}15`,color:C.crimson,flexShrink:0}}>{CLIENT_TYPES.find(([v])=>v===s.type)?.[1]||s.type}</span>
+                  {s.modality&&<span style={{fontSize:10,fontWeight:600,color:C.neutral,flexShrink:0}}>{s.modality}</span>}
+                  {s.completed&&<span style={{fontSize:10,fontWeight:700,color:"#16a34a",flexShrink:0}}>✓</span>}
+                  <button onClick={()=>setExpandedSesId(isExpanded?null:s.id)} style={{background:"none",border:"none",cursor:"pointer",color:isExpanded?C.neutral:C.mist,padding:"2px 4px",fontSize:11,fontWeight:600,flexShrink:0}}>Notas {isExpanded?'▴':'▸'}</button>
+                  {onOpenSession&&<button onClick={()=>onOpenSession(s,client)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"3px 9px",borderRadius:8,border:`1px solid ${C.neutral}`,background:"transparent",color:C.neutral,cursor:"pointer",flexShrink:0}}>Abrir →</button>}
+                  <button onClick={async()=>{ if(await confirm_('Apagar esta sessão?',{confirmLabel:'Apagar'})) await onDeleteClientSession(s.id); }} style={{background:"none",border:"none",cursor:"pointer",color:C.mist,padding:"2px 4px",fontSize:12,flexShrink:0}}>×</button>
+                </div>
+                {isExpanded&&(
+                  <div style={{borderTop:`1px solid ${C.stone}`,padding:"10px 14px",background:`${C.stone}40`}}>
+                    <textarea defaultValue={s.session_notes||''} onBlur={e=>onSaveClientSession({...s,session_notes:e.target.value})}
+                      placeholder="Notas da sessão…" rows={3}
+                      style={{width:"100%",fontFamily:"'Satoshi',sans-serif",fontSize:12,padding:"8px 10px",borderRadius:8,border:`1px solid ${C.stone}`,outline:"none",resize:"vertical",boxSizing:"border-box",background:C.white}}/>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Partilha */}
+      <div style={{paddingTop:8,borderTop:`1px solid ${C.stone}`}}>
+        <button onClick={()=>setShowShare(p=>!p)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,color:C.neutral,background:"none",border:"none",cursor:"pointer",padding:0}}>
+          Partilha {showShare?'▴':'▸'}
+        </button>
+        {showShare&&(
+          <div style={{marginTop:10,display:"flex",flexDirection:"column",gap:12}}>
+            {/* Studio visibility */}
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <MiniToggle on={!!client.shared_with_studio} onToggle={()=>onSaveClient({...client,shared_with_studio:!client.shared_with_studio})}/>
+              <span style={{fontSize:12,color:C.ink}}>Visível no Studio</span>
+              <span style={{fontSize:11,color:C.mist}}>(membros do studio podem ver este cliente)</span>
+            </div>
+            {/* Share with instructor */}
+            <div>
+              <div style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Partilhar com instrutor</div>
+              <div style={{display:"flex",gap:6,marginBottom:6,flexWrap:"wrap",alignItems:"center"}}>
+                {['view','edit'].map(p=>(
+                  <button key={p} onClick={()=>setSharePermission(p)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"3px 10px",borderRadius:20,border:`1px solid ${sharePermission===p?C.neutral:C.stone}`,background:sharePermission===p?`${C.neutral}20`:"transparent",color:sharePermission===p?C.neutral:C.mist,cursor:"pointer"}}>{p==='view'?'Ver':'Gerir'}</button>
+                ))}
+              </div>
+              <div style={{position:"relative"}}>
+                <input value={shareSearch} onChange={e=>{setShareSearch(e.target.value);searchInstructors(e.target.value);}} placeholder="Pesquisar instrutor…"
+                  style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,padding:"6px 10px",borderRadius:8,border:`1px solid ${C.stone}`,outline:"none",width:"100%",boxSizing:"border-box"}}/>
+                {shareResults.length>0&&(
+                  <div style={{position:"absolute",top:"100%",left:0,right:0,background:C.white,border:`1px solid ${C.stone}`,borderRadius:8,boxShadow:"0 4px 12px rgba(0,0,0,0.08)",zIndex:10}}>
+                    {shareResults.map(r=>(
+                      <div key={r.id} onClick={async()=>{
+                        await onSaveShare({client_id:clientId,from_user_id:user.id,to_user_id:r.id,permission:sharePermission});
+                        setShareSearch(''); setShareResults([]);
+                      }} style={{padding:"8px 12px",cursor:"pointer",fontSize:12,color:C.ink,borderBottom:`1px solid ${C.stone}`}}
+                        onMouseEnter={e=>e.currentTarget.style.background=`${C.stone}60`} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                        {r.name}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {myShares.length>0&&(
+                <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:4}}>
+                  {myShares.map(sh=>(
+                    <div key={sh.id} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 0",borderBottom:`1px solid ${C.stone}`}}>
+                      <span style={{flex:1,fontSize:12,color:C.ink}}>{sh.profiles?.name||sh.to_user_id}</span>
+                      <span style={{fontSize:10,fontWeight:700,color:C.mist,textTransform:"uppercase"}}>{sh.permission==='edit'?'Gerir':'Ver'}</span>
+                      <button onClick={()=>onDeleteShare(sh.id)} style={{background:"none",border:"none",cursor:"pointer",color:C.mist,fontSize:13,padding:0}}>×</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Danger zone */}
+      <div style={{paddingTop:8,borderTop:`1px solid ${C.stone}`}}>
+        <button onClick={async()=>{
+          if(await confirm_(`Apagar "${client.name}" e todas as suas sessões?`,{confirmLabel:'Apagar cliente',cancelLabel:'Cancelar'})) {
+            await onDeleteClient(clientId); onBack();
+          }
+        }} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,color:C.mist,background:"none",border:"none",cursor:"pointer",padding:0,textDecoration:"underline"}}>Apagar cliente</button>
+      </div>
+    </div>
+  );
+};
+
+// ─── DUO SESSION VIEW ─────────────────────────────────────────────────────────
+const DuoSessionView = ({ sessionId, clientId, clients, clientSessions, series, onBack, onSaveClientSession, onDeleteClientSession, profileClassTypes=null, aiStyle='' }) => {
+  const session = clientSessions.find(s=>s.id===sessionId);
+  const linkedSession = session?.session_group_id
+    ? clientSessions.find(s=>s.session_group_id===session.session_group_id&&s.id!==session.id)
+    : null;
+  const client1 = clients.find(c=>c.id===(session?.client_id||clientId));
+  const client2 = linkedSession ? clients.find(c=>c.id===linkedSession.client_id) : null;
+
+  const [teachingMode, setTeachingMode] = useState(false);
+  const [p1Notes, setP1Notes] = useState(()=>session?.series_notes||{});
+  const [p2Notes, setP2Notes] = useState(()=>linkedSession?.series_notes||{});
+  const [p1SesNotes, setP1SesNotes] = useState(()=>session?.session_notes||'');
+  const [p2SesNotes, setP2SesNotes] = useState(()=>linkedSession?.session_notes||'');
+  const [showEdit, setShowEdit] = useState(false);
+  const [editDate, setEditDate] = useState(()=>session?.date||'');
+  const [editModality, setEditModality] = useState(()=>session?.modality||'');
+  const [p1Ai, setP1Ai] = useState(''); const [p2Ai, setP2Ai] = useState('');
+  const [p1AiLoading, setP1AiLoading] = useState(false); const [p2AiLoading, setP2AiLoading] = useState(false);
+  const toast_ = useToast();
+  const confirm_ = useConfirm();
+
+  if (!session) return <div style={{color:C.mist,padding:40,textAlign:"center"}}>Sessão não encontrada.</div>;
+
+  const p1SeriesList = (session.series_ids||[]).map(id=>series.find(s=>s.id===id)).filter(Boolean);
+  const p2SeriesList = (linkedSession?.series_ids||[]).map(id=>series.find(s=>s.id===id)).filter(Boolean);
+
+  const saveP1Note = async (id,text) => {
+    const upd={...p1Notes,[id]:text}; setP1Notes(upd);
+    await onSaveClientSession({...session,series_notes:upd});
+  };
+  const saveP2Note = async (id,text) => {
+    const upd={...p2Notes,[id]:text}; setP2Notes(upd);
+    if(linkedSession) await onSaveClientSession({...linkedSession,series_notes:upd});
+  };
+
+  const doDelete = async () => {
+    if(!(await confirm_('Apagar esta sessão duo?',{confirmLabel:'Apagar',danger:true}))) return;
+    if(onDeleteClientSession){
+      await onDeleteClientSession(session.id);
+      if(linkedSession) await onDeleteClientSession(linkedSession.id);
+    }
+    onBack();
+  };
+
+  const doDuplicate = async () => {
+    const gid=crypto.randomUUID(); const now=Date.now();
+    await onSaveClientSession({...session,id:`cs-${now}`,session_group_id:gid,series_notes:{}});
+    if(linkedSession) await onSaveClientSession({...linkedSession,id:`cs-${now+1}`,session_group_id:gid,series_notes:{}});
+    toast_('Sessão duplicada!');
+  };
+
+  const doSaveEdit = async () => {
+    await onSaveClientSession({...session,date:editDate,modality:editModality});
+    if(linkedSession) await onSaveClientSession({...linkedSession,date:editDate,modality:editModality});
+    setShowEdit(false); toast_('Sessão atualizada!');
+  };
+
+  const analyzeSession = async (cl, serList, clientNotes, setAi, setLoading) => {
+    if(!cl||serList.length===0) return;
+    setLoading(true); setAi('');
+    try {
+      const seriesInfo = serList.map(s=>{
+        const d=s.type==='barre'?s.barre:s.reformer;
+        const setup=[d?.springs&&`springs: ${d.springs}`,d?.props&&`props: ${d.props}`,d?.startPosition&&`posição: ${d.startPosition}`].filter(Boolean).join(', ');
+        const movs=(d?.movements||[]).map(m=>m.movement).filter(Boolean).join(', ');
+        return `${s.name}${setup?` (${setup})`:''}${movs?` — ${movs}`:''}`;
+      }).join('\n');
+      const system = [aiStyle,'Analisa a sessão de Pilates descrita e sugere observações de coaching e progressão para o cliente.'].filter(Boolean).join('\n\n');
+      const userMsg = `Cliente: ${cl.name}\nObjetivos: ${cl.objectives||'—'}\nNotas do cliente: ${cl.notes||'—'}\n\nSéries da sessão:\n${seriesInfo}`;
+      const r = await fetch('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({system,messages:[{role:'user',content:userMsg}],max_tokens:600})});
+      const data = await r.json();
+      setAi(data?.content?.[0]?.text||'Sem resposta.');
+    } catch(e){ setAi('Erro na análise.'); }
+    setLoading(false);
+  };
+
+  const noteTA={width:"100%",fontFamily:"'Satoshi',sans-serif",fontSize:12,padding:"5px 8px",borderRadius:6,border:`1px solid ${C.stone}`,outline:"none",resize:"vertical",background:`${C.stone}20`,boxSizing:"border-box"};
+  const inp={fontFamily:"'Satoshi',sans-serif",fontSize:13,padding:"6px 10px",borderRadius:8,border:`1px solid ${C.stone}`,outline:"none",background:C.white,color:C.ink};
+
+  const renderCol = (client, serList, perSerNotes, saveNote, sesNotes, setSesNotes, saveSesNotes, aiText, aiLoading, onAnalyze) => (
+    <div style={{flex:1,display:"flex",flexDirection:"column",gap:0,minWidth:0}}>
+      <div style={{fontSize:14,fontWeight:700,fontFamily:"'Clash Display',sans-serif",color:C.crimson,paddingBottom:10,borderBottom:`2px solid ${C.crimson}30`,marginBottom:12}}>
+        {client?.name||'—'}
+      </div>
+      {!teachingMode&&(
+        <div style={{marginBottom:16}}>
+          <div style={{fontSize:10,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4}}>Notas da sessão</div>
+          <textarea rows={3} style={noteTA} value={sesNotes} onChange={e=>setSesNotes(e.target.value)}
+            onBlur={e=>saveSesNotes(e.target.value)} placeholder="Notas gerais desta sessão para este cliente…"/>
+        </div>
+      )}
+      {serList.length===0&&<div style={{color:C.mist,fontSize:13,padding:"8px 0"}}>Sem séries.</div>}
+      {serList.map(ser=>(
+        <div key={ser.id} style={{marginBottom:16}}>
+          <SeriesCard series={ser} onEdit={null} onDelete={null} profileClassTypes={profileClassTypes} aiStyle={null} forceExpanded={teachingMode}/>
+          {!teachingMode&&(
+            <textarea rows={2} style={{...noteTA,marginTop:4}}
+              defaultValue={perSerNotes[ser.id]||''}
+              onBlur={e=>saveNote(ser.id,e.target.value)}
+              placeholder="Notas de coaching para esta série…"/>
+          )}
+        </div>
+      ))}
+      {!teachingMode&&serList.length>0&&(
+        <div style={{marginTop:4}}>
+          <button onClick={onAnalyze} disabled={aiLoading} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"5px 12px",borderRadius:8,border:`1px solid ${C.neutral}`,background:"transparent",color:C.neutral,cursor:aiLoading?"wait":"pointer"}}>
+            {aiLoading?'A analisar…':'✦ Analisar sessão com AI'}
+          </button>
+          {aiText&&(
+            <div style={{marginTop:8,padding:"10px 12px",background:`${C.neutral}10`,borderRadius:8,border:`1px solid ${C.neutral}30`,fontSize:12,color:C.ink,whiteSpace:"pre-wrap",lineHeight:1.6}}>
+              {aiText}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:16}}>
+      {/* Header */}
+      <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+        <Btn variant="ghost" small onClick={onBack}><Icon name="back" size={13}/></Btn>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontFamily:"'Clash Display',sans-serif",fontSize:20,fontWeight:500,color:C.crimson}}>Sessão Duo</div>
+          <div style={{fontSize:12,color:C.mist}}>{client1?.name||'P1'} & {client2?.name||'P2'}{session.date&&` · ${session.date}`}{session.modality&&` · ${session.modality}`}</div>
+        </div>
+        <div style={{display:"flex",gap:6,flexShrink:0}}>
+          <button onClick={()=>setShowEdit(p=>!p)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"5px 10px",borderRadius:8,border:`1px solid ${C.stone}`,background:"transparent",color:C.ink,cursor:"pointer"}}>Editar</button>
+          <button onClick={doDuplicate} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"5px 10px",borderRadius:8,border:`1px solid ${C.stone}`,background:"transparent",color:C.ink,cursor:"pointer"}}>Duplicar</button>
+          <button onClick={doDelete} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"5px 10px",borderRadius:8,border:`1px solid ${C.stone}`,background:"transparent",color:C.mist,cursor:"pointer"}}>Apagar</button>
+          <button onClick={()=>setTeachingMode(p=>!p)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"7px 16px",borderRadius:8,border:`1px solid ${teachingMode?C.crimson:C.stone}`,background:teachingMode?C.crimson:"transparent",color:teachingMode?C.cream:C.ink,cursor:"pointer"}}>
+            {teachingMode?'✓ Modo Aula':'Modo Aula'}
+          </button>
+        </div>
+      </div>
+
+      {/* Inline edit panel */}
+      {showEdit&&(
+        <div style={{background:C.white,borderRadius:10,border:`1px solid ${C.stone}`,padding:14,display:"flex",gap:12,flexWrap:"wrap",alignItems:"flex-end"}}>
+          <div>
+            <div style={{fontSize:10,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4}}>Data</div>
+            <input type="date" value={editDate} onChange={e=>setEditDate(e.target.value)} style={{...inp,width:150}}/>
+          </div>
+          <div>
+            <div style={{fontSize:10,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4}}>Modalidade</div>
+            <input value={editModality} onChange={e=>setEditModality(e.target.value)} placeholder="—" style={{...inp,width:140}}/>
+          </div>
+          <Btn small onClick={doSaveEdit}>Guardar</Btn>
+          <Btn small variant="ghost" onClick={()=>setShowEdit(false)}>Cancelar</Btn>
+        </div>
+      )}
+
+      {/* Two-column content */}
+      <div style={{display:"flex",gap:20,alignItems:"flex-start"}}>
+        {renderCol(client1, p1SeriesList, p1Notes, saveP1Note, p1SesNotes, setP1SesNotes,
+          v=>onSaveClientSession({...session,session_notes:v}), p1Ai, p1AiLoading,
+          ()=>analyzeSession(client1,p1SeriesList,client1,setP1Ai,setP1AiLoading))}
+        <div style={{width:1,background:C.stone,alignSelf:"stretch",flexShrink:0}}/>
+        {renderCol(client2, p2SeriesList, p2Notes, saveP2Note, p2SesNotes, setP2SesNotes,
+          v=>linkedSession&&onSaveClientSession({...linkedSession,session_notes:v}), p2Ai, p2AiLoading,
+          ()=>analyzeSession(client2,p2SeriesList,client2,setP2Ai,setP2AiLoading))}
+      </div>
+    </div>
+  );
+};
+
+// ─── CREATE SESSION VIEW ───────────────────────────────────────────────────────
+const CreateSessionView = ({ clients, clientSessions, series, onSaveClientSession, onBack, profile, user }) => {
+  const [sesType, setSesType] = useState('pt');
+  const [p1Search, setP1Search] = useState('');
+  const [p2Search, setP2Search] = useState('');
+  const [p1Client, setP1Client] = useState(null);
+  const [p2Client, setP2Client] = useState(null);
+  const [selectedSeries, setSelectedSeries] = useState([]);
+  const [p1Series, setP1Series] = useState([]);
+  const [p2Series, setP2Series] = useState([]);
+  const [libSearch, setLibSearch] = useState('');
+  const [libTypeFilter, setLibTypeFilter] = useState('all');
+  const [sesDate, setSesDate] = useState(new Date().toISOString().slice(0,10));
+  const [sesModality, setSesModality] = useState('');
+  const [sesNotes, setSesNotes] = useState('');
+  const toast_ = useToast();
+  const flowDragRef = React.useRef(null);
+  const classTypes = (profile?.settings?.class_types||[]).map(normalizeClassType);
+  const isDuo = sesType==='duo';
+
+  const handleTypeChange = t => {
+    setSesType(t); setP1Client(null); setP2Client(null);
+    setP1Search(''); setP2Search('');
+    setSelectedSeries([]); setP1Series([]); setP2Series([]);
+  };
+
+  const filteredLib = series.filter(s=>{
+    if(libSearch&&!s.name.toLowerCase().includes(libSearch.toLowerCase())) return false;
+    if(libTypeFilter!=='all'&&s.type!==libTypeFilter) return false;
+    return true;
+  });
+  const libZoneMap = {};
+  filteredLib.forEach(s=>{
+    const z=s.primaryZone||(s.targetZone||'').split(',')[0].trim()||'';
+    if(z){if(!libZoneMap[z])libZoneMap[z]=[];libZoneMap[z].push(s);}
+  });
+  const sortedLibZones = Object.keys(libZoneMap).sort((a,b)=>a.localeCompare(b,'pt'));
+  const libNoZone = filteredLib.filter(s=>!s.primaryZone&&!(s.targetZone||'').trim());
+  const libTypes = [...new Set(series.map(s=>s.type).filter(Boolean))];
+
+  const p1Results = p1Search ? clients.filter(c=>c.name.toLowerCase().includes(p1Search.toLowerCase())).slice(0,6) : [];
+  const p2Results = p2Search ? clients.filter(c=>c.name.toLowerCase().includes(p2Search.toLowerCase())&&c.id!==p1Client?.id).slice(0,6) : [];
+
+  const addSer = (ser,zone) => {
+    const setter = isDuo?({p1:setP1Series,p2:setP2Series}[zone]||setSelectedSeries):setSelectedSeries;
+    setter(p=>p.find(x=>x.id===ser.id)?p:[...p,ser]);
+  };
+
+  const hasClients = isDuo?(!!p1Client&&!!p2Client):!!p1Client;
+
+  const doSave = async () => {
+    if(!hasClients) return;
+    try {
+      if(isDuo){
+        const gid=crypto.randomUUID(); const now=Date.now();
+        await onSaveClientSession({id:`cs-${now}`,client_id:p1Client.id,instructor_id:user.id,type:'duo',date:sesDate||null,modality:sesModality||null,session_group_id:gid,series_ids:p1Series.map(s=>s.id),session_notes:sesNotes||null,completed:false});
+        await onSaveClientSession({id:`cs-${now+1}`,client_id:p2Client.id,instructor_id:user.id,type:'duo',date:sesDate||null,modality:sesModality||null,session_group_id:gid,series_ids:p2Series.map(s=>s.id),session_notes:sesNotes||null,completed:false});
+      } else {
+        await onSaveClientSession({id:`cs-${Date.now()}`,client_id:p1Client.id,instructor_id:user.id,type:sesType,date:sesDate||null,modality:sesModality||null,series_ids:selectedSeries.map(s=>s.id),session_notes:sesNotes||null,completed:false});
+      }
+      toast_('Sessão guardada!');
+      onBack();
+    } catch(e){ toast_('Erro ao guardar sessão.','error'); }
+  };
+
+  const inp={fontFamily:"'Satoshi',sans-serif",fontSize:13,padding:"7px 10px",borderRadius:8,border:`1px solid ${C.stone}`,outline:"none",background:C.white,color:C.ink,width:"100%",boxSizing:"border-box"};
+  const lbl={fontSize:11,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4,display:"block"};
+
+  const renderClientSearch = (search,setSearch,results,selected,setSelected,label) => (
+    <div style={{flex:1,minWidth:180}}>
+      <span style={lbl}>{label}</span>
+      {selected?(
+        <div style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",background:`${C.crimson}10`,borderRadius:8,border:`1px solid ${C.crimson}30`}}>
+          <div style={{flex:1}}>
+            <div style={{fontWeight:600,fontSize:13,color:C.crimson}}>{selected.name}</div>
+            {selected.objectives&&<div style={{fontSize:11,color:C.mist,marginTop:1}}>{selected.objectives.slice(0,60)}{selected.objectives.length>60?'…':''}</div>}
+          </div>
+          <button onClick={()=>{setSelected(null);setSearch('');}} style={{background:"none",border:"none",cursor:"pointer",color:C.mist,fontSize:16,padding:"0 2px"}}>×</button>
+        </div>
+      ):(
+        <div style={{position:"relative"}}>
+          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Pesquisar cliente…" style={inp}/>
+          {results.length>0&&(
+            <div style={{position:"absolute",top:"100%",left:0,right:0,background:C.white,border:`1px solid ${C.stone}`,borderRadius:8,boxShadow:"0 4px 12px rgba(0,0,0,.08)",zIndex:20,maxHeight:200,overflowY:"auto"}}>
+              {results.map(c=>(
+                <div key={c.id} onClick={()=>{setSelected(c);setSearch('');}} style={{padding:"8px 12px",cursor:"pointer",fontSize:13,color:C.ink,borderBottom:`1px solid ${C.stone}`}} onMouseEnter={e=>e.currentTarget.style.background=`${C.stone}50`} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                  <div style={{fontWeight:600}}>{c.name}</div>
+                  {c.objectives&&<div style={{fontSize:11,color:C.mist}}>{c.objectives.slice(0,50)}</div>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+
+  const renderLibCard = ser => (
+    <div key={ser.id} style={{display:"flex",alignItems:"center",gap:3,padding:"4px 0",borderBottom:`1px solid ${C.stone}20`}}>
+      <span style={{flex:1,fontSize:12,color:C.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ser.name}</span>
+      {isDuo?(
+        <>
+          <button onClick={()=>addSer(ser,'p1')} style={{fontFamily:"'Satoshi',sans-serif",fontSize:10,fontWeight:600,padding:"2px 5px",borderRadius:4,border:`1px solid ${C.stone}`,background:C.cream,color:C.neutral,cursor:"pointer",whiteSpace:"nowrap"}}>+P1</button>
+          <button onClick={()=>addSer(ser,'p2')} style={{fontFamily:"'Satoshi',sans-serif",fontSize:10,fontWeight:600,padding:"2px 5px",borderRadius:4,border:`1px solid ${C.stone}`,background:C.cream,color:C.neutral,cursor:"pointer",whiteSpace:"nowrap"}}>+P2</button>
+        </>
+      ):(
+        <button onClick={()=>addSer(ser,'selected')} style={{background:"none",border:"none",cursor:"pointer",color:C.neutral,padding:"2px 4px",fontSize:18,lineHeight:1}}>+</button>
+      )}
+    </div>
+  );
+
+  const libPanel = (
+    <div style={{width:isDuo?210:undefined,flex:isDuo?'0 0 210px':1,display:"flex",flexDirection:"column",gap:8,borderLeft:isDuo?`1px solid ${C.stone}`:undefined,paddingLeft:isDuo?12:undefined}}>
+      <span style={{fontSize:11,fontWeight:700,color:C.ink,textTransform:"uppercase",letterSpacing:"0.08em"}}>Biblioteca</span>
+      <input value={libSearch} onChange={e=>setLibSearch(e.target.value)} placeholder="Pesquisar série…" style={{...inp,fontSize:12}}/>
+      <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+        {[['all','Todas'],...libTypes.map(t=>[t,t])].map(([v,l])=>(
+          <button key={v} onClick={()=>setLibTypeFilter(v)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"2px 8px",borderRadius:20,border:`1px solid ${libTypeFilter===v?C.neutral:C.stone}`,background:libTypeFilter===v?C.neutral:"transparent",color:libTypeFilter===v?C.white:C.mist,cursor:"pointer"}}>{l}</button>
+        ))}
+      </div>
+      <div style={{maxHeight:360,overflowY:"auto"}}>
+        {filteredLib.length===0&&<div style={{color:C.mist,fontSize:12}}>Nenhuma série.</div>}
+        {sortedLibZones.map(z=>(
+          <div key={z}>
+            <div style={{fontSize:10,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em",padding:"5px 0 3px",borderBottom:`1px solid ${C.stone}`,marginBottom:3}}>{z}</div>
+            {libZoneMap[z].map(renderLibCard)}
+          </div>
+        ))}
+        {libNoZone.map(renderLibCard)}
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:20,paddingBottom:40}}>
+      <div style={{display:"flex",alignItems:"center",gap:12}}>
+        <Btn variant="ghost" small onClick={onBack}><Icon name="back" size={13}/></Btn>
+        <div style={{fontFamily:"'Clash Display',sans-serif",fontSize:22,fontWeight:500,color:C.crimson,flex:1}}>Nova Sessão</div>
+      </div>
+
+      {/* Type */}
+      <div style={{background:C.white,borderRadius:12,border:`1px solid ${C.stone}`,padding:16}}>
+        <span style={lbl}>Tipo de sessão</span>
+        <div style={{display:"flex",gap:8,marginTop:8}}>
+          {[['pt','PT'],['duo','Duo'],['group','Grupo']].map(([v,l])=>(
+            <button key={v} onClick={()=>handleTypeChange(v)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:13,fontWeight:700,padding:"8px 20px",borderRadius:8,border:`1px solid ${sesType===v?C.crimson:C.stone}`,background:sesType===v?C.crimson:"transparent",color:sesType===v?C.cream:C.ink,cursor:"pointer"}}>{l}</button>
+          ))}
+        </div>
+      </div>
+
+      {/* Clients */}
+      <div style={{background:C.white,borderRadius:12,border:`1px solid ${C.stone}`,padding:16}}>
+        <span style={lbl}>Cliente{isDuo?'s':''}</span>
+        <div style={{display:"flex",gap:12,marginTop:8,flexWrap:"wrap"}}>
+          {renderClientSearch(p1Search,setP1Search,p1Results,p1Client,setP1Client,isDuo?'Pessoa 1':'Cliente')}
+          {isDuo&&renderClientSearch(p2Search,setP2Search,p2Results,p2Client,setP2Client,'Pessoa 2')}
+        </div>
+      </div>
+
+      {/* Series */}
+      {hasClients&&(
+        <div style={{background:C.white,borderRadius:12,border:`1px solid ${C.stone}`,padding:16}}>
+          <span style={{...lbl,marginBottom:12}}>Séries</span>
+          {isDuo?(
+            <div style={{display:"flex",gap:0}}>
+              <div style={{flex:1,display:"flex",gap:8,minWidth:0}}>
+                {[{label:`P1 · ${p1Client?.name||''}`,list:p1Series,setList:setP1Series},{label:`P2 · ${p2Client?.name||''}`,list:p2Series,setList:setP2Series}].map(({label,list,setList})=>(
+                  <div key={label} style={{flex:1,display:"flex",flexDirection:"column",gap:6,minWidth:0}}>
+                    <div style={{fontSize:11,fontWeight:700,color:C.ink,textTransform:"uppercase",letterSpacing:"0.08em",padding:"5px 8px",background:`${C.stone}40`,borderRadius:6,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{label}</div>
+                    <div style={{minHeight:80,display:"flex",flexDirection:"column",gap:3}}>
+                      {list.length===0&&<div style={{color:C.mist,fontSize:12,padding:"8px 0",textAlign:"center"}}>—</div>}
+                      {list.map(ser=>(
+                        <div key={ser.id} style={{display:"flex",alignItems:"center",gap:6,padding:"5px 7px",background:C.cream,borderRadius:6,border:`1px solid ${C.stone}`,fontSize:12,color:C.ink}}>
+                          <span style={{flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ser.name}</span>
+                          <button onClick={()=>setList(p=>p.filter(x=>x.id!==ser.id))} style={{background:"none",border:"none",cursor:"pointer",color:C.mist,padding:0,fontSize:13,lineHeight:1}}>×</button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {libPanel}
+            </div>
+          ):(
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,alignItems:"flex-start"}}>
+              <div>
+                <span style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8,display:"block"}}>Selecionadas ({selectedSeries.length})</span>
+                <div style={{maxHeight:360,overflowY:"auto"}}>
+                  {selectedSeries.length===0&&<div style={{color:C.mist,fontSize:13,padding:"12px 0"}}>Adiciona séries →</div>}
+                  {selectedSeries.map((ser,i)=>(
+                    <div key={ser.id} draggable
+                      onDragStart={()=>{flowDragRef.current=i;}}
+                      onDragOver={e=>e.preventDefault()}
+                      onDrop={()=>{
+                        if(flowDragRef.current!=null&&flowDragRef.current!==i){
+                          const nl=[...selectedSeries]; const [it]=nl.splice(flowDragRef.current,1); nl.splice(i,0,it);
+                          setSelectedSeries(nl);
+                        }
+                        flowDragRef.current=null;
+                      }}
+                      style={{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",background:C.cream,borderRadius:8,border:`1px solid ${C.stone}`,marginBottom:5,cursor:"grab"}}>
+                      <span style={{color:C.stone,fontSize:12,userSelect:"none"}}>⠿</span>
+                      <span style={{fontSize:11,fontWeight:700,color:C.mist,minWidth:18}}>{i+1}</span>
+                      <span style={{flex:1,fontSize:13,color:C.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ser.name}</span>
+                      <button onClick={()=>setSelectedSeries(p=>p.filter(x=>x.id!==ser.id))} style={{background:"none",border:"none",cursor:"pointer",color:C.coral,padding:"2px 4px"}}><Icon name="x" size={13}/></button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              {libPanel}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Details */}
+      {hasClients&&(
+        <div style={{background:C.white,borderRadius:12,border:`1px solid ${C.stone}`,padding:16,display:"flex",flexDirection:"column",gap:12}}>
+          <span style={lbl}>Detalhes</span>
+          <div style={{display:"flex",gap:12,alignItems:"flex-start",flexWrap:"wrap"}}>
+            <div>
+              <span style={{...lbl,marginBottom:4}}>Data</span>
+              <input type="date" value={sesDate} onChange={e=>setSesDate(e.target.value)} style={{...inp,width:160}}/>
+            </div>
+            {classTypes.length>0&&(
+              <div>
+                <span style={{...lbl,marginBottom:4}}>Modalidade</span>
+                <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+                  {classTypes.map(ct=>(
+                    <button key={ct.name} onClick={()=>setSesModality(sesModality===ct.name?'':ct.name)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"3px 10px",borderRadius:20,border:`1px solid ${sesModality===ct.name?C.crimson:C.stone}`,background:sesModality===ct.name?`${C.crimson}15`:"transparent",color:sesModality===ct.name?C.crimson:C.mist,cursor:"pointer"}}>{ct.name}</button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+          <div>
+            <span style={{...lbl,marginBottom:4}}>Notas</span>
+            <textarea value={sesNotes} onChange={e=>setSesNotes(e.target.value)} rows={3} placeholder="Notas gerais da sessão…" style={{...inp,resize:"vertical"}}/>
+          </div>
+          <div style={{display:"flex",justifyContent:"flex-end"}}>
+            <Btn onClick={doSave}>Guardar sessão</Btn>
+          </div>
         </div>
       )}
     </div>
@@ -6897,6 +7916,7 @@ function HavenApp() {
   const [studioRecent, setStudioRecent] = useState([]);
   const [recentPublic, setRecentPublic] = useState([]);
   const [publicProfiles, setPublicProfiles] = useState([]);
+  const [favorites, setFavorites] = useState([]);
   const [homeNotices, setHomeNotices] = useState([]);
   const [showFeedback, setShowFeedback] = useState(false);
   const [feedbackMsg, setFeedbackMsg] = useState('');
@@ -6905,6 +7925,9 @@ function HavenApp() {
   const [sendingFeedback, setSendingFeedback] = useState(false);
   const [pendingNewClass, setPendingNewClass] = useState(false);
   const [studioSeriesCache, setStudioSeriesCache] = useState([]);
+  const [clients, setClients] = useState([]);
+  const [clientSessions, setClientSessions] = useState([]);
+  const [clientShares, setClientShares] = useState([]);
 
   const navigate = (newScreen) => {
     const newStack = [...screenStack, screen];
@@ -6955,6 +7978,12 @@ function HavenApp() {
     });
     return () => subscription.unsubscribe();
   }, []);
+
+  // Load favorites when user logs in
+  useEffect(()=>{ if (user) loadFavorites(); }, [user?.id]);
+
+  // Load clients when user logs in
+  useEffect(()=>{ if (user) loadClients(); }, [user?.id]);
 
   // Load from Supabase on login
   useEffect(()=>{
@@ -7047,9 +8076,10 @@ function HavenApp() {
   const toast   = useToast();
   const confirm = useConfirm();
   const saveSeries = async s => {
-    setSeries(p=>p.find(x=>x.id===s.id)?p.map(x=>x.id===s.id?s:x):[...p,s]);
+    const toSave = s.createdBy ? s : { ...s, createdBy: user?.id };
+    setSeries(p=>p.find(x=>x.id===toSave.id)?p.map(x=>x.id===toSave.id?toSave:x):[...p,toSave]);
     setEditingSeries(null); setAddingSeries(false); toast("Série guardada");
-    if (user) api.upsertSeries(s, user.id);
+    if (user) api.upsertSeries(toSave, user.id);
   };
   const saveStudioSeries = async s => {
     if (user) await api.upsertSeries(s, user.id);
@@ -7091,7 +8121,14 @@ function HavenApp() {
     setClasses(p => p.filter(x => x.id !== id));
     if (user) await supabase.from('classes').delete().eq('id', id);
   };
-  const updateClass = async c => { setClasses(p=>p.map(x=>x.id===c.id?c:x)); toast("Aula guardada"); if (user) api.upsertClass(c, user.id); };
+  const updateClass = async c => {
+    if (c.isClientSession) {
+      const existing = clientSessions.find(s=>s.id===c.clientSessionId);
+      if (existing) await saveClientSession({...existing, series_ids: c.seriesIds});
+      return;
+    }
+    setClasses(p=>p.map(x=>x.id===c.id?c:x)); toast("Aula guardada"); if (user) api.upsertClass(c, user.id);
+  };
 
   const duplicateClass = async c => {
     const copy = { ...JSON.parse(JSON.stringify(c)), id:`c-${Date.now()}`, name:`${c.name} (cópia)`, createdBy: user?.id, visibility:'personal', studioId:null, shareToken:null, isPublic:false, deletedByInstructor:false };
@@ -7154,18 +8191,76 @@ function HavenApp() {
   };
   const copyToLibrary = async s => {
     const newId = `copy-${Date.now()}`;
-    const copy = { ...s, id: newId, visibility: 'personal', studioId: null, createdBy: user.id, createdAt: new Date().toISOString().split('T')[0] };
+    const authorName = s.profiles?.name || null;
+    const studioName = profile?.studios?.name || null;
+    const attribution = (authorName || studioName) ? { author_name: authorName, studio_name: studioName, original_id: s.id, copied_at: new Date().toISOString() } : undefined;
+    const copy = { ...s, id: newId, visibility: 'personal', studioId: null, createdBy: user.id, createdAt: new Date().toISOString().split('T')[0], ...(attribution ? { attribution } : {}) };
     setSeries(p=>[...p, copy]);
     if (user) api.upsertSeries(copy, user.id);
     toast("Série copiada para a tua biblioteca");
+  };
+
+  const loadFavorites = async () => {
+    if (!user) return;
+    const { data } = await supabase.from('favorites').select('profile_id').eq('user_id', user.id);
+    setFavorites((data||[]).map(r=>r.profile_id));
+  };
+
+  const loadClients = async () => {
+    if (!user) return;
+    const [{ data: c }, { data: s }, { data: sh }] = await Promise.all([
+      supabase.from('clients').select('*').eq('instructor_id', user.id),
+      supabase.from('client_sessions').select('*').eq('instructor_id', user.id),
+      supabase.from('client_shares').select('*, profiles!to_user_id(id,name)').eq('from_user_id', user.id),
+    ]);
+    setClients(c || []);
+    setClientSessions(s || []);
+    setClientShares(sh || []);
+  };
+  const saveClient = async c => {
+    setClients(p => p.find(x=>x.id===c.id) ? p.map(x=>x.id===c.id?c:x) : [...p, c]);
+    await supabase.from('clients').upsert(c);
+  };
+  const saveClientSession = async s => {
+    setClientSessions(p => p.find(x=>x.id===s.id) ? p.map(x=>x.id===s.id?s:x) : [...p, s]);
+    await supabase.from('client_sessions').upsert(s);
+  };
+  const deleteClient = async id => {
+    setClients(p => p.filter(c=>c.id!==id));
+    setClientSessions(p => p.filter(s=>s.client_id!==id));
+    await supabase.from('clients').delete().eq('id', id);
+  };
+  const deleteClientSession = async id => {
+    setClientSessions(p => p.filter(s=>s.id!==id));
+    await supabase.from('client_sessions').delete().eq('id', id);
+  };
+  const saveClientShare = async sh => {
+    const { data } = await supabase.from('client_shares').insert(sh).select('*, profiles!to_user_id(id,name)').single();
+    if (data) setClientShares(p => [...p, data]);
+  };
+  const deleteClientShare = async id => {
+    setClientShares(p => p.filter(s=>s.id!==id));
+    await supabase.from('client_shares').delete().eq('id', id);
+  };
+
+  const toggleFavorite = async (profileId) => {
+    if (!user) return;
+    const isFav = favorites.includes(profileId);
+    if (isFav) {
+      setFavorites(prev=>prev.filter(id=>id!==profileId));
+      await supabase.from('favorites').delete().eq('user_id', user.id).eq('profile_id', profileId);
+    } else {
+      setFavorites(prev=>[...prev, profileId]);
+      await supabase.from('favorites').insert({ user_id: user.id, profile_id: profileId });
+    }
   };
 
   const loadDiscover = async () => {
     setDiscoverLoading(true);
     try {
       const [{ data: pubSeries }, { data: pubClasses }, { data: pubProfiles }, { data: pubStudios }] = await Promise.all([
-        supabase.from('series').select('*, profiles!created_by(id, name, studios(name))').eq('is_public',true).order('created_at', { ascending: false }).limit(100),
-        supabase.from('classes').select('*').eq('is_public',true).order('created_at', { ascending: false }).limit(100),
+        supabase.from('series').select('*, profiles!created_by(id, name, studios(name))').eq('is_public',true).neq('is_archived',true).order('created_at', { ascending: false }).limit(100),
+        supabase.from('classes').select('*').eq('is_public',true).neq('is_archived',true).order('created_at', { ascending: false }).limit(100),
         supabase.from('profiles').select('*, studios(name), settings').eq('is_public', true).limit(50),
         supabase.from('studios').select('id, name, logo_url, description, contact, settings').eq('is_public', true).limit(50),
       ]);
@@ -7441,7 +8536,7 @@ function HavenApp() {
 
           {/* Nav items */}
           <nav style={{flex:1,padding:"12px 10px",display:"flex",flexDirection:"column",gap:2}}>
-            {[["home","Início","🏠"],["library","Séries","📚"],["builder","Aulas","📋"],["studio","Studio","🏛"],["discover","Descobrir","🔍"],["perfil","Perfil","👤"],...(['super_admin','backoffice_admin'].includes(profile?.role)?[["admin","Admin","⚙️"]]:[] )].map(([id,lbl,icon])=>(
+            {[["home","Início","🏠"],["library","Séries","📚"],["builder","Aulas","📋"],["clients","Clientes","👥"],["studio","Studio","🏛"],["discover","Descobrir","🔍"],["perfil","Perfil","👤"],...(profile?.is_platform_admin||['super_admin','backoffice_admin'].includes(profile?.role)?[["admin","Admin","⚙️"]]:[])].map(([id,lbl,icon])=>(
               <button key={id} onClick={()=>{ goTab(id); if(id==="discover") loadDiscover(); }} style={{
                 display:"flex",alignItems:"center",gap:10,
                 width:"100%",padding:"9px 12px",borderRadius:8,border:"none",
@@ -7486,7 +8581,7 @@ function HavenApp() {
             <button onClick={()=>{
               const isInst = profile?.role !== 'studio_only';
               const isStud = !!(profile?.studio_id || profile?.studioMemberships?.length);
-              const isOwner = ['studio_owner','super_admin','backoffice_admin','owner'].includes(profile?.role) || (profile?.studioMemberships?.find(m=>m.studio_id===profile?.studio_id)?.role==='owner');
+              const isOwner = ['studio_owner','owner'].includes(profile?.role) || !!(profile?.is_platform_admin||['super_admin','backoffice_admin'].includes(profile?.role)) || (profile?.studioMemberships?.find(m=>m.studio_id===profile?.studio_id)?.role==='owner');
               const slides=buildTourSlides(isInst,isStud,isOwner);
               if(slides.length){setTourSlides(slides);setTourIdx(0);goTab(slides[0].tab);if(slides[0].studioTab)setStudioActiveTab(slides[0].studioTab);}
             }} style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"8px 12px",borderRadius:8,border:"none",cursor:"pointer",background:"transparent",color:`${C.cream}80`,fontFamily:"'Satoshi',sans-serif",fontSize:13,fontWeight:500,textAlign:"left"}}>
@@ -7539,7 +8634,10 @@ function HavenApp() {
             user={user}
             instructors={publicProfiles}
             studios={discoverStudios}
+            favorites={favorites}
+            onToggleFavorite={toggleFavorite}
             onViewInstructor={p=>navigate({mode:'instructor',profileId:p.id})}
+            onViewClass={item=>navigate({mode:"aula",cls:item,readOnly:true,fromLibrary:false})}
             onJoinStudio={async studioId => {
               if (!user) return;
               const { error: joinErr } = await supabase.from('studio_memberships').upsert(
@@ -7570,6 +8668,8 @@ function HavenApp() {
             onBack={goBack}
             onCopy={copyDiscoverItem}
             onSend={item=>setSendModalItem(item)}
+            favorites={favorites}
+            onToggleFavorite={toggleFavorite}
           />
         )}
 
@@ -7588,7 +8688,7 @@ function HavenApp() {
                 <div style={{display:"flex",gap:20,alignItems:"flex-start"}}>
                   {/* Left filter panel */}
                   <div style={{width:170,flexShrink:0,display:"flex",flexDirection:"column",gap:0}}>
-                    <CollapsibleSection title="Tipo de Aula" defaultOpen={true}>
+                    <CollapsibleSection title="Modalidade" defaultOpen={true}>
                       <div style={{display:"flex",flexDirection:"column",gap:4,paddingBottom:8}}>
                         {[["all","Todas"],...(profile?.settings?.class_types||[]).map(t=>{const n=(typeof t==='string'?t:t?.name)||'';if(!n)return null;return[n,n[0].toUpperCase()+n.slice(1)];}).filter(Boolean)].map(([val,lbl])=>(
                           <button key={val} onClick={()=>setFilterType(val==='all'?'all':val)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 12px",borderRadius:8,border:`1px solid ${filterType===val?C.neutral:C.stone}`,background:filterType===val?C.neutral:"transparent",color:filterType===val?C.white:C.ink,cursor:"pointer",textAlign:"left"}}>{lbl}</button>
@@ -7705,6 +8805,7 @@ function HavenApp() {
                                   onTogglePublic={toggleSeriesPublic}
                                   onSend={item=>setSendModalItem(item)}
                                   compact={true}
+                                  profileClassTypes={profile?.settings?.class_types}
                                 />
                               </React.Fragment>
                             );
@@ -7730,6 +8831,8 @@ function HavenApp() {
             onPublishSeries={publishToStudio} onPublishClass={publishClassToStudio}
             activeTab={studioActiveTab} onTabChange={setStudioActiveTab}
             brandColor={activeBrandColor}
+            studioClients={clients.filter(c=>c.shared_with_studio&&c.studio_id===profile?.studio_id)}
+            studioClientSessions={clientSessions.filter(s=>clients.find(c=>c.id===s.client_id&&c.shared_with_studio&&c.studio_id===profile?.studio_id))}
           />
         )}
 
@@ -7757,6 +8860,7 @@ function HavenApp() {
             onViewAula={c=>navigate({mode:"aula",cls:c,fromLibrary:false})}
             studioSettings={profile?.studios?.settings}
             profileClassTypes={profile?.settings?.class_types}
+            profileLevels={profile?.settings?.preferred_levels}
             onPublishClass={publishClassToStudio}
             onUnpublishClass={unpublishClassFromStudio}
             hasStudio={!!profile?.studio_id}
@@ -7792,8 +8896,37 @@ function HavenApp() {
           />
         )}
 
+        {/* ── CLIENTS ── */}
+        {screen.mode==="clients"&&(
+          <ClientsPage clients={clients} clientSessions={clientSessions} series={series} onSaveClient={saveClient} onDeleteClient={deleteClient}
+            onViewClient={c=>navigate({mode:"client",clientId:c.id})}
+            onCreateSession={()=>navigate({mode:"create_session"})}
+            onOpenSession={(ses,cl)=>{
+              if(ses.type==='duo') { navigate({mode:"duo_session",sessionId:ses.id,clientId:cl?.id||ses.client_id}); return; }
+              navigate({mode:"aula",cls:{id:ses.id,isClientSession:true,clientSessionId:ses.id,type:cl?.type||ses.type,seriesIds:ses.series_ids||[],name:(cl?.name||'Sessão')+' · '+(ses.date||''),date:ses.date},fromLibrary:false});
+            }}
+            profile={profile}
+          />
+        )}
+        {screen.mode==="client"&&(
+          <ClientProfileView clientId={screen.clientId} clients={clients} clientSessions={clientSessions} series={series} onSaveClient={saveClient} onSaveClientSession={saveClientSession} onDeleteClientSession={deleteClientSession} onDeleteClient={deleteClient} onBack={goBack} user={user} clientShares={clientShares} onSaveShare={saveClientShare} onDeleteShare={deleteClientShare}
+            onOpenSession={(ses,cl)=>{
+              if(ses.type==='duo') { navigate({mode:"duo_session",sessionId:ses.id,clientId:cl?.id||ses.client_id}); return; }
+              navigate({mode:"aula",cls:{id:ses.id,isClientSession:true,clientSessionId:ses.id,type:cl?.type||ses.type,seriesIds:ses.series_ids||[],name:(cl?.name||'Sessão')+' · '+(ses.date||''),date:ses.date},fromLibrary:false});
+            }}
+          />
+        )}
+
+        {screen.mode==="create_session"&&(
+          <CreateSessionView clients={clients} clientSessions={clientSessions} series={series} onSaveClientSession={saveClientSession} onBack={goBack} profile={profile} user={user}/>
+        )}
+
+        {screen.mode==="duo_session"&&(
+          <DuoSessionView sessionId={screen.sessionId} clientId={screen.clientId} clients={clients} clientSessions={clientSessions} series={series} onBack={goBack} onSaveClientSession={saveClientSession} onDeleteClientSession={deleteClientSession} profileClassTypes={profile?.settings?.class_types} aiStyle={effectiveAiStyle}/>
+        )}
+
         {/* ── ADMIN / BACKOFFICE ── */}
-        {screen.mode==="admin"&&['super_admin','backoffice_admin'].includes(profile?.role)&&(
+        {screen.mode==="admin"&&(profile?.is_platform_admin||['super_admin','backoffice_admin'].includes(profile?.role))&&(
           <AdminPage user={user} />
         )}
 
