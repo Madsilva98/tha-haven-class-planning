@@ -4453,7 +4453,7 @@ const buildTourSlides = (isInst, isStud, isOwner) => {
   return s;
 };
 
-const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotification, onSaveSeries, onSaveClass, onSaveStudioSeries, onSaveStudioClass, onDeleteSeries, onDeleteClass, onViewAula, allSeries=[], allClasses=[], onPublishSeries, onPublishClass, activeTab='series', onTabChange, brandColor, studioClients=[], studioClientSessions=[] }) => {
+const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotification, onSaveSeries, onSaveClass, onSaveStudioSeries, onSaveStudioClass, onDeleteSeries, onDeleteClass, onViewAula, allSeries=[], allClasses=[], onPublishSeries, onPublishClass, activeTab='series', onTabChange, brandColor, studioClients=[], studioClientSessions=[], onViewClient=null }) => {
   const bc = brandColor ?? bc;
   const setActiveTab = onTabChange || (() => {});
   const [submitModal, setSubmitModal] = useState(false); // picker modal
@@ -5151,7 +5151,7 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
             const sessions=studioClientSessions.filter(s=>s.client_id===c.id).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
             const last=sessions[0];
             return (
-              <div key={c.id} style={{background:C.white,borderRadius:12,border:`1px solid ${C.stone}`,padding:'14px 16px',display:'flex',alignItems:'center',gap:12}}>
+              <div key={c.id} onClick={()=>onViewClient&&onViewClient(c)} style={{background:C.white,borderRadius:12,border:`1px solid ${C.stone}`,padding:'14px 16px',display:'flex',alignItems:'center',gap:12,cursor:onViewClient?'pointer':'default'}}>
                 <div style={{flex:1,minWidth:0}}>
                   <div style={{fontFamily:"'Clash Display',sans-serif",fontSize:15,fontWeight:500,color:C.ink}}>{c.name}</div>
                   {c.objectives&&<div style={{fontSize:12,color:C.mist,marginTop:2,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{c.objectives}</div>}
@@ -5160,6 +5160,7 @@ const StudioPage = ({ profile, user, onProfileUpdate, onCopyToLibrary, sendNotif
                     <span>{sessions.length} sessõe{sessions.length===1?'':'s'}</span>
                   </div>
                 </div>
+                {onViewClient&&<span style={{color:C.mist,fontSize:14}}>→</span>}
               </div>
             );
           })}
@@ -7470,8 +7471,12 @@ const DuoSessionView = ({ sessionId, clientId, clients, clientSessions, series, 
   const [showEdit, setShowEdit] = useState(false);
   const [editDate, setEditDate] = useState(()=>session?.date||'');
   const [editModality, setEditModality] = useState(()=>session?.modality||'');
-  const [p1Ai, setP1Ai] = useState(''); const [p2Ai, setP2Ai] = useState('');
-  const [p1AiLoading, setP1AiLoading] = useState(false); const [p2AiLoading, setP2AiLoading] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatInput, setChatInput] = useState('');
+  const [chatLoading, setChatLoading] = useState(false);
+  const [chatContext, setChatContext] = useState('');
+  const [chatClientName, setChatClientName] = useState('');
   const toast_ = useToast();
   const confirm_ = useConfirm();
 
@@ -7511,29 +7516,47 @@ const DuoSessionView = ({ sessionId, clientId, clients, clientSessions, series, 
     setShowEdit(false); toast_('Sessão atualizada!');
   };
 
-  const analyzeSession = async (cl, serList, clientNotes, setAi, setLoading) => {
+  const buildCtx = (cl, serList) => {
+    const seriesInfo = serList.map(s=>{
+      const d=s.type==='barre'?s.barre:s.reformer;
+      const setup=[d?.springs&&`springs: ${d.springs}`,d?.props&&`props: ${d.props}`,d?.startPosition&&`posição: ${d.startPosition}`].filter(Boolean).join(', ');
+      const movs=(d?.movements||[]).map(m=>m.movement).filter(Boolean).join(', ');
+      return `${s.name}${setup?` (${setup})`:''}${movs?` — ${movs}`:''}`;
+    }).join('\n');
+    return `Cliente: ${cl.name}\nObjetivos: ${cl.objectives||'—'}\nNotas do cliente: ${cl.notes||'—'}\n\nSéries da sessão:\n${seriesInfo}`;
+  };
+
+  const openChat = async (cl, serList) => {
     if(!cl||serList.length===0) return;
-    setLoading(true); setAi('');
+    const ctx = buildCtx(cl, serList);
+    const system = [aiStyle,'Analisa a sessão de Pilates descrita e sugere observações de coaching e progressão para o cliente.'].filter(Boolean).join('\n\n');
+    setChatContext(ctx); setChatClientName(cl.name||'Cliente');
+    setChatMessages([]); setChatInput(''); setChatOpen(true); setChatLoading(true);
     try {
-      const seriesInfo = serList.map(s=>{
-        const d=s.type==='barre'?s.barre:s.reformer;
-        const setup=[d?.springs&&`springs: ${d.springs}`,d?.props&&`props: ${d.props}`,d?.startPosition&&`posição: ${d.startPosition}`].filter(Boolean).join(', ');
-        const movs=(d?.movements||[]).map(m=>m.movement).filter(Boolean).join(', ');
-        return `${s.name}${setup?` (${setup})`:''}${movs?` — ${movs}`:''}`;
-      }).join('\n');
-      const system = [aiStyle,'Analisa a sessão de Pilates descrita e sugere observações de coaching e progressão para o cliente.'].filter(Boolean).join('\n\n');
-      const userMsg = `Cliente: ${cl.name}\nObjetivos: ${cl.objectives||'—'}\nNotas do cliente: ${cl.notes||'—'}\n\nSéries da sessão:\n${seriesInfo}`;
-      const r = await fetch('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({system,messages:[{role:'user',content:userMsg}],max_tokens:600})});
+      const r = await fetch('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({system,messages:[{role:'user',content:ctx}],max_tokens:800})});
       const data = await r.json();
-      setAi(data?.content?.[0]?.text||'Sem resposta.');
-    } catch(e){ setAi('Erro na análise.'); }
-    setLoading(false);
+      setChatMessages([{role:'assistant',content:data?.content?.[0]?.text||'Sem resposta.'}]);
+    } catch(e){ setChatMessages([{role:'assistant',content:'Erro na análise.'}]); }
+    setChatLoading(false);
+  };
+
+  const sendChat = async () => {
+    if(!chatInput.trim()||chatLoading) return;
+    const system = [aiStyle,'Analisa a sessão de Pilates. Contexto:\n'+chatContext].filter(Boolean).join('\n\n');
+    const newMsgs=[...chatMessages,{role:'user',content:chatInput}];
+    setChatMessages(newMsgs); setChatInput(''); setChatLoading(true);
+    try {
+      const r = await fetch('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({system,messages:newMsgs,max_tokens:800})});
+      const data = await r.json();
+      setChatMessages(p=>[...p,{role:'assistant',content:data?.content?.[0]?.text||'Sem resposta.'}]);
+    } catch(e){ setChatMessages(p=>[...p,{role:'assistant',content:'Erro.'}]); }
+    setChatLoading(false);
   };
 
   const noteTA={width:"100%",fontFamily:"'Satoshi',sans-serif",fontSize:12,padding:"5px 8px",borderRadius:6,border:`1px solid ${C.stone}`,outline:"none",resize:"vertical",background:`${C.stone}20`,boxSizing:"border-box"};
   const inp={fontFamily:"'Satoshi',sans-serif",fontSize:13,padding:"6px 10px",borderRadius:8,border:`1px solid ${C.stone}`,outline:"none",background:C.white,color:C.ink};
 
-  const renderCol = (client, serList, perSerNotes, saveNote, sesNotes, setSesNotes, saveSesNotes, aiText, aiLoading, onAnalyze) => (
+  const renderCol = (client, serList, perSerNotes, saveNote, sesNotes, setSesNotes, saveSesNotes, onOpenChat) => (
     <div style={{flex:1,display:"flex",flexDirection:"column",gap:0,minWidth:0}}>
       <div style={{fontSize:14,fontWeight:700,fontFamily:"'Clash Display',sans-serif",color:C.crimson,paddingBottom:10,borderBottom:`2px solid ${C.crimson}30`,marginBottom:12}}>
         {client?.name||'—'}
@@ -7559,14 +7582,9 @@ const DuoSessionView = ({ sessionId, clientId, clients, clientSessions, series, 
       ))}
       {!teachingMode&&serList.length>0&&(
         <div style={{marginTop:4}}>
-          <button onClick={onAnalyze} disabled={aiLoading} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"5px 12px",borderRadius:8,border:`1px solid ${C.neutral}`,background:"transparent",color:C.neutral,cursor:aiLoading?"wait":"pointer"}}>
-            {aiLoading?'A analisar…':'✦ Analisar sessão com AI'}
+          <button onClick={onOpenChat} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"5px 12px",borderRadius:8,border:`1px solid ${C.neutral}`,background:"transparent",color:C.neutral,cursor:"pointer"}}>
+            ✦ Conversar com AI
           </button>
-          {aiText&&(
-            <div style={{marginTop:8,padding:"10px 12px",background:`${C.neutral}10`,borderRadius:8,border:`1px solid ${C.neutral}30`,fontSize:12,color:C.ink,whiteSpace:"pre-wrap",lineHeight:1.6}}>
-              {aiText}
-            </div>
-          )}
         </div>
       )}
     </div>
@@ -7610,13 +7628,44 @@ const DuoSessionView = ({ sessionId, clientId, clients, clientSessions, series, 
       {/* Two-column content */}
       <div style={{display:"flex",gap:20,alignItems:"flex-start"}}>
         {renderCol(client1, p1SeriesList, p1Notes, saveP1Note, p1SesNotes, setP1SesNotes,
-          v=>onSaveClientSession({...session,session_notes:v}), p1Ai, p1AiLoading,
-          ()=>analyzeSession(client1,p1SeriesList,client1,setP1Ai,setP1AiLoading))}
+          v=>onSaveClientSession({...session,session_notes:v}),
+          ()=>openChat(client1,p1SeriesList))}
         <div style={{width:1,background:C.stone,alignSelf:"stretch",flexShrink:0}}/>
         {renderCol(client2, p2SeriesList, p2Notes, saveP2Note, p2SesNotes, setP2SesNotes,
-          v=>linkedSession&&onSaveClientSession({...linkedSession,session_notes:v}), p2Ai, p2AiLoading,
-          ()=>analyzeSession(client2,p2SeriesList,client2,setP2Ai,setP2AiLoading))}
+          v=>linkedSession&&onSaveClientSession({...linkedSession,session_notes:v}),
+          ()=>openChat(client2,p2SeriesList))}
       </div>
+
+      {/* AI Chat Modal */}
+      {chatOpen&&(
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:600,display:'flex',alignItems:'flex-end',justifyContent:'center'}}
+          onClick={()=>setChatOpen(false)}>
+          <div style={{background:C.white,borderRadius:'16px 16px 0 0',padding:20,width:'100%',maxWidth:640,maxHeight:'72vh',display:'flex',flexDirection:'column',gap:12,boxShadow:'0 -8px 32px rgba(0,0,0,0.18)'}}
+            onClick={e=>e.stopPropagation()}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexShrink:0}}>
+              <span style={{fontFamily:"'Clash Display',sans-serif",fontWeight:600,fontSize:16,color:C.ink}}>✦ AI — {chatClientName}</span>
+              <button onClick={()=>setChatOpen(false)} style={{background:'none',border:'none',cursor:'pointer',color:C.mist,fontSize:18,lineHeight:1}}>✕</button>
+            </div>
+            <div style={{flex:1,overflowY:'auto',display:'flex',flexDirection:'column',gap:10,minHeight:0}}>
+              {chatLoading&&chatMessages.length===0&&<div style={{color:C.mist,fontSize:13,padding:'8px 0'}}>A analisar sessão…</div>}
+              {chatMessages.map((m,i)=>(
+                <div key={i} style={{alignSelf:m.role==='user'?'flex-end':'flex-start',background:m.role==='user'?C.crimson:`${C.stone}60`,color:m.role==='user'?C.cream:C.ink,borderRadius:10,padding:'8px 12px',maxWidth:'88%',fontSize:13,lineHeight:1.6,whiteSpace:'pre-wrap'}}>
+                  {m.content}
+                </div>
+              ))}
+              {chatLoading&&chatMessages.length>0&&<div style={{color:C.mist,fontSize:12,padding:'4px 0'}}>…</div>}
+            </div>
+            <div style={{display:'flex',gap:8,flexShrink:0}}>
+              <input value={chatInput} onChange={e=>setChatInput(e.target.value)}
+                onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendChat();}}}
+                placeholder="Continua a conversa…"
+                style={{flex:1,padding:'8px 12px',borderRadius:8,border:`1px solid ${C.stone}`,fontSize:13,outline:'none',fontFamily:"'Satoshi',sans-serif"}}/>
+              <button onClick={sendChat} disabled={chatLoading||!chatInput.trim()}
+                style={{padding:'8px 16px',borderRadius:8,background:chatLoading||!chatInput.trim()?C.stone:C.crimson,color:C.cream,border:'none',cursor:chatLoading||!chatInput.trim()?'not-allowed':'pointer',fontWeight:700,fontSize:14}}>→</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -7648,6 +7697,7 @@ const CreateSessionView = ({ clients, clientSessions, series, onSaveClientSessio
   };
 
   const filteredLib = series.filter(s=>{
+    if(s.isArchived) return false;
     if(libSearch&&!s.name.toLowerCase().includes(libSearch.toLowerCase())) return false;
     if(libTypeFilter!=='all'&&s.type!==libTypeFilter) return false;
     return true;
@@ -7771,6 +7821,34 @@ const CreateSessionView = ({ clients, clientSessions, series, onSaveClientSessio
         </div>
       </div>
 
+      {/* Details */}
+      <div style={{background:C.white,borderRadius:12,border:`1px solid ${C.stone}`,padding:16,display:"flex",flexDirection:"column",gap:12}}>
+        <span style={lbl}>Detalhes</span>
+        <div style={{display:"flex",gap:12,alignItems:"flex-start",flexWrap:"wrap"}}>
+          <div>
+            <span style={{...lbl,marginBottom:4}}>Data</span>
+            <input type="date" value={sesDate} onChange={e=>setSesDate(e.target.value)} style={{...inp,width:160}}/>
+          </div>
+          {classTypes.length>0&&(
+            <div>
+              <span style={{...lbl,marginBottom:4}}>Modalidade</span>
+              <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+                {classTypes.map(ct=>(
+                  <button key={ct.name} onClick={()=>setSesModality(sesModality===ct.name?'':ct.name)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"3px 10px",borderRadius:20,border:`1px solid ${sesModality===ct.name?C.crimson:C.stone}`,background:sesModality===ct.name?`${C.crimson}15`:"transparent",color:sesModality===ct.name?C.crimson:C.mist,cursor:"pointer"}}>{ct.name}</button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+        <div>
+          <span style={{...lbl,marginBottom:4}}>Notas</span>
+          <textarea value={sesNotes} onChange={e=>setSesNotes(e.target.value)} rows={3} placeholder="Notas gerais da sessão…" style={{...inp,resize:"vertical"}}/>
+        </div>
+        <div style={{display:"flex",justifyContent:"flex-end"}}>
+          <Btn onClick={doSave} disabled={!hasClients}>Guardar sessão</Btn>
+        </div>
+      </div>
+
       {/* Clients */}
       <div style={{background:C.white,borderRadius:12,border:`1px solid ${C.stone}`,padding:16}}>
         <span style={lbl}>Cliente{isDuo?'s':''}</span>
@@ -7836,35 +7914,6 @@ const CreateSessionView = ({ clients, clientSessions, series, onSaveClientSessio
         </div>
       )}
 
-      {/* Details */}
-      {hasClients&&(
-        <div style={{background:C.white,borderRadius:12,border:`1px solid ${C.stone}`,padding:16,display:"flex",flexDirection:"column",gap:12}}>
-          <span style={lbl}>Detalhes</span>
-          <div style={{display:"flex",gap:12,alignItems:"flex-start",flexWrap:"wrap"}}>
-            <div>
-              <span style={{...lbl,marginBottom:4}}>Data</span>
-              <input type="date" value={sesDate} onChange={e=>setSesDate(e.target.value)} style={{...inp,width:160}}/>
-            </div>
-            {classTypes.length>0&&(
-              <div>
-                <span style={{...lbl,marginBottom:4}}>Modalidade</span>
-                <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
-                  {classTypes.map(ct=>(
-                    <button key={ct.name} onClick={()=>setSesModality(sesModality===ct.name?'':ct.name)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"3px 10px",borderRadius:20,border:`1px solid ${sesModality===ct.name?C.crimson:C.stone}`,background:sesModality===ct.name?`${C.crimson}15`:"transparent",color:sesModality===ct.name?C.crimson:C.mist,cursor:"pointer"}}>{ct.name}</button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-          <div>
-            <span style={{...lbl,marginBottom:4}}>Notas</span>
-            <textarea value={sesNotes} onChange={e=>setSesNotes(e.target.value)} rows={3} placeholder="Notas gerais da sessão…" style={{...inp,resize:"vertical"}}/>
-          </div>
-          <div style={{display:"flex",justifyContent:"flex-end"}}>
-            <Btn onClick={doSave}>Guardar sessão</Btn>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
@@ -8857,6 +8906,7 @@ function HavenApp() {
             brandColor={activeBrandColor}
             studioClients={clients.filter(c=>c.shared_with_studio&&c.studio_id===profile?.studio_id)}
             studioClientSessions={clientSessions.filter(s=>clients.find(c=>c.id===s.client_id&&c.shared_with_studio&&c.studio_id===profile?.studio_id))}
+            onViewClient={c=>navigate({mode:"client",clientId:c.id})}
           />
         )}
 
