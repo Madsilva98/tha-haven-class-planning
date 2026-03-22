@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import * as XLSX from 'xlsx';
 import { supabase } from './supabase.js';
 import Auth from './Auth.jsx';
 import Onboarding from './Onboarding.jsx';
@@ -397,7 +398,7 @@ const EMPTY_SERIES = { introCue:"",
   id:"", name:"", type:"reformer", status:"WIP",
   reformer:{ springs:"", props:"", startPosition:"", movements:[{ timing:"", lyric:"", movement:"", breath:"", transitionCue:"", timeReps:"" }] },
   barre:{ props:"", startPosition:"", movements:[{ timing:"", lyric:"", movement:"", breath:"", transitionCue:"", timeReps:"" }] },
-  muscles:[], cues:"", song:"", videoUrl:"", targetZone:"", primaryZone:"", seriesType:"", propTags:[], openCue:"", closeCue:"", createdAt:"", duration: null,
+  muscles:[], cues:"", song:"", videoUrl:"", targetZone:"", primaryZone:"", seriesType:"", propTags:[], openCue:"", closeCue:"", createdAt:"", duration: null, level:"",
 };
 
 const DEFAULT_CLASSES = [
@@ -410,7 +411,7 @@ const seriesToDB = (s, userId) => ({
   song: s.song || null, intro_cue: s.introCue || null, open_cue: s.openCue || null,
   close_cue: s.closeCue || null, modifications: s.modifications || null,
   muscles: s.muscles || [], cues: s.cues || null,
-  target_zone: s.targetZone || null, primary_zone: s.primaryZone || null, series_type: s.seriesType || null, prop_tags: s.propTags || [],
+  target_zone: s.targetZone || null, primary_zone: s.primaryZone || null, series_type: s.seriesType || null, prop_tags: s.propTags || [], level: s.level || null,
   reformer: s.reformer || null, barre: s.barre || null,
   video_url: s.videoUrl || null, created_by: userId,
   visibility: s.visibility || 'personal', studio_id: s.studioId || null,
@@ -421,13 +422,14 @@ const seriesToDB = (s, userId) => ({
   is_public: s.isPublic || false,
   deleted_by_instructor: s.deletedByInstructor || false,
   is_archived: s.isArchived || false,
+  series_group: s.seriesGroup || null,
 });
 const seriesFromDB = row => ({
   id: row.id, name: row.name, type: row.type, status: row.status==='approved'?'Pronta':row.status==='testing'?'WIP':row.status||'WIP',
   song: row.song || '', introCue: row.intro_cue || '', openCue: row.open_cue || '',
   closeCue: row.close_cue || '', modifications: row.modifications || '',
   muscles: row.muscles || [], cues: row.cues || '',
-  targetZone: row.target_zone || '', primaryZone: row.primary_zone || '', seriesType: row.series_type || '', propTags: row.prop_tags || [],
+  targetZone: row.target_zone || '', primaryZone: row.primary_zone || '', seriesType: row.series_type || '', propTags: row.prop_tags || [], level: row.level || '',
   reformer: row.reformer || { springs:'', props:'', startPosition:'', movements:[{ timing:'', lyric:'', movement:'', breath:'', transitionCue:'' }] },
   barre: row.barre || { props:'', startPosition:'', movements:[{ timing:'', lyric:'', movement:'', breath:'', transitionCue:'' }] },
   videoUrl: row.video_url || '', createdAt: row.created_at ? row.created_at.split('T')[0] : '',
@@ -438,10 +440,11 @@ const seriesFromDB = row => ({
   isPublic: row.is_public || row.visibility === 'public' || false,
   deletedByInstructor: row.deleted_by_instructor || false,
   isArchived: row.is_archived || false,
+  seriesGroup: row.series_group || '',
 });
 const classToDB = (c, userId) => ({
   id: c.id, name: c.name, type: c.type, date: c.date || null,
-  series_order: c.seriesIds || [], notes: c.notes || null,
+  series_order: c.seriesIds || [], movement_ids: c.movementIds || [], notes: c.notes || null,
   created_by: userId, visibility: c.visibility || 'personal',
   studio_id: c.studioId || c.studio_id || null,
   level: c.level || null,
@@ -451,10 +454,11 @@ const classToDB = (c, userId) => ({
   is_public: c.isPublic || false,
   deleted_by_instructor: c.deletedByInstructor || false,
   is_archived: c.isArchived || false,
+  class_group: c.classGroup || null,
 });
 const classFromDB = row => ({
   id: row.id, name: row.name, type: row.type, date: row.date || '',
-  seriesIds: row.series_order || [], notes: row.notes || '',
+  seriesIds: row.series_order || [], movementIds: row.movement_ids || [], notes: row.notes || '',
   shareToken: row.share_token || null,
   level: row.level || '',
   visibility: row.visibility || 'personal',
@@ -464,6 +468,36 @@ const classFromDB = row => ({
   studioComment: row.studio_comment || null,
   isPublic: row.is_public || row.visibility === 'public' || false,
   deletedByInstructor: row.deleted_by_instructor || false,
+  isArchived: row.is_archived || false,
+  classGroup: row.class_group || '',
+});
+
+// ─── MOVEMENT DB MAPPING ─────────────────────────────────────────────────────
+const movementToDB = (m, userId) => ({
+  id: m.id,
+  movement: m.movement,
+  modality: m.modality,
+  notes: m.notes || null,
+  group_name: m.groupName || null,
+  category: m.category || null,
+  example_url: m.exampleUrl || null,
+  props: m.props || null,
+  target_zone: m.targetZone || null,
+  created_by: userId,
+  is_archived: m.isArchived || false,
+});
+const movementFromDB = row => ({
+  id: row.id,
+  movement: row.movement,
+  modality: row.modality,
+  notes: row.notes || '',
+  groupName: row.group_name || '',
+  category: row.category || '',
+  exampleUrl: row.example_url || '',
+  props: row.props || '',
+  targetZone: row.target_zone || '',
+  createdBy: row.created_by || null,
+  createdAt: row.created_at ? row.created_at.split('T')[0] : '',
   isArchived: row.is_archived || false,
 });
 
@@ -515,6 +549,20 @@ const api = {
   },
   async removeClass(id) {
     try { await supabase.from('classes').delete().eq('id', id); }
+    catch(e) { console.error(e); }
+  },
+  async loadMovements(userId) {
+    try {
+      const { data, error } = await supabase.from('movements').select('*').eq('created_by', userId).order('movement', { ascending: true });
+      return (!error && data) ? data.map(movementFromDB) : [];
+    } catch { return []; }
+  },
+  async upsertMovement(m, userId) {
+    try { await supabase.from('movements').upsert(movementToDB(m, userId), { onConflict: 'id' }); }
+    catch(e) { console.error('Movement save failed:', e); }
+  },
+  async deleteMovement(id) {
+    try { await supabase.from('movements').delete().eq('id', id); }
     catch(e) { console.error(e); }
   },
   async loadProfile(userId) {
@@ -1339,15 +1387,18 @@ const EditorInp = ({ ph, val, onChange, gold, minW, listId }) => (
 
 // Movement library — shared datalist, populated from all series
 // ─── MOVEMENT LIBRARY DATALIST (for autocomplete in editors) ────────────────
-const MovDatalist = ({ series }) => {
+const MovDatalist = ({ series, movements=[] }) => {
   const allMovs = React.useMemo(()=>{
     const set = new Set();
+    // standalone movements library
+    movements.filter(m=>!m.isArchived).forEach(m=>{ if(m.movement) set.add(m.movement); });
+    // inline movements from series
     series.forEach(s=>{
       (s.reformer?.movements||[]).forEach(m=>{ if(m.movement) set.add(m.movement); });
       (s.barre?.movements||[]).forEach(m=>{ if(m.movement) set.add(m.movement); });
     });
     return [...set].sort();
-  }, [series]);
+  }, [series, movements]);
   return (
     <datalist id="mov-library">
       {allMovs.map((m,i)=><option key={i} value={m}/>)}
@@ -1506,21 +1557,29 @@ const NotesMiniModal = ({ movName, notes, onSave, onClose }) => {
 };
 
 // Notes side panel (normal/non-parallel mode)
-const MovNotesPanel = ({ movements, side, onUpdate, onClose, width=200 }) => (
+const MovNotesPanel = ({ movements, side, onUpdate, onClose, width=200, libraryMovements=[] }) => (
   <div style={{width,flexShrink:0,borderLeft:`1px solid ${C.stone}`,paddingLeft:14,display:"flex",flexDirection:"column",gap:0,overflow:"auto"}}>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,paddingBottom:8,borderBottom:`1px solid ${C.stone}`}}>
       <div style={{fontSize:10,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em"}}>Notas</div>
       <button onClick={onClose} style={{background:"none",border:"none",cursor:"pointer",color:C.mist,padding:"1px 4px",fontSize:14,lineHeight:1}}>×</button>
     </div>
     <div style={{display:"flex",flexDirection:"column",gap:10,overflowY:"auto",maxHeight:500}}>
-      {(movements||[]).map((m,i)=>(
-        <div key={i}>
-          <div style={{fontSize:10,fontWeight:600,color:C.neutral,marginBottom:3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{i+1}. {m.movement||<span style={{color:C.stone,fontStyle:"italic"}}>—</span>}</div>
-          <textarea value={m.notes||""} onChange={e=>onUpdate(i,e.target.value)}
-            placeholder="Notas, respiração, dicas…" rows={2}
-            style={{width:"100%",fontFamily:"'Satoshi',sans-serif",fontSize:11,border:`1px solid ${C.stone}`,borderRadius:6,padding:"4px 8px",outline:"none",resize:"vertical",boxSizing:"border-box",color:C.ink,background:C.white,lineHeight:1.4}}/>
-        </div>
-      ))}
+      {(movements||[]).map((m,i)=>{
+        const libMov = m.movement ? libraryMovements.find(lm=>lm.movement.toLowerCase()===m.movement.toLowerCase()) : null;
+        const libNotes = libMov?.notes || '';
+        const libUrl = libMov?.exampleUrl || '';
+        return (
+          <div key={i}>
+            <div style={{display:"flex",alignItems:"center",gap:5,marginBottom:3,overflow:"hidden"}}>
+              <div style={{fontSize:10,fontWeight:600,color:C.neutral,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1}}>{i+1}. {m.movement||<span style={{color:C.stone,fontStyle:"italic"}}>—</span>}</div>
+              {libUrl&&<a href={libUrl} target="_blank" rel="noopener noreferrer" title="Ver exemplo" style={{color:C.crimson,fontSize:11,textDecoration:"none",flexShrink:0,background:`${C.crimson}12`,border:`1px solid ${C.crimson}30`,borderRadius:4,padding:"1px 5px",fontWeight:700,fontFamily:"'Satoshi',sans-serif"}}>↗</a>}
+            </div>
+            <textarea value={m.notes||libNotes||""} onChange={e=>onUpdate(i,e.target.value)}
+              placeholder="Notas, respiração, dicas…" rows={2}
+              style={{width:"100%",fontFamily:"'Satoshi',sans-serif",fontSize:11,border:`1px solid ${C.stone}`,borderRadius:6,padding:"4px 8px",outline:"none",resize:"vertical",boxSizing:"border-box",color:C.ink,background:C.white,lineHeight:1.4}}/>
+          </div>
+        );
+      })}
     </div>
   </div>
 );
@@ -1964,7 +2023,7 @@ Muscles: ${series.muscles?.join(", ")||"-"}${series.cues ? `\nNotes: ${series.cu
 };
 
 // ─── SERIES EDITOR ────────────────────────────────────────────────────────────
-const SeriesEditor = ({ series, onSave, onSaveAsNew, onCancel, onDelete, aiStyle, studioSettings={}, availableZones, availableSeriesTypes, availableClassTypes, availableProps, onPublish }) => {
+const SeriesEditor = ({ series, onSave, onSaveAsNew, onCancel, onDelete, aiStyle, studioSettings={}, availableZones, availableSeriesTypes, availableClassTypes, availableProps, availableSeriesGroups=[], onPublish, libraryMovements=[] }) => {
   const initS = series ? JSON.parse(JSON.stringify(series)) : {...JSON.parse(JSON.stringify(EMPTY_SERIES)), id:`s-${Date.now()}`, createdAt: new Date().toISOString()};
   const [s, setS] = useState(() => {
     if (initS.type === 'signature' && !initS.parallelColumns) {
@@ -2285,7 +2344,7 @@ const SeriesEditor = ({ series, onSave, onSaveAsNew, onCancel, onDelete, aiStyle
             <div style={{display:"flex",flexDirection:"column",gap:6}}>
               <label style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em"}}>Tipo de série</label>
               <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-                {(availableSeriesTypes||studioSettings?.series_types||DEFAULT_SERIES_TYPES).map(tag=>{
+                {(availableSeriesTypes||studioSettings?.series_types||[]).map(tag=>{
                   const active = s.seriesType===tag;
                   return <button key={tag} onClick={()=>setS(p=>({...p,seriesType:active?"":tag}))}
                     style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"3px 10px",borderRadius:20,
@@ -2294,6 +2353,36 @@ const SeriesEditor = ({ series, onSave, onSaveAsNew, onCancel, onDelete, aiStyle
                 })}
               </div>
             </div>
+            {/* Nível */}
+            {(studioSettings?.class_levels||[]).length>0&&(
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                <label style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em"}}>Nível</label>
+                <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+                  {(studioSettings?.class_levels||[]).map(lvl=>{
+                    const active=s.level===lvl;
+                    return <button key={lvl} onClick={()=>setS(p=>({...p,level:active?"":lvl}))}
+                      style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"3px 10px",borderRadius:20,
+                        border:`1px solid ${active?C.neutral:C.stone}`,background:active?C.neutral:"transparent",
+                        color:active?C.white:C.mist,cursor:"pointer"}}>{lvl}</button>;
+                  })}
+                </div>
+              </div>
+            )}
+            {/* Grupo */}
+            {availableSeriesGroups.length>0&&(
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                <label style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em"}}>Grupo</label>
+                <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+                  {availableSeriesGroups.map(g=>{
+                    const active=s.seriesGroup===g;
+                    return <button key={g} onClick={()=>setS(p=>({...p,seriesGroup:active?"":g}))}
+                      style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"3px 10px",borderRadius:20,
+                        border:`1px solid ${active?C.crimson:C.stone}`,background:active?`${C.crimson}18`:"transparent",
+                        color:active?C.crimson:C.mist,cursor:"pointer"}}>{g}</button>;
+                  })}
+                </div>
+              </div>
+            )}
             {/* Props tags */}
             {(availableProps||[]).length>0&&(
               <div style={{display:"flex",flexDirection:"column",gap:6}}>
@@ -2423,6 +2512,7 @@ const SeriesEditor = ({ series, onSave, onSaveAsNew, onCancel, onDelete, aiStyle
                   onUpdate={isParallel?(i,v)=>upParallelMov(notesCol,i,"notes",v):(i,v)=>upMov(notesSide,i,"notes",v)}
                   onClose={()=>setNotesPanelOpen(false)}
                   width={notesWidth}
+                  libraryMovements={libraryMovements}
                 />
               </div>
             </>
@@ -2637,8 +2727,9 @@ const WarmCoolGhostRow = ({ label, value, onChange, generating, readOnly }) => {
 };
 
 // ─── AULA VIEW (merged Ver + Modo Aula) ───────────────────────────────────────
-const AulaView = ({ cls, allSeries, onBack, onDeleteClass, onUpdateSeries, onUpdateClass, aiStyle, allClasses=[], onSaveFork, teachingMode, onTeachingModeChange, onSeriesEditChange, studioSettings, readOnly=false, onPublishClass, onUnpublishClass, onDuplicateClass, onSaveSeriesAsNew, profileClassTypes }) => {
+const AulaView = ({ cls, allSeries, allMovements=[], onBack, onDeleteClass, onUpdateSeries, onUpdateClass, aiStyle, allClasses=[], onSaveFork, teachingMode, onTeachingModeChange, onSeriesEditChange, studioSettings, readOnly=false, onPublishClass, onUnpublishClass, onDuplicateClass, onSaveSeriesAsNew, profileClassTypes, profileLevels=[], profileSeriesTypes=[], profileZones=[] }) => {
   const [seriesList, setSeriesList] = useState(()=>cls.seriesIds.map(id=>allSeries.find(s=>s.id===id)).filter(Boolean));
+  const [movementList, setMovementList] = useState(()=>(cls.movementIds||[]).map(id=>allMovements.find(m=>m.id===id)).filter(Boolean));
   const [editingId, setEditingId] = useState(null);
   const [notes, setNotes] = useState(cls.notes||"");
   const [shareToken, setShareToken] = useState(cls.shareToken||null);
@@ -2648,15 +2739,24 @@ const AulaView = ({ cls, allSeries, onBack, onDeleteClass, onUpdateSeries, onUpd
   const [editLevel, setEditLevel] = useState(cls.level||"");
   const [editType, setEditType] = useState(cls.type||"");
   const [editModality, setEditModality] = useState(cls.modality||"");
-  const [showFlowEditor, setShowFlowEditor] = useState(()=>cls.seriesIds.length===0);
+  const [showFlowEditor, setShowFlowEditor] = useState(()=>cls.seriesIds.length===0&&(cls.movementIds||[]).length===0);
   const [flowZoneFilter, setFlowZoneFilter] = useState("all");
+  const [flowPropFilter, setFlowPropFilter] = useState("all");
+  const [flowLevelFilter, setFlowLevelFilter] = useState("all");
   const [flowSearch, setFlowSearch] = useState("");
   const [flowTypeFilter, setFlowTypeFilter] = useState("all");
+  const [flowLibTab, setFlowLibTab] = useState("series");
+  const [flowMovSearch, setFlowMovSearch] = useState("");
+  const [flowMovPropFilter, setFlowMovPropFilter] = useState("all");
+  const [flowMovZoneFilter, setFlowMovZoneFilter] = useState("all");
+  const [flowSeriesSelected, setFlowSeriesSelected] = useState(new Set());
+  const [flowMovSelected, setFlowMovSelected] = useState(new Set());
   const flowDragRef = React.useRef(null);
+  const flowMovDragRef = React.useRef(null);
   const [usedDates, setUsedDates] = useState(()=>cls.usedDates||[]);
   const [showDateLog, setShowDateLog] = useState(false);
   const [commentWithdrawn, setCommentWithdrawn] = useState(false);
-  const classLevels = studioSettings?.class_levels || DEFAULT_CLASS_LEVELS;
+  const classLevels = studioSettings?.class_levels?.length ? studioSettings.class_levels : profileLevels;
   const currentCls = React.useMemo(()=>({...cls, name:editName, date:editDate, level:editLevel, type:editType, modality:editModality, notes, usedDates}), [cls, editName, editDate, editLevel, editType, editModality, notes, usedDates]);
 
   const addUsedDate = (d) => {
@@ -2799,11 +2899,21 @@ const AulaView = ({ cls, allSeries, onBack, onDeleteClass, onUpdateSeries, onUpd
     setSeriesList(prev => prev.filter(s=>s.id!==id));
     setIsDirty(true);
   };
+  const addMovementToFlow = (id) => {
+    const mov = allMovements.find(m=>m.id===id);
+    if (!mov || movementList.find(m=>m.id===id)) return;
+    setMovementList(prev=>[...prev, mov]);
+    setIsDirty(true);
+  };
+  const removeMovementFromFlow = (id) => {
+    setMovementList(prev=>prev.filter(m=>m.id!==id));
+    setIsDirty(true);
+  };
 
   const doSave = () => {
     if (!cls.isClientSession && !editType) { toast_?.('Escolhe a modalidade antes de guardar a aula.', 'error'); return; }
     if (cls.isClientSession && !editModality && (profileClassTypes||[]).length > 0) { toast_?.('Escolhe a modalidade antes de guardar.', 'error'); return; }
-    onUpdateClass({...cls, name:editName, date:editDate, level:editLevel, type:editType, modality:editModality, notes, usedDates, warmupNotes, cooldownNotes, seriesIds:seriesList.map(s=>s.id)});
+    onUpdateClass({...cls, name:editName, date:editDate, level:editLevel, type:editType, modality:editModality, notes, usedDates, warmupNotes, cooldownNotes, seriesIds:seriesList.map(s=>s.id), movementIds:movementList.map(m=>m.id)});
     setIsDirty(false);
   };
 
@@ -3333,9 +3443,10 @@ const AulaView = ({ cls, allSeries, onBack, onDeleteClass, onUpdateSeries, onUpd
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,alignItems:"flex-start"}}>
               {/* Current flow */}
               <div style={{maxHeight:420,overflowY:"auto"}}>
-
-                <div style={{fontSize:11,fontWeight:700,color:C.ink,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Fluxo atual ({seriesList.length})</div>
-                {seriesList.length===0&&<div style={{color:C.mist,fontSize:13,padding:"12px 0"}}>Adiciona séries da biblioteca →</div>}
+                <div style={{fontSize:11,fontWeight:700,color:C.ink,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Fluxo atual ({seriesList.length + movementList.length})</div>
+                {/* Series */}
+                {seriesList.length>0&&<div style={{fontSize:10,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4}}>Séries</div>}
+                {seriesList.length===0&&movementList.length===0&&<div style={{color:C.mist,fontSize:13,padding:"12px 0"}}>Adiciona séries ou movimentos da biblioteca →</div>}
                 {seriesList.map((ser,i)=>(
                   <div key={ser.id} draggable
                     onDragStart={()=>{ flowDragRef.current=i; }}
@@ -3354,26 +3465,71 @@ const AulaView = ({ cls, allSeries, onBack, onDeleteClass, onUpdateSeries, onUpd
                     <button onClick={()=>removeFromFlow(ser.id)} style={{background:"none",border:"none",cursor:"pointer",color:C.coral,padding:"2px 4px",flexShrink:0}}><Icon name="x" size={13}/></button>
                   </div>
                 ))}
+                {/* Movements */}
+                {movementList.length>0&&<div style={{fontSize:10,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em",margin:"8px 0 4px"}}>Movimentos</div>}
+                {movementList.map((mov,i)=>(
+                  <div key={mov.id} draggable
+                    onDragStart={()=>{ flowMovDragRef.current=i; }}
+                    onDragOver={e=>e.preventDefault()}
+                    onDrop={()=>{
+                      if(flowMovDragRef.current!=null&&flowMovDragRef.current!==i){
+                        const newList=[...movementList]; const [item]=newList.splice(flowMovDragRef.current,1); newList.splice(i,0,item);
+                        setMovementList(newList); setIsDirty(true);
+                      } flowMovDragRef.current=null;
+                    }}
+                    style={{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",background:`${C.peach}25`,borderRadius:8,border:`1px solid ${C.stone}`,marginBottom:5,cursor:"grab"}}>
+                    <span style={{color:C.stone,fontSize:12,userSelect:"none"}}>⠿</span>
+                    <span style={{flex:1,fontSize:13,color:C.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{mov.movement}</span>
+                    {mov.category&&<span style={{fontSize:11,color:C.mist,flexShrink:0}}>{mov.category}</span>}
+                    <button onClick={()=>removeMovementFromFlow(mov.id)} style={{background:"none",border:"none",cursor:"pointer",color:C.coral,padding:"2px 4px",flexShrink:0}}><Icon name="x" size={13}/></button>
+                  </div>
+                ))}
                 {(()=>{ const total=seriesList.reduce((acc,s)=>{ const d=parseDuration(s)??s.duration??null; return d!==null?acc+d:acc; },0); if(!total)return null; const m=Math.floor(total/60),s=total%60; return <div style={{fontSize:11,color:C.mist,marginTop:6,fontWeight:600}}>Duração estimada: {s>0?`${m}'${String(s).padStart(2,'0')}''`:`${m}'`}</div>; })()}
               </div>
-              {/* Available series */}
+              {/* Available library */}
               <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                <div style={{fontSize:11,fontWeight:700,color:C.ink,textTransform:"uppercase",letterSpacing:"0.08em"}}>Biblioteca disponível</div>
+                <div style={{display:"flex",gap:6,marginBottom:2}}>
+                  {[["series","Séries"],["movements","Movimentos"]].map(([tab,lbl])=>(
+                    <button key={tab} onClick={()=>setFlowLibTab(tab)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:700,padding:"4px 12px",borderRadius:20,border:`1px solid ${flowLibTab===tab?C.crimson:C.stone}`,background:flowLibTab===tab?C.crimson:"transparent",color:flowLibTab===tab?C.cream:C.mist,cursor:"pointer"}}>{lbl}</button>
+                  ))}
+                </div>
+                {flowLibTab==="series"&&<>
                 {/* Search */}
                 <input value={flowSearch} onChange={e=>setFlowSearch(e.target.value)} placeholder="Pesquisar série…"
                   style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,padding:"6px 10px",borderRadius:8,border:`1px solid ${C.stone}`,outline:"none",background:C.white,color:C.ink,width:"100%",boxSizing:"border-box"}}/>
-                {/* Type filter */}
-                <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
-                  {[["all","Todas"],...DEFAULT_SERIES_TYPES.map(t=>[t,t])].map(([val,lbl])=>(
-                    <button key={val} onClick={()=>setFlowTypeFilter(val)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"3px 9px",borderRadius:20,border:`1px solid ${flowTypeFilter===val?C.neutral:C.stone}`,background:flowTypeFilter===val?C.neutral:"transparent",color:flowTypeFilter===val?C.white:C.mist,cursor:"pointer"}}>{lbl}</button>
-                  ))}
-                </div>
+                {/* Filters */}
+                {(()=>{
+                  const types  = profileSeriesTypes.length ? profileSeriesTypes : [...new Set(availableForFlow.map(s=>s.seriesType).filter(Boolean))].sort();
+                  const zones  = profileZones.length ? profileZones : [...new Set(availableForFlow.map(s=>s.primaryZone||(s.targetZone||'').split(',')[0].trim()).filter(Boolean))].sort();
+                  const props  = [...new Set(availableForFlow.flatMap(s=>s.propTags||[]))].sort();
+                  const levels = [...new Set(availableForFlow.map(s=>s.level).filter(Boolean))].sort();
+                  if(!types.length&&!zones.length&&!props.length&&!levels.length) return null;
+                  const ds = {fontFamily:"'Satoshi',sans-serif",fontSize:11,padding:"3px 7px",borderRadius:8,border:`1px solid ${C.stone}`,outline:"none",background:C.white,color:C.ink,cursor:"pointer"};
+                  return (
+                  <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+                    {types.length>0&&<select value={flowTypeFilter} onChange={e=>setFlowTypeFilter(e.target.value)} style={ds}>
+                      <option value="all">Todos os tipos</option>{types.map(t=><option key={t} value={t}>{t}</option>)}
+                    </select>}
+                    {zones.length>0&&<select value={flowZoneFilter} onChange={e=>setFlowZoneFilter(e.target.value)} style={ds}>
+                      <option value="all">Todas as zonas</option>{zones.map(z=><option key={z} value={z}>{z}</option>)}
+                    </select>}
+                    {props.length>0&&<select value={flowPropFilter} onChange={e=>setFlowPropFilter(e.target.value)} style={ds}>
+                      <option value="all">Todos os props</option>{props.map(p=><option key={p} value={p}>{p}</option>)}
+                    </select>}
+                    {levels.length>0&&<select value={flowLevelFilter} onChange={e=>setFlowLevelFilter(e.target.value)} style={ds}>
+                      <option value="all">Todos os níveis</option>{levels.map(l=><option key={l} value={l}>{l}</option>)}
+                    </select>}
+                  </div>);
+                })()}
                 {/* Grouped list */}
                 {(()=>{
                   const baseFiltered = availableForFlow.filter(s=>{
                     const matchSearch = !flowSearch || s.name.toLowerCase().includes(flowSearch.toLowerCase());
                     const matchType = flowTypeFilter==="all" || s.seriesType===flowTypeFilter;
-                    return matchSearch && matchType;
+                    const matchZone = flowZoneFilter==="all" || (s.primaryZone||(s.targetZone||'').split(',')[0].trim())===flowZoneFilter;
+                    const matchProp = flowPropFilter==="all" || (s.propTags||[]).includes(flowPropFilter);
+                    const matchLevel = flowLevelFilter==="all" || s.level===flowLevelFilter;
+                    return matchSearch && matchType && matchZone && matchProp && matchLevel;
                   });
                   const withZone = baseFiltered.filter(s=>s.primaryZone||s.targetZone);
                   const withoutZone = baseFiltered.filter(s=>!s.primaryZone&&!s.targetZone);
@@ -3384,15 +3540,22 @@ const AulaView = ({ cls, allSeries, onBack, onDeleteClass, onUpdateSeries, onUpd
                     zoneGroups[zone].push(s);
                   });
                   const sortedZones = Object.keys(zoneGroups).sort((a,b)=>a.localeCompare(b,"pt"));
-                  const renderCard = s=>(
-                    <div key={s.id} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",background:C.cream,borderRadius:8,border:`1px solid ${C.stone}`,marginBottom:4}}>
+                  const renderCard = s=>{
+                    const isSel = flowSeriesSelected.has(s.id);
+                    return (
+                    <div key={s.id} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",background:isSel?`${C.neutral}12`:C.cream,borderRadius:8,border:`1px solid ${isSel?C.neutral:C.stone}`,marginBottom:4}}>
+                      <input type="checkbox" checked={isSel} onChange={()=>setFlowSeriesSelected(p=>{const n=new Set(p);n.has(s.id)?n.delete(s.id):n.add(s.id);return n;})} style={{cursor:"pointer",flexShrink:0}}/>
                       <span style={{flex:1,fontSize:13,color:C.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.name}</span>
                       <Badge label={s.type==="signature"?"✦":s.type?.slice(0,2)?.toUpperCase()||"?"} color={s.type==="signature"?"gold":s.type?.toLowerCase()==="reformer"?"teal":s.type?.toLowerCase()==="barre"?"coral":"neutral"} hexColor={s.type!=="signature"?resolveTypeHex(s.type,profileClassTypes):null}/>
                       <Btn small variant="ghost" onClick={()=>addToFlow(s.id)}><Icon name="plus" size={12}/></Btn>
                     </div>
-                  );
+                    );
+                  };
                   if(baseFiltered.length===0) return <div style={{color:C.mist,fontSize:13}}>Nenhuma série encontrada.</div>;
+                  const addSelected = () => { flowSeriesSelected.forEach(id=>addToFlow(id)); setFlowSeriesSelected(new Set()); };
                   return (
+                    <div>
+                    {flowSeriesSelected.size>0&&<button onClick={addSelected} style={{width:"100%",marginBottom:6,fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:700,padding:"6px",borderRadius:8,border:"none",background:C.neutral,color:C.white,cursor:"pointer"}}>+ Adicionar {flowSeriesSelected.size} selecionada{flowSeriesSelected.size!==1?"s":""}</button>}
                     <div style={{maxHeight:360,overflowY:"auto"}}>
                       {sortedZones.map(zone=>(
                         <div key={zone}>
@@ -3407,8 +3570,60 @@ const AulaView = ({ cls, allSeries, onBack, onDeleteClass, onUpdateSeries, onUpd
                         </div>
                       )}
                     </div>
+                    </div>
                   );
                 })()}
+                </>}
+                {flowLibTab==="movements"&&(
+                  <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                    <input value={flowMovSearch} onChange={e=>setFlowMovSearch(e.target.value)} placeholder="Pesquisar movimento…"
+                      style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,padding:"6px 10px",borderRadius:8,border:`1px solid ${C.stone}`,outline:"none",background:C.white,color:C.ink,width:"100%",boxSizing:"border-box"}}/>
+                    {(()=>{
+                      const avail = allMovements.filter(m=>!m.isArchived);
+                      const movPs = [...new Set(avail.map(m=>m.props).filter(Boolean))].sort();
+                      const movZs = [...new Set(avail.map(m=>m.targetZone).filter(Boolean))].sort();
+                      if(!movPs.length&&!movZs.length) return null;
+                      const ds = {fontFamily:"'Satoshi',sans-serif",fontSize:11,padding:"3px 7px",borderRadius:8,border:`1px solid ${C.stone}`,outline:"none",background:C.white,color:C.ink,cursor:"pointer"};
+                      return <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+                        {movPs.length>0&&<select value={flowMovPropFilter} onChange={e=>setFlowMovPropFilter(e.target.value)} style={ds}>
+                          <option value="all">Todos os props</option>{movPs.map(p=><option key={p} value={p}>{p}</option>)}
+                        </select>}
+                        {movZs.length>0&&<select value={flowMovZoneFilter} onChange={e=>setFlowMovZoneFilter(e.target.value)} style={ds}>
+                          <option value="all">Todas as zonas</option>{movZs.map(z=><option key={z} value={z}>{z}</option>)}
+                        </select>}
+                      </div>;
+                    })()}
+                    <div style={{maxHeight:360,overflowY:"auto"}}>
+                      {(()=>{
+                        const available = allMovements.filter(m=>!m.isArchived&&!movementList.find(x=>x.id===m.id));
+                        const filtered = available.filter(m=>{
+                          if(flowMovSearch&&!m.movement.toLowerCase().includes(flowMovSearch.toLowerCase())&&!(m.category||'').toLowerCase().includes(flowMovSearch.toLowerCase())) return false;
+                          if(flowMovPropFilter!=="all"&&m.props!==flowMovPropFilter) return false;
+                          if(flowMovZoneFilter!=="all"&&m.targetZone!==flowMovZoneFilter) return false;
+                          return true;
+                        });
+                        if(filtered.length===0) return <div style={{color:C.mist,fontSize:13}}>Nenhum movimento encontrado.</div>;
+                        const addMovSelected = () => { flowMovSelected.forEach(id=>addMovementToFlow(id)); setFlowMovSelected(new Set()); };
+                        return (<>
+                          {flowMovSelected.size>0&&<button onClick={addMovSelected} style={{width:"100%",marginBottom:6,fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:700,padding:"6px",borderRadius:8,border:"none",background:C.neutral,color:C.white,cursor:"pointer"}}>+ Adicionar {flowMovSelected.size} selecionado{flowMovSelected.size!==1?"s":""}</button>}
+                          {filtered.map(mov=>{
+                            const isSel = flowMovSelected.has(mov.id);
+                            return (
+                            <div key={mov.id} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",background:isSel?`${C.neutral}12`:`${C.peach}20`,borderRadius:8,border:`1px solid ${isSel?C.neutral:C.stone}`,marginBottom:4}}>
+                              <input type="checkbox" checked={isSel} onChange={()=>setFlowMovSelected(p=>{const n=new Set(p);n.has(mov.id)?n.delete(mov.id):n.add(mov.id);return n;})} style={{cursor:"pointer",flexShrink:0}}/>
+                              <div style={{flex:1,overflow:"hidden"}}>
+                                <div style={{fontSize:13,color:C.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{mov.movement}</div>
+                                {(mov.category||mov.props||mov.targetZone)&&<div style={{fontSize:10,color:C.mist,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{[mov.category,mov.props,mov.targetZone].filter(Boolean).join(" · ")}</div>}
+                              </div>
+                              <Btn small variant="ghost" onClick={()=>addMovementToFlow(mov.id)}><Icon name="plus" size={12}/></Btn>
+                            </div>
+                            );
+                          })}
+                        </>);
+                      })()}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -3430,7 +3645,7 @@ const AulaView = ({ cls, allSeries, onBack, onDeleteClass, onUpdateSeries, onUpd
         {seriesList.map((ser,idx)=>(
           <div key={ser.id} className="print-series-card" style={{marginBottom:16,pageBreakInside:"avoid"}}>
             {editingId===ser.id ? (
-              <SeriesEditor series={ser} onSave={saveEdit} onSaveAsNew={onSaveSeriesAsNew} onCancel={()=>{ setEditingId(null); onSeriesEditChange?.(null); }} aiStyle={aiStyle} studioSettings={studioSettings} availableZones={studioSettings?.zones?.length?studioSettings.zones:undefined}/>
+              <SeriesEditor series={ser} onSave={saveEdit} onSaveAsNew={onSaveSeriesAsNew} onCancel={()=>{ setEditingId(null); onSeriesEditChange?.(null); }} aiStyle={aiStyle} studioSettings={studioSettings} availableZones={studioSettings?.zones?.length?studioSettings.zones:undefined} libraryMovements={allMovements}/>
             ) : (
               <AulaSeriesCard ser={ser} idx={idx} isSig={isSig}
                 modR={modR} modB={modB} setModR={setModR} setModB={setModB}
@@ -3450,6 +3665,27 @@ const AulaView = ({ cls, allSeries, onBack, onDeleteClass, onUpdateSeries, onUpd
           </div>
         ))}
         </div>
+
+        {/* Standalone movements */}
+        {movementList.length>0&&(
+          <div style={{marginBottom:16}}>
+            <div style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:10}}>Movimentos</div>
+            {movementList.map(mov=>(
+              <div key={mov.id} style={{background:C.white,borderRadius:12,border:`1px solid ${C.stone}`,padding:"14px 18px",marginBottom:10,display:"flex",alignItems:"flex-start",gap:14}}>
+                <div style={{flex:1}}>
+                  <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:mov.notes||mov.category?6:0}}>
+                    <span style={{fontSize:15,fontWeight:700,color:C.ink,fontFamily:"'Clash Display',sans-serif"}}>{mov.movement}</span>
+                    {mov.modality&&<span style={{fontSize:11,fontWeight:700,color:C.neutral,background:`${C.neutral}15`,border:`1px solid ${C.neutral}40`,borderRadius:20,padding:"2px 8px"}}>{mov.modality}</span>}
+                    {mov.category&&<span style={{fontSize:11,color:C.mist}}>{mov.category}</span>}
+                    {mov.exampleUrl&&<a href={mov.exampleUrl} target="_blank" rel="noopener noreferrer" title="Ver exemplo" style={{color:C.crimson,fontSize:14,textDecoration:"none"}}>🔗</a>}
+                  </div>
+                  {mov.notes&&<div style={{fontSize:13,color:C.mist,fontFamily:"'Satoshi',sans-serif"}}>{mov.notes}</div>}
+                </div>
+                {!readOnly&&!teachingMode&&<button onClick={()=>removeMovementFromFlow(mov.id)} style={{background:"none",border:"none",cursor:"pointer",color:C.stone,fontSize:16,padding:"2px 4px",flexShrink:0}} title="Remover"><Icon name="x" size={14}/></button>}
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Cool-down ghost row */}
         {!teachingMode&&(
@@ -3593,7 +3829,7 @@ Only use IDs from the available list. Return only the JSON array, no explanation
 };
 
 // ─── CLASS BUILDER ────────────────────────────────────────────────────────────
-const ClassBuilder = ({ allSeries, classes, onSave, onDeleteClass, onPermanentDeleteClass, onViewAula, studioSettings, profileClassTypes, profileLevels, onPublishClass, onUnpublishClass, hasStudio, onToggleClassPublic, onSendClass, onUpdateClass, pendingNewClass, onPendingConsumed }) => {
+const ClassBuilder = ({ allSeries, allMovements=[], classes, onSave, onDeleteClass, onPermanentDeleteClass, onViewAula, studioSettings, profileClassTypes, profileLevels, profileSeriesTypes=[], profileZones=[], classGroups=[], onPublishClass, onUnpublishClass, hasStudio, onToggleClassPublic, onSendClass, onUpdateClass, pendingNewClass, onPendingConsumed }) => {
   const [creating, setCreating] = useState(false);
   const [newCls, setNewCls] = useState(null);
   const [classSearch, setClassSearch] = useState("");
@@ -3603,6 +3839,15 @@ const ClassBuilder = ({ allSeries, classes, onSave, onDeleteClass, onPermanentDe
   const [confirmRemoveClassId, setConfirmRemoveClassId] = useState(null);
   const [flowSearch, setFlowSearch] = useState("");
   const [flowTypeFilter, setFlowTypeFilter] = useState("all");
+  const [flowZoneFilter, setFlowZoneFilter] = useState("all");
+  const [flowPropFilter, setFlowPropFilter] = useState("all");
+  const [flowLevelFilter, setFlowLevelFilter] = useState("all");
+  const [newFlowTab, setNewFlowTab] = useState("series");
+  const [newMovSearch, setNewMovSearch] = useState("");
+  const [newMovPropFilter, setNewMovPropFilter] = useState("all");
+  const [newMovZoneFilter, setNewMovZoneFilter] = useState("all");
+  const [newFlowSeriesSelected, setNewFlowSeriesSelected] = useState(new Set());
+  const [newFlowMovSelected, setNewFlowMovSelected] = useState(new Set());
   const [showArchive, setShowArchive] = useState(false);
   const [classSortBy, setClassSortBy] = useState("date"); // 'name','date','level'
   const [classSortOrder, setClassSortOrder] = useState("desc");
@@ -3612,7 +3857,9 @@ const ClassBuilder = ({ allSeries, classes, onSave, onDeleteClass, onPermanentDe
   useEffect(() => { if (pendingNewClass) { setShowTypePicker(true); onPendingConsumed?.(); } }, [pendingNewClass]);
 
   const startCreate = type => {
-    setNewCls({ id:`c-${Date.now()}`, name:"", type, date:new Date().toISOString().split("T")[0], seriesIds:[], notes:"", level:"" });
+    setNewCls({ id:`c-${Date.now()}`, name:"", type, date:new Date().toISOString().split("T")[0], seriesIds:[], movementIds:[], notes:"", level:"" });
+    setNewFlowSeriesSelected(new Set());
+    setNewFlowMovSelected(new Set());
     setCreating(true);
   };
   const handleCreate = () => { onSave(newCls); onViewAula(newCls); setCreating(false); setNewCls(null); };
@@ -3623,13 +3870,31 @@ const ClassBuilder = ({ allSeries, classes, onSave, onDeleteClass, onPermanentDe
       (newCls.type==='signature' ? s.type==='signature' : s.type===newCls.type || s.type==='signature')
     );
     const inFlow = newCls.seriesIds || [];
+    const inMovFlow = newCls.movementIds || [];
     const toggleSeries = id => setNewCls(p=>({...p, seriesIds: inFlow.includes(id)?inFlow.filter(x=>x!==id):[...inFlow,id]}));
+    const toggleMovement = id => setNewCls(p=>({...p, movementIds: inMovFlow.includes(id)?inMovFlow.filter(x=>x!==id):[...inMovFlow,id]}));
+
+    // Series filter options (prefer profile settings so dropdowns match the editor)
+    const seriesTypes  = profileSeriesTypes.length ? profileSeriesTypes : [...new Set(compatSeries.map(s=>s.seriesType).filter(Boolean))].sort();
+    const seriesZones  = profileZones.length ? profileZones : [...new Set(compatSeries.map(s=>s.primaryZone||(s.targetZone||'').split(',')[0].trim()).filter(Boolean))].sort();
+    const seriesLevels = [...new Set(compatSeries.map(s=>s.level).filter(Boolean))].sort();
+    const seriesProps  = [...new Set(compatSeries.flatMap(s=>s.propTags||[]))].sort();
+
+    // Movement filter options
+    const compatMovements = allMovements.filter(m=>!m.isArchived);
+    const movProps = [...new Set(compatMovements.map(m=>m.props).filter(Boolean))].sort();
+    const movZones = [...new Set(compatMovements.map(m=>m.targetZone).filter(Boolean))].sort();
+
+    const dropStyle = {fontFamily:"'Satoshi',sans-serif",fontSize:12,padding:"4px 8px",borderRadius:8,border:`1px solid ${C.stone}`,outline:"none",background:C.white,color:C.ink,cursor:"pointer"};
+
+    const totalFlow = inFlow.length + inMovFlow.length;
+
     return (
     <div style={{display:"flex",flexDirection:"column",gap:16}}>
       <div style={{display:"flex",gap:12,alignItems:"center"}}>
         <Btn variant="ghost" small onClick={()=>setCreating(false)}><Icon name="back" size={13}/></Btn>
         <h3 style={{fontFamily:"'Clash Display', sans-serif",fontSize:22,fontWeight:500,color:C.crimson,margin:0,flex:1}}>
-          Nova aula {newCls.type==="signature"?"Signature":newCls.type==="reformer"?"Reformer":"Barre"}
+          Nova aula {newCls.type}
         </h3>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20,alignItems:"flex-start"}}>
@@ -3654,55 +3919,173 @@ const ClassBuilder = ({ allSeries, classes, onSave, onDeleteClass, onPermanentDe
               ))}
             </div>
           </div>
-          <Btn onClick={handleCreate} style={{alignSelf:"flex-start",marginTop:4}}><Icon name="plus" size={14}/> Criar aula{inFlow.length>0?` (${inFlow.length} séries)`:""}</Btn>
+          {classGroups.length>0&&(
+            <div>
+              <label style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em",display:"block",marginBottom:6}}>Grupo</label>
+              <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                {classGroups.map(g=>(
+                  <button key={g} onClick={()=>setNewCls(p=>({...p,classGroup:p.classGroup===g?"":g}))}
+                    style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 14px",borderRadius:20,
+                      border:`1px solid ${newCls.classGroup===g?C.crimson:C.stone}`,
+                      background:newCls.classGroup===g?`${C.crimson}18`:"transparent",
+                      color:newCls.classGroup===g?C.crimson:C.mist,cursor:"pointer"}}>
+                    {g}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          <Btn onClick={handleCreate} style={{alignSelf:"flex-start",marginTop:4}}>
+            <Icon name="plus" size={14}/> Criar aula{totalFlow>0?` (${totalFlow})`:""}</Btn>
         </div>
-        {/* Right: series flow */}
+        {/* Right: series/movements flow */}
         <div>
-          <div style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Fluxo da aula {inFlow.length>0&&<span style={{color:C.crimson}}>({inFlow.length})</span>}</div>
-          {inFlow.length>0&&(
-            <div style={{marginBottom:10,display:"flex",flexDirection:"column",gap:4}}>
+          <div style={{fontSize:11,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>
+            Fluxo da aula {totalFlow>0&&<span style={{color:C.crimson}}>({totalFlow})</span>}
+          </div>
+          {/* Selected items preview */}
+          {(inFlow.length>0||inMovFlow.length>0)&&(
+            <div style={{marginBottom:10,display:"flex",flexDirection:"column",gap:3}}>
               {inFlow.map((id,i)=>{
                 const s=allSeries.find(x=>x.id===id);
                 if(!s) return null;
                 return <div key={id} style={{display:"flex",alignItems:"center",gap:6,padding:"5px 10px",background:C.cream,borderRadius:8,border:`1px solid ${C.stone}`,fontSize:12}}>
                   <span style={{fontWeight:600,color:C.mist,minWidth:16,fontSize:10}}>{i+1}</span>
                   <span style={{flex:1,color:C.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.name}</span>
+                  <span style={{fontSize:10,color:C.mist,background:`${C.stone}`,borderRadius:4,padding:"1px 5px"}}>série</span>
                   <button onClick={()=>toggleSeries(id)} style={{background:"none",border:"none",cursor:"pointer",color:C.mist,padding:"1px 3px",fontSize:12}}>×</button>
+                </div>;
+              })}
+              {inMovFlow.map((id,i)=>{
+                const m=allMovements.find(x=>x.id===id);
+                if(!m) return null;
+                return <div key={id} style={{display:"flex",alignItems:"center",gap:6,padding:"5px 10px",background:`${C.peach}20`,borderRadius:8,border:`1px solid ${C.stone}`,fontSize:12}}>
+                  <span style={{fontWeight:600,color:C.mist,minWidth:16,fontSize:10}}>{inFlow.length+i+1}</span>
+                  <span style={{flex:1,color:C.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.movement}</span>
+                  <span style={{fontSize:10,color:C.mist,background:`${C.stone}`,borderRadius:4,padding:"1px 5px"}}>mov</span>
+                  <button onClick={()=>toggleMovement(id)} style={{background:"none",border:"none",cursor:"pointer",color:C.mist,padding:"1px 3px",fontSize:12}}>×</button>
                 </div>;
               })}
             </div>
           )}
-          <input value={flowSearch} onChange={e=>setFlowSearch(e.target.value)} placeholder="Pesquisar séries…"
-            style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,padding:"6px 10px",borderRadius:8,border:`1px solid ${C.stone}`,outline:"none",width:"100%",boxSizing:"border-box",marginBottom:6}}/>
-          <div style={{display:"flex",gap:4,flexWrap:"wrap",marginBottom:6}}>
-            {[["all","Todas"],...DEFAULT_SERIES_TYPES.map(t=>[t,t])].map(([val,lbl])=>(
-              <button key={val} onClick={()=>setFlowTypeFilter(val)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"3px 9px",borderRadius:20,border:`1px solid ${flowTypeFilter===val?C.neutral:C.stone}`,background:flowTypeFilter===val?C.neutral:"transparent",color:flowTypeFilter===val?C.white:C.mist,cursor:"pointer"}}>{lbl}</button>
+          {/* Tab switcher */}
+          <div style={{display:"flex",gap:6,marginBottom:8}}>
+            {[["series","Séries"],["movements","Movimentos"]].map(([tab,lbl])=>(
+              <button key={tab} onClick={()=>setNewFlowTab(tab)}
+                style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:700,padding:"4px 14px",borderRadius:20,
+                  border:`1px solid ${newFlowTab===tab?C.crimson:C.stone}`,
+                  background:newFlowTab===tab?C.crimson:"transparent",
+                  color:newFlowTab===tab?C.cream:C.mist,cursor:"pointer"}}>{lbl}</button>
             ))}
           </div>
-          {(()=>{
-            const baseFiltered = compatSeries.filter(s=>!inFlow.includes(s.id)&&(!flowSearch||s.name.toLowerCase().includes(flowSearch.toLowerCase()))&&(flowTypeFilter==="all"||s.seriesType===flowTypeFilter));
-            const withZone = baseFiltered.filter(s=>s.primaryZone||s.targetZone);
-            const noZone = baseFiltered.filter(s=>!s.primaryZone&&!s.targetZone);
-            const grouped = {};
-            withZone.forEach(s=>{ const z=s.primaryZone||(s.targetZone||"").split(",")[0]?.trim()||""; if(!grouped[z]) grouped[z]=[]; grouped[z].push(s); });
-            const zones = Object.keys(grouped).sort();
-            const renderRow = s => (
-              <div key={s.id} onClick={()=>toggleSeries(s.id)}
-                style={{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",background:C.white,borderRadius:8,border:`1px solid ${C.stone}`,cursor:"pointer",fontSize:12}}
-                onMouseEnter={e=>e.currentTarget.style.borderColor=C.neutral}
-                onMouseLeave={e=>e.currentTarget.style.borderColor=C.stone}>
-                <span style={{flex:1,color:C.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.name}</span>
-                <Badge label={s.type==="signature"?"✦":s.type==="reformer"?"R":"B"} color={s.type==="signature"?"gold":s.type==="reformer"?"teal":"coral"} hexColor={s.type!=="signature"?resolveTypeHex(s.type,profileClassTypes):null}/>
-                <span style={{color:C.crimson,fontWeight:700,fontSize:14,lineHeight:1}}>+</span>
+          {/* SERIES PANEL */}
+          {newFlowTab==="series"&&(()=>{
+            const filtered = compatSeries.filter(s=>{
+              if (inFlow.includes(s.id)) return false;
+              if (flowSearch && !s.name.toLowerCase().includes(flowSearch.toLowerCase())) return false;
+              if (flowTypeFilter!=="all" && s.seriesType!==flowTypeFilter) return false;
+              if (flowZoneFilter!=="all") { const z=s.primaryZone||(s.targetZone||'').split(',')[0].trim(); if(z!==flowZoneFilter) return false; }
+              if (flowPropFilter!=="all" && !(s.propTags||[]).includes(flowPropFilter)) return false;
+              if (flowLevelFilter!=="all" && s.level!==flowLevelFilter) return false;
+              return true;
+            });
+            return (
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                <input value={flowSearch} onChange={e=>setFlowSearch(e.target.value)} placeholder="Pesquisar séries…"
+                  style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,padding:"6px 10px",borderRadius:8,border:`1px solid ${C.stone}`,outline:"none",width:"100%",boxSizing:"border-box"}}/>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                  {seriesTypes.length>0&&<select value={flowTypeFilter} onChange={e=>setFlowTypeFilter(e.target.value)} style={dropStyle}>
+                    <option value="all">Todos os tipos</option>
+                    {seriesTypes.map(t=><option key={t} value={t}>{t}</option>)}
+                  </select>}
+                  {seriesZones.length>0&&<select value={flowZoneFilter} onChange={e=>setFlowZoneFilter(e.target.value)} style={dropStyle}>
+                    <option value="all">Todas as zonas</option>
+                    {seriesZones.map(z=><option key={z} value={z}>{z}</option>)}
+                  </select>}
+                  {seriesProps.length>0&&<select value={flowPropFilter} onChange={e=>setFlowPropFilter(e.target.value)} style={dropStyle}>
+                    <option value="all">Todos os props</option>
+                    {seriesProps.map(p=><option key={p} value={p}>{p}</option>)}
+                  </select>}
+                  {seriesLevels.length>0&&<select value={flowLevelFilter} onChange={e=>setFlowLevelFilter(e.target.value)} style={dropStyle}>
+                    <option value="all">Todos os níveis</option>
+                    {seriesLevels.map(l=><option key={l} value={l}>{l}</option>)}
+                  </select>}
+                </div>
+                {newFlowSeriesSelected.size>0&&(
+                  <button onClick={()=>{newFlowSeriesSelected.forEach(id=>toggleSeries(id));setNewFlowSeriesSelected(new Set());}}
+                    style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:700,padding:"6px 12px",borderRadius:8,border:"none",background:C.crimson,color:C.cream,cursor:"pointer",width:"100%"}}>
+                    + Adicionar {newFlowSeriesSelected.size} selecionada{newFlowSeriesSelected.size!==1?"s":""}
+                  </button>
+                )}
+                <div style={{display:"flex",flexDirection:"column",gap:4,maxHeight:240,overflowY:"auto"}}>
+                  {filtered.map(s=>{
+                    const isSel = newFlowSeriesSelected.has(s.id);
+                    return (
+                    <div key={s.id}
+                      style={{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",background:isSel?`${C.neutral}12`:C.white,borderRadius:8,border:`1px solid ${isSel?C.neutral:C.stone}`,cursor:"pointer",fontSize:12}}
+                      onMouseEnter={e=>e.currentTarget.style.borderColor=C.neutral}
+                      onMouseLeave={e=>e.currentTarget.style.borderColor=isSel?C.neutral:C.stone}>
+                      <input type="checkbox" checked={isSel} onChange={()=>setNewFlowSeriesSelected(p=>{const n=new Set(p);n.has(s.id)?n.delete(s.id):n.add(s.id);return n;})} style={{accentColor:C.neutral,cursor:"pointer"}} onClick={e=>e.stopPropagation()}/>
+                      <span style={{flex:1,color:C.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.name}</span>
+                      {s.level&&<span style={{fontSize:10,color:C.mist}}>{s.level}</span>}
+                      <Badge label={s.type==="signature"?"✦":s.type==="reformer"?"R":"B"} color={s.type==="signature"?"gold":s.type==="reformer"?"teal":"coral"} hexColor={s.type!=="signature"?resolveTypeHex(s.type,profileClassTypes):null}/>
+                      <Btn small variant="ghost" onClick={e=>{e.stopPropagation();toggleSeries(s.id);}}><Icon name="plus" size={12}/></Btn>
+                    </div>
+                    );
+                  })}
+                  {filtered.length===0&&<div style={{color:C.mist,fontSize:12,padding:8}}>Sem séries disponíveis.</div>}
+                </div>
               </div>
             );
-            const renderDivider = z => <div key={`div-${z}`} style={{display:"flex",alignItems:"center",gap:8,margin:"4px 0 2px"}}><div style={{flex:1,height:1,background:C.stone}}/><span style={{fontSize:10,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.1em",whiteSpace:"nowrap"}}>{z}</span><div style={{flex:1,height:1,background:C.stone}}/></div>;
+          })()}
+          {/* MOVEMENTS PANEL */}
+          {newFlowTab==="movements"&&(()=>{
+            const filtered = compatMovements.filter(m=>{
+              if (inMovFlow.includes(m.id)) return false;
+              if (newMovSearch && !m.movement.toLowerCase().includes(newMovSearch.toLowerCase()) && !(m.category||'').toLowerCase().includes(newMovSearch.toLowerCase())) return false;
+              if (newMovPropFilter!=="all" && m.props!==newMovPropFilter) return false;
+              if (newMovZoneFilter!=="all" && m.targetZone!==newMovZoneFilter) return false;
+              return true;
+            });
             return (
-              <div style={{display:"flex",flexDirection:"column",gap:4,maxHeight:260,overflowY:"auto"}}>
-                {zones.map(z=>[renderDivider(z),...grouped[z].map(renderRow)])}
-                {noZone.length>0&&zones.length>0&&renderDivider("Outras")}
-                {noZone.map(renderRow)}
-                {baseFiltered.length===0&&<div style={{color:C.mist,fontSize:12,padding:8}}>Sem séries disponíveis para este tipo.</div>}
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                <input value={newMovSearch} onChange={e=>setNewMovSearch(e.target.value)} placeholder="Pesquisar movimento…"
+                  style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,padding:"6px 10px",borderRadius:8,border:`1px solid ${C.stone}`,outline:"none",width:"100%",boxSizing:"border-box"}}/>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                  {movProps.length>0&&<select value={newMovPropFilter} onChange={e=>setNewMovPropFilter(e.target.value)} style={dropStyle}>
+                    <option value="all">Todos os props</option>
+                    {movProps.map(p=><option key={p} value={p}>{p}</option>)}
+                  </select>}
+                  {movZones.length>0&&<select value={newMovZoneFilter} onChange={e=>setNewMovZoneFilter(e.target.value)} style={dropStyle}>
+                    <option value="all">Todas as zonas</option>
+                    {movZones.map(z=><option key={z} value={z}>{z}</option>)}
+                  </select>}
+                </div>
+                {newFlowMovSelected.size>0&&(
+                  <button onClick={()=>{newFlowMovSelected.forEach(id=>toggleMovement(id));setNewFlowMovSelected(new Set());}}
+                    style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:700,padding:"6px 12px",borderRadius:8,border:"none",background:C.crimson,color:C.cream,cursor:"pointer",width:"100%"}}>
+                    + Adicionar {newFlowMovSelected.size} selecionado{newFlowMovSelected.size!==1?"s":""}
+                  </button>
+                )}
+                <div style={{display:"flex",flexDirection:"column",gap:4,maxHeight:240,overflowY:"auto"}}>
+                  {filtered.map(m=>{
+                    const isSel = newFlowMovSelected.has(m.id);
+                    return (
+                    <div key={m.id}
+                      style={{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",background:isSel?`${C.neutral}12`:`${C.peach}20`,borderRadius:8,border:`1px solid ${isSel?C.neutral:C.stone}`,cursor:"pointer",fontSize:12}}
+                      onMouseEnter={e=>e.currentTarget.style.borderColor=C.neutral}
+                      onMouseLeave={e=>e.currentTarget.style.borderColor=isSel?C.neutral:C.stone}>
+                      <input type="checkbox" checked={isSel} onChange={()=>setNewFlowMovSelected(p=>{const n=new Set(p);n.has(m.id)?n.delete(m.id):n.add(m.id);return n;})} style={{accentColor:C.neutral,cursor:"pointer"}} onClick={e=>e.stopPropagation()}/>
+                      <div style={{flex:1,overflow:"hidden"}}>
+                        <div style={{color:C.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.movement}</div>
+                        {(m.category||m.props||m.targetZone)&&<div style={{fontSize:10,color:C.mist}}>{[m.category,m.props,m.targetZone].filter(Boolean).join(" · ")}</div>}
+                      </div>
+                      <Btn small variant="ghost" onClick={e=>{e.stopPropagation();toggleMovement(m.id);}}><Icon name="plus" size={12}/></Btn>
+                    </div>
+                    );
+                  })}
+                  {filtered.length===0&&<div style={{color:C.mist,fontSize:12,padding:8}}>Sem movimentos disponíveis.</div>}
+                </div>
               </div>
             );
           })()}
@@ -3749,41 +4132,41 @@ const ClassBuilder = ({ allSeries, classes, onSave, onDeleteClass, onPermanentDe
           <button onClick={()=>setShowTypePicker(false)} style={{marginLeft:"auto",background:"none",border:"none",cursor:"pointer",color:C.mist,fontSize:16,padding:"0 4px"}}>×</button>
         </div>
       )}
-      {/* Two-column layout: filters left, list right */}
-      <div style={{display:"flex",gap:20,alignItems:"flex-start"}}>
-        {/* Left column: filters */}
-        <div style={{width:170,flexShrink:0}}>
-          {(profileClassTypes?.length>0) && (
-            <CollapsibleSection title="Modalidade" defaultOpen={true}>
-              <div style={{display:"flex",flexDirection:"column",gap:4,paddingBottom:8}}>
-                <button onClick={()=>setClassTypeFilter("")} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 12px",borderRadius:8,border:`1px solid ${!classTypeFilter?C.neutral:C.stone}`,background:!classTypeFilter?C.neutral:"transparent",color:!classTypeFilter?C.white:C.ink,cursor:"pointer",textAlign:"left"}}>Todas</button>
-                {profileClassTypes.map(t=>{const n=(typeof t==='string'?t:t?.name)||''; if(!n) return null; return(<button key={n} onClick={()=>setClassTypeFilter(p=>p===n?"":n)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 12px",borderRadius:8,border:`1px solid ${classTypeFilter===n?C.neutral:C.stone}`,background:classTypeFilter===n?C.neutral:"transparent",color:classTypeFilter===n?C.white:C.ink,cursor:"pointer",textAlign:"left"}}>{n[0].toUpperCase()+n.slice(1)}</button>);})}
-              </div>
-            </CollapsibleSection>
-          )}
-          <CollapsibleSection title="Nível" defaultOpen={true}>
-            <div style={{display:"flex",flexDirection:"column",gap:4,paddingBottom:8}}>
-              <button onClick={()=>{setClassLevelFilter("");setShowArchive(false);}} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 12px",borderRadius:8,border:`1px solid ${!classLevelFilter&&!showArchive?C.neutral:C.stone}`,background:!classLevelFilter&&!showArchive?C.neutral:"transparent",color:!classLevelFilter&&!showArchive?C.white:C.ink,cursor:"pointer",textAlign:"left"}}>Todos</button>
-              {classLevels.map(lvl=>(
-                <button key={lvl} onClick={()=>{setClassLevelFilter(p=>p===lvl?"":lvl);setShowArchive(false);}} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 12px",borderRadius:8,border:`1px solid ${classLevelFilter===lvl?C.neutral:C.stone}`,background:classLevelFilter===lvl?C.neutral:"transparent",color:classLevelFilter===lvl?C.white:C.ink,cursor:"pointer",textAlign:"left"}}>{lvl}</button>
-              ))}
-            </div>
-          </CollapsibleSection>
-
-          <CollapsibleSection title="Ordenar" defaultOpen={false}>
-            <div style={{display:"flex",flexDirection:"column",gap:4,paddingBottom:8}}>
-              {[["name","Nome"],["date","Data"],["level","Nível"]].map(([val,lbl])=>(
-                <button key={val} onClick={()=>{ if(classSortBy===val) setClassSortOrder(p=>p==="asc"?"desc":"asc"); else { setClassSortBy(val); setClassSortOrder("desc"); }}} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 12px",borderRadius:8,border:`1px solid ${classSortBy===val?C.neutral:C.stone}`,background:classSortBy===val?C.neutral:"transparent",color:classSortBy===val?C.white:C.ink,cursor:"pointer",textAlign:"left"}}>{lbl}{classSortBy===val?(classSortOrder==="asc"?" ↑":" ↓"):""}</button>
-              ))}
-            </div>
-          </CollapsibleSection>
-
-          <div style={{borderTop:`1px solid ${C.stone}`,paddingTop:8,marginTop:4}}>
-            <button onClick={()=>{setShowArchive(p=>!p);setClassLevelFilter("");setClassTypeFilter("");}} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,color:showArchive?C.crimson:C.mist,background:"none",border:"none",cursor:"pointer",padding:"4px 0",textAlign:"left",textDecoration:"underline"}}>📦 Arquivo</button>
+      {/* Filter bar */}
+      {(()=>{
+        const ds = {fontFamily:"'Satoshi',sans-serif",fontSize:12,padding:"5px 10px",borderRadius:8,border:`1px solid ${C.stone}`,outline:"none",background:C.white,color:C.ink,cursor:"pointer"};
+        const classTypes = (profileClassTypes||[]).map(t=>typeof t==='string'?t:t?.name).filter(Boolean);
+        const activeCount = [classTypeFilter,classLevelFilter].filter(Boolean).length;
+        return (
+        <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",marginBottom:12,padding:"10px 14px",background:C.white,borderRadius:10,border:`1px solid ${C.stone}`}}>
+          {classTypes.length>0&&<select value={classTypeFilter} onChange={e=>setClassTypeFilter(e.target.value)} style={ds}>
+            <option value="">Modalidade</option>
+            {classTypes.map(t=><option key={t} value={t}>{t}</option>)}
+          </select>}
+          {classLevels.length>0&&<select value={classLevelFilter} onChange={e=>{setClassLevelFilter(e.target.value);setShowArchive(false);}} style={ds}>
+            <option value="">Nível</option>
+            {classLevels.map(l=><option key={l} value={l}>{l}</option>)}
+          </select>}
+          {classGroups.length>0&&<select value={""} onChange={e=>{/* group filter */}} style={ds}>
+            <option value="">Grupo</option>
+            {classGroups.map(g=><option key={g} value={g}>{g}</option>)}
+          </select>}
+          <div style={{display:"flex",alignItems:"center",gap:4}}>
+            <select value={classSortBy} onChange={e=>{setClassSortBy(e.target.value);}} style={ds}>
+              <option value="date">Ordenar: Data</option>
+              <option value="name">Ordenar: Nome</option>
+              <option value="level">Ordenar: Nível</option>
+            </select>
+            <button onClick={()=>setClassSortOrder(p=>p==="asc"?"desc":"asc")} style={{...ds,padding:"5px 8px",fontWeight:700}}>{classSortOrder==="asc"?"↑":"↓"}</button>
           </div>
+          {activeCount>0&&<button onClick={()=>{setClassTypeFilter("");setClassLevelFilter("");}} style={{...ds,color:C.crimson,borderColor:C.crimson,fontSize:11}}>× Limpar ({activeCount})</button>}
+          <div style={{flex:1}}/>
+          <button onClick={()=>{setShowArchive(p=>!p);setClassLevelFilter("");setClassTypeFilter("");}} style={{...ds,color:showArchive?C.crimson:C.mist,borderColor:showArchive?C.crimson:C.stone}}>📦 Arquivo</button>
         </div>
-        {/* Right column: class list */}
-        <div style={{flex:1,minWidth:0}}>
+        );
+      })()}
+      {/* Class list */}
+      <div style={{flex:1,minWidth:0}}>
           {showArchive ? (
             <div>
               <button onClick={()=>setShowArchive(false)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,color:C.mist,background:"none",border:"none",cursor:"pointer",padding:"0 0 12px",display:"flex",alignItems:"center",gap:4}}>← Planeamento de Aulas</button>
@@ -3877,7 +4260,6 @@ const ClassBuilder = ({ allSeries, classes, onSave, onDeleteClass, onPermanentDe
           </div>
           </>
           )}
-        </div>
       </div>
     </div>
   );
@@ -3949,232 +4331,688 @@ const AiStylePanel = ({ value, onChange }) => {
 
 
 // ─── MOVEMENT LIBRARY PAGE ────────────────────────────────────────────────────
-const MovementLibraryPage = ({ series, onUpdateSeries, aiStyle }) => {
+// ─── EXCEL IMPORT MODAL ───────────────────────────────────────────────────────
+// entityType: 'movement' | 'series' | 'class'
+// onImport(records[]) — called with the final array of objects to create
+const MOVEMENT_FIELDS = [
+  { key: 'movement',   label: 'Movimento',          required: true  },
+  { key: 'notes',      label: 'Notas',              required: false },
+  { key: 'category',   label: 'Categoria',          required: false },
+  { key: 'exampleUrl', label: 'Exemplo (URL/link)', required: false },
+];
+const SERIES_FIELDS = [
+  { key: 'name',        label: 'Nome',                required: true },
+  { key: 'type',        label: 'Tipo (reformer/barre/signature)', required: true },
+  { key: 'song',        label: 'Música',              required: false },
+  { key: 'primaryZone', label: 'Zona Principal',       required: false },
+  { key: 'seriesType',  label: 'Tipo de Série',        required: false },
+  { key: 'seriesGroup', label: 'Grupo',                required: false },
+  { key: 'status',      label: 'Estado (WIP/Pronta)',  required: false },
+  { key: 'springs',     label: 'Molas',                required: false },
+  { key: 'props',       label: 'Props',                required: false },
+  { key: 'startPosition', label: 'Posição Inicial',    required: false },
+  { key: 'cues',        label: 'Notas de Instrução',   required: false },
+  { key: 'duration',    label: 'Duração (minutos)',    required: false },
+];
+const CLASS_FIELDS = [
+  { key: 'name',       label: 'Nome',              required: true },
+  { key: 'type',       label: 'Tipo',              required: true },
+  { key: 'date',       label: 'Data (YYYY-MM-DD)', required: false },
+  { key: 'level',      label: 'Nível',             required: false },
+  { key: 'notes',      label: 'Notas',             required: false },
+  { key: 'classGroup', label: 'Grupo',             required: false },
+];
+
+const ExcelImportModal = ({ entityType, onImport, onClose, availableGroups=[], availableModalities=[] }) => {
+  const [step, setStep]         = React.useState(1); // 1=upload 2=sheet 3=orient 4=map 5=preview
+  const [workbook, setWorkbook] = React.useState(null);
+  const [sheets, setSheets]     = React.useState([]);
+  const [sheet, setSheet]       = React.useState('');
+  const [orient, setOrient]     = React.useState('row'); // 'row' | 'col'
+  const [headers, setHeaders]   = React.useState([]);    // column/row header strings
+  const [mapping, setMapping]         = React.useState({});    // fieldKey → string[] of headerIndices
+  const [selectedModality, setSelectedModality] = React.useState('');
+  const [selectedGroup, setSelectedGroup]       = React.useState('');
+  const [preview, setPreview]         = React.useState([]);
+  const [importing, setImporting]     = React.useState(false);
+  const toast_ = useToast();
+
+  const fields = entityType === 'movement' ? MOVEMENT_FIELDS
+               : entityType === 'series'   ? SERIES_FIELDS
+               : CLASS_FIELDS;
+
+  const entityLabel = entityType === 'movement' ? 'movimentos'
+                    : entityType === 'series'   ? 'séries'
+                    : 'aulas';
+
+  const handleFile = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const data = new Uint8Array(ev.target.result);
+        const wb = XLSX.read(data, { type: 'array' });
+        setWorkbook(wb);
+        setSheets(wb.SheetNames);
+        setSheet(wb.SheetNames[0] || '');
+        setStep(2);
+      } catch(err) {
+        toast_?.('Erro ao ler o ficheiro', 'error');
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
+  const handleSheetConfirm = () => {
+    if (!sheet || !workbook) return;
+    setStep(3);
+  };
+
+  const handleOrientConfirm = () => {
+    if (!workbook || !sheet) return;
+    const ws = workbook.Sheets[sheet];
+    const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+    if (!raw || raw.length === 0) { toast_?.('Sheet vazia', 'error'); return; }
+
+    let hdrs;
+    if (orient === 'row') {
+      // first row = headers
+      hdrs = (raw[0] || []).map(h => String(h).trim()).filter(Boolean);
+    } else {
+      // first column = headers
+      hdrs = raw.map(r => String(r[0] || '').trim()).filter(Boolean);
+    }
+    setHeaders(hdrs);
+    // Auto-map by fuzzy label match — mapping is now fieldKey → string[]
+    const autoMap = {};
+    fields.forEach(f => {
+      const idx = hdrs.findIndex(h => h.toLowerCase().includes(f.key.toLowerCase()) || f.label.toLowerCase().includes(h.toLowerCase()));
+      if (idx !== -1) autoMap[f.key] = [String(idx)];
+    });
+    setMapping(autoMap);
+    setStep(4);
+  };
+
+  const buildRecords = () => {
+    if (!workbook || !sheet) return [];
+    const ws = workbook.Sheets[sheet];
+    const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+    if (!raw || raw.length === 0) return [];
+
+    let dataRows;
+    if (orient === 'row') {
+      dataRows = raw.slice(1).filter(r => r.some(c => String(c).trim()));
+    } else {
+      // transpose: each column (from col 1 onwards) is one record
+      const numCols = Math.max(...raw.map(r => r.length));
+      dataRows = [];
+      for (let c = 1; c < numCols; c++) {
+        const record = raw.map(r => r[c] ?? '');
+        if (record.some(v => String(v).trim())) dataRows.push(record);
+      }
+    }
+
+    return dataRows.map(row => {
+      const rec = {};
+      fields.forEach(f => {
+        const indices = mapping[f.key]; // string[]
+        if (!indices || indices.length === 0) return;
+        const parts = indices.map(idxStr => String(row[Number(idxStr)] ?? '').trim()).filter(Boolean);
+        if (parts.length) rec[f.key] = parts.join(' ');
+      });
+      if (entityType === 'movement') { rec.modality = selectedModality; rec.groupName = selectedGroup; }
+      return rec;
+    }).filter(rec => {
+      const required = fields.filter(f => f.required);
+      return required.every(f => rec[f.key]);
+    });
+  };
+
+  const handleMapConfirm = () => {
+    if (entityType === 'movement' && !selectedModality) {
+      toast_?.('Escolhe uma modalidade antes de continuar.', 'error');
+      return;
+    }
+    const records = buildRecords();
+    if (records.length === 0) {
+      toast_?.('Nenhum registo válido encontrado. Verifica os campos obrigatórios.', 'error');
+      return;
+    }
+    setPreview(records);
+    setStep(5);
+  };
+
+  const handleImport = async () => {
+    setImporting(true);
+    try {
+      await onImport(preview);
+      onClose();
+    } catch(e) {
+      toast_?.('Erro ao importar', 'error');
+    }
+    setImporting(false);
+  };
+
+  const fieldLabel = (key) => fields.find(f => f.key === key)?.label || key;
+
+  const inputStyle = { fontFamily:"'Satoshi',sans-serif", fontSize:13, padding:"8px 12px", borderRadius:8, border:`1px solid ${C.stone}`, outline:"none", width:"100%", boxSizing:"border-box" };
+  const selectStyle = { ...inputStyle, background:C.white };
+  const btnPrimary = { fontFamily:"'Satoshi',sans-serif", fontSize:13, fontWeight:700, padding:"9px 20px", borderRadius:10, border:"none", background:C.crimson, color:C.cream, cursor:"pointer" };
+  const btnSecondary = { fontFamily:"'Satoshi',sans-serif", fontSize:13, fontWeight:600, padding:"9px 20px", borderRadius:10, border:`1px solid ${C.stone}`, background:"transparent", color:C.ink, cursor:"pointer" };
+
+  const stepLabel = ['', 'Ficheiro', 'Sheet', 'Orientação', 'Mapeamento', 'Pré-visualização'][step];
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
+      <div style={{background:C.cream,borderRadius:16,width:"100%",maxWidth:560,maxHeight:"90vh",display:"flex",flexDirection:"column",overflow:"hidden",boxShadow:"0 20px 60px rgba(0,0,0,0.25)"}}>
+        {/* Header */}
+        <div style={{padding:"20px 24px 16px",borderBottom:`1px solid ${C.stone}`,display:"flex",alignItems:"center",gap:12}}>
+          <div style={{flex:1}}>
+            <div style={{fontFamily:"'Clash Display',sans-serif",fontSize:18,fontWeight:500,color:C.crimson}}>Importar {entityLabel} do Excel</div>
+            <div style={{fontSize:12,color:C.mist,marginTop:2}}>Passo {step} de 5 — {stepLabel}</div>
+          </div>
+          <button onClick={onClose} style={{background:"none",border:"none",fontSize:18,color:C.mist,cursor:"pointer",lineHeight:1}}>×</button>
+        </div>
+
+        {/* Body */}
+        <div style={{padding:24,overflowY:"auto",flex:1}}>
+
+          {/* Step 1: Upload */}
+          {step===1&&(
+            <div style={{display:"flex",flexDirection:"column",gap:16}}>
+              <p style={{margin:0,fontSize:13,color:C.mist}}>Escolhe um ficheiro <strong>.xlsx</strong>, <strong>.xls</strong> ou <strong>.csv</strong> para importar {entityLabel}.</p>
+              <label style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:10,padding:"32px 20px",borderRadius:12,border:`2px dashed ${C.stone}`,cursor:"pointer",background:C.white}}>
+                <span style={{fontSize:32}}>📂</span>
+                <span style={{fontFamily:"'Satoshi',sans-serif",fontSize:13,fontWeight:600,color:C.ink}}>Clica para escolher ficheiro</span>
+                <span style={{fontSize:11,color:C.mist}}>.xlsx, .xls, .csv</span>
+                <input type="file" accept=".xlsx,.xls,.csv" onChange={handleFile} style={{display:"none"}}/>
+              </label>
+            </div>
+          )}
+
+          {/* Step 2: Sheet selection */}
+          {step===2&&(
+            <div style={{display:"flex",flexDirection:"column",gap:16}}>
+              <p style={{margin:0,fontSize:13,color:C.mist}}>Em que <strong>sheet</strong> estão os {entityLabel}?</p>
+              <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                {sheets.map(s=>(
+                  <label key={s} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderRadius:10,border:`1.5px solid ${sheet===s?C.crimson:C.stone}`,background:sheet===s?`${C.crimson}0a`:C.white,cursor:"pointer"}}>
+                    <input type="radio" name="sheet" checked={sheet===s} onChange={()=>setSheet(s)} style={{accentColor:C.crimson}}/>
+                    <span style={{fontFamily:"'Satoshi',sans-serif",fontSize:13,fontWeight:600,color:C.ink}}>{s}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Step 3: Orientation */}
+          {step===3&&(
+            <div style={{display:"flex",flexDirection:"column",gap:16}}>
+              <p style={{margin:0,fontSize:13,color:C.mist}}>Cada <strong>{entityLabel.slice(0,-1)}</strong> está numa…</p>
+              <div style={{display:"flex",gap:12}}>
+                {[['row','Linha','Cada linha = 1 registo'],['col','Coluna','Cada coluna = 1 registo']].map(([val,lbl,desc])=>(
+                  <label key={val} style={{flex:1,display:"flex",flexDirection:"column",gap:6,padding:"16px",borderRadius:12,border:`2px solid ${orient===val?C.crimson:C.stone}`,background:orient===val?`${C.crimson}0a`:C.white,cursor:"pointer"}}>
+                    <input type="radio" name="orient" checked={orient===val} onChange={()=>setOrient(val)} style={{display:"none"}}/>
+                    <span style={{fontFamily:"'Satoshi',sans-serif",fontSize:14,fontWeight:700,color:orient===val?C.crimson:C.ink}}>{lbl}</span>
+                    <span style={{fontSize:11,color:C.mist}}>{desc}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Step 4: Column mapping */}
+          {step===4&&(
+            <div style={{display:"flex",flexDirection:"column",gap:16}}>
+              <p style={{margin:0,fontSize:13,color:C.mist}}>Associa cada campo ao {orient==='row'?'cabeçalho da coluna':'cabeçalho da linha'} correspondente. Podes ligar <strong>várias colunas</strong> ao mesmo campo — os valores serão concatenados.</p>
+              {entityType==='movement'&&(
+                <div style={{display:"flex",gap:12,alignItems:"center",padding:"12px 16px",background:C.white,borderRadius:10,border:`1.5px solid ${selectedModality?C.crimson:C.stone}`}}>
+                  <div style={{flexShrink:0}}>
+                    <span style={{fontSize:12,fontWeight:700,color:C.ink,fontFamily:"'Satoshi',sans-serif"}}>Modalidade</span>
+                    <span style={{fontSize:10,color:C.crimson,marginLeft:4}}>*</span>
+                    <div style={{fontSize:11,color:C.mist,marginTop:2}}>Aplicada a todos os movimentos</div>
+                  </div>
+                  <div style={{display:"flex",gap:8,flexWrap:"wrap",flex:1}}>
+                    {(availableModalities.length>0
+                      ? availableModalities.map(t=>typeof t==='string'?t:t?.name).filter(Boolean)
+                      : ['reformer','barre','signature']
+                    ).map(m=>(
+                      <button key={m} onClick={()=>setSelectedModality(m)}
+                        style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 14px",borderRadius:20,cursor:"pointer",
+                          border:`1.5px solid ${selectedModality===m?C.crimson:C.stone}`,
+                          background:selectedModality===m?`${C.crimson}15`:"transparent",
+                          color:selectedModality===m?C.crimson:C.mist}}>
+                        {m.charAt(0).toUpperCase()+m.slice(1)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {entityType==='movement'&&availableGroups.length>0&&(
+                <div style={{display:"flex",gap:12,alignItems:"center",padding:"12px 16px",background:C.white,borderRadius:10,border:`1px solid ${C.stone}`}}>
+                  <div style={{flexShrink:0}}>
+                    <span style={{fontSize:12,fontWeight:700,color:C.ink,fontFamily:"'Satoshi',sans-serif"}}>Grupo</span>
+                    <div style={{fontSize:11,color:C.mist,marginTop:2}}>Aplicado a todos os movimentos</div>
+                  </div>
+                  <div style={{display:"flex",gap:8,flexWrap:"wrap",flex:1}}>
+                    {availableGroups.map(g=>(
+                      <button key={g} onClick={()=>setSelectedGroup(sg=>sg===g?'':g)}
+                        style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 14px",borderRadius:20,cursor:"pointer",
+                          border:`1.5px solid ${selectedGroup===g?C.crimson:C.stone}`,
+                          background:selectedGroup===g?`${C.crimson}15`:"transparent",
+                          color:selectedGroup===g?C.crimson:C.mist}}>
+                        {g}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {fields.map(f=>{
+                const selected = mapping[f.key] || [];
+                const unselected = headers.map((h,i)=>({h,i:String(i)})).filter(x=>!selected.includes(x.i));
+                const addCol = (idxStr) => {
+                  if (!idxStr || selected.includes(idxStr)) return;
+                  setMapping(p=>({...p,[f.key]:[...(p[f.key]||[]),idxStr]}));
+                };
+                const removeCol = (idxStr) => setMapping(p=>({...p,[f.key]:(p[f.key]||[]).filter(x=>x!==idxStr)}));
+                return (
+                  <div key={f.key} style={{display:"flex",gap:12,alignItems:"flex-start"}}>
+                    <div style={{width:170,flexShrink:0,paddingTop:6}}>
+                      <span style={{fontSize:12,fontWeight:600,color:C.ink,fontFamily:"'Satoshi',sans-serif"}}>{f.label}</span>
+                      {f.required&&<span style={{fontSize:10,color:C.crimson,marginLeft:4}}>*</span>}
+                    </div>
+                    <div style={{flex:1,display:"flex",flexDirection:"column",gap:6}}>
+                      {selected.length>0&&(
+                        <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
+                          {selected.map(idxStr=>(
+                            <span key={idxStr} style={{display:"inline-flex",alignItems:"center",gap:4,padding:"3px 10px",borderRadius:20,background:`${C.crimson}15`,border:`1px solid ${C.crimson}40`,fontSize:12,fontWeight:500,color:C.crimson,fontFamily:"'Satoshi',sans-serif"}}>
+                              {headers[Number(idxStr)]||`Col ${Number(idxStr)+1}`}
+                              <button onClick={()=>removeCol(idxStr)} style={{background:"none",border:"none",cursor:"pointer",color:C.crimson,fontSize:13,padding:0,lineHeight:1,display:"flex",alignItems:"center"}}>×</button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      <select value="" onChange={e=>addCol(e.target.value)} style={{...selectStyle,fontSize:12,padding:"6px 10px"}}>
+                        <option value="">{selected.length===0?'— escolher coluna —':'+ adicionar coluna'}</option>
+                        {unselected.map(({h,i})=>(
+                          <option key={i} value={i}>{h||`Coluna ${Number(i)+1}`}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Step 5: Preview */}
+          {step===5&&(
+            <div style={{display:"flex",flexDirection:"column",gap:12}}>
+              <p style={{margin:0,fontSize:13,color:C.mist}}><strong>{preview.length} {entityLabel}</strong> prontos para importar.</p>
+              <div style={{background:C.white,borderRadius:10,border:`1px solid ${C.stone}`,overflow:"hidden",maxHeight:300,overflowY:"auto"}}>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                  <thead>
+                    <tr style={{background:"#f0e8e4"}}>
+                      {Object.keys(preview[0]||{}).map(k=>(
+                        <th key={k} style={{textAlign:"left",padding:"8px 10px",fontSize:10,fontWeight:700,color:C.neutral,textTransform:"uppercase",letterSpacing:"0.05em",whiteSpace:"nowrap"}}>{fieldLabel(k)}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {preview.slice(0,20).map((rec,i)=>(
+                      <tr key={i} style={{borderTop:`1px solid ${C.stone}`,background:i%2===0?C.white:`${C.cream}60`}}>
+                        {Object.values(rec).map((v,j)=>(
+                          <td key={j} style={{padding:"6px 10px",color:C.ink,maxWidth:180,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{v}</td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {preview.length>20&&<div style={{padding:"8px 12px",fontSize:11,color:C.mist}}>…e mais {preview.length-20} registos</div>}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div style={{padding:"16px 24px",borderTop:`1px solid ${C.stone}`,display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
+          <button onClick={()=>step>1?setStep(s=>s-1):onClose()} style={btnSecondary}>{step===1?'Cancelar':'← Voltar'}</button>
+          <div style={{display:"flex",gap:10}}>
+            {step===2&&<button onClick={handleSheetConfirm} style={btnPrimary}>Continuar →</button>}
+            {step===3&&<button onClick={handleOrientConfirm} style={btnPrimary}>Continuar →</button>}
+            {step===4&&<button onClick={handleMapConfirm} style={btnPrimary}>Pré-visualizar →</button>}
+            {step===5&&<button onClick={handleImport} disabled={importing} style={{...btnPrimary,opacity:importing?0.6:1}}>{importing?'A importar…':`Importar ${preview.length} ${entityLabel}`}</button>}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const MovementLibraryPage = ({ series, onUpdateSeries, aiStyle, movements=[], onSaveMovement, onDeleteMovement, movementGroups=[], availableModalities=[], availableProps=[], availableZones=[] }) => {
   const [search, setSearch] = React.useState("");
-  const [typeFilter, setTypeFilter] = React.useState("all"); // 'all','reformer','barre','signature'
-  const [editingKey, setEditingKey] = React.useState(null); // key of movement being edited inline
-  const [editFields, setEditFields] = React.useState({}); // { name, notes }
-  const [selected, setSelected] = React.useState(new Set()); // keys of selected movements for batch delete
-  const [hovSeriesKey, setHovSeriesKey] = React.useState(null);
+  const [typeFilter, setTypeFilter] = React.useState("all");
+  const [groupFilter, setGroupFilter] = React.useState("all");
+  const [categoryFilter, setCategoryFilter] = React.useState("all");
+  const [propsFilter, setPropsFilter] = React.useState("all");
+  const [zoneFilter, setZoneFilter] = React.useState("all");
+  const [showArchive, setShowArchive] = React.useState(false);
+  const [editingId, setEditingId] = React.useState(null);
+  const [editFields, setEditFields] = React.useState({});
+  const [selected, setSelected] = React.useState(new Set());
+  const [hovSeriesId, setHovSeriesId] = React.useState(null);
+  const [showNewModal, setShowNewModal] = React.useState(false);
+  const [showImport, setShowImport] = React.useState(false);
+  const [newMov, setNewMov] = React.useState({ movement:'', modality:'', notes:'', groupName:'', category:'', exampleUrl:'', props:'', targetZone:'' });
+  const [colWidths, setColWidths] = React.useState({ movimento:180, categoria:90, props:90, zona:90, notas:150 });
+  const resizeRef = React.useRef(null);
+  const startResize = (col, e) => {
+    e.preventDefault();
+    resizeRef.current = { col, startX: e.clientX, startW: colWidths[col] };
+    const onMove = e2 => setColWidths(p=>({...p,[resizeRef.current.col]:Math.max(50,resizeRef.current.startW+(e2.clientX-resizeRef.current.startX))}));
+    const onUp = () => { window.removeEventListener('mousemove',onMove); window.removeEventListener('mouseup',onUp); resizeRef.current=null; };
+    window.addEventListener('mousemove',onMove);
+    window.addEventListener('mouseup',onUp);
+  };
   const toast_ = useToast();
   const confirm_ = useConfirm();
 
-  // Deduplicated movements with notes aggregated and seriesRefs collected
-  const movements = React.useMemo(()=>{
-    const map = new Map();
-    series.forEach(s=>{
-      const add = (movs, sideKey, displayType) => (movs||[]).forEach((m,idx)=>{
-        if(!m.movement) return;
-        const key = m.movement.toLowerCase().trim();
-        if(!map.has(key)) map.set(key, { movement:m.movement, notes:new Set(), seriesNames:new Set(), types:new Set(), seriesTypes:new Set(), refs:[] });
-        const e = map.get(key);
-        if(m.notes) m.notes.split(/[.;·]/).map(n=>n.trim()).filter(Boolean).forEach(n=>e.notes.add(n));
-        e.seriesNames.add(s.name);
-        e.types.add(displayType);
-        e.seriesTypes.add(s.type);
-        e.refs.push({ seriesId: s.id, sideKey, movIndex: idx });
-      });
-      add(s.reformer?.movements, "reformer", s.type==="barre"?"barre":"reformer");
-      if(s.type==="signature"||s.type==="barre") add(s.barre?.movements, "barre", "barre");
-    });
-    return [...map.values()].sort((a,b)=>a.movement.localeCompare(b.movement,"pt"));
+  // Derive which series each standalone movement appears in (by name match)
+  const seriesForMovement = React.useCallback((movName) => {
+    const lower = movName.toLowerCase().trim();
+    return series.filter(s => {
+      const inReformer = (s.reformer?.movements||[]).some(m=>m.movement?.toLowerCase().trim()===lower);
+      const inBarre = (s.barre?.movements||[]).some(m=>m.movement?.toLowerCase().trim()===lower);
+      return inReformer || inBarre;
+    }).map(s=>s.name);
   }, [series]);
 
-  const filtered = React.useMemo(()=>{
-    let result = movements;
-    if (search) result = result.filter(m=>m.movement.toLowerCase().includes(search.toLowerCase()));
-    if (typeFilter !== 'all') result = result.filter(m=>m.seriesTypes.has(typeFilter));
-    return result;
-  }, [movements, search, typeFilter]);
-
   const typeColor = t => t==="reformer"?C.reformer:t==="barre"?"#c0507a":C.sig;
+  const typeLabel = t => t==="reformer"?"R":t==="barre"?"B":"S";
 
-  const startEdit = (m) => {
-    const key = m.movement.toLowerCase().trim();
-    setEditingKey(key);
-    setEditFields({ name: m.movement, notes: [...m.notes].join(' · ') });
-  };
+  const visibleMovements = React.useMemo(()=>{
+    let result = movements.filter(m => showArchive ? m.isArchived : !m.isArchived);
+    if (search) result = result.filter(m=>m.movement.toLowerCase().includes(search.toLowerCase())||(m.category||'').toLowerCase().includes(search.toLowerCase()));
+    if (typeFilter !== 'all') result = result.filter(m=>m.modality===typeFilter);
+    if (groupFilter !== 'all') result = result.filter(m=>m.groupName===groupFilter);
+    if (categoryFilter !== 'all') result = result.filter(m=>m.category===categoryFilter);
+    if (propsFilter !== 'all') result = result.filter(m=>m.props===propsFilter);
+    if (zoneFilter !== 'all') result = result.filter(m=>m.targetZone===zoneFilter);
+    return result.sort((a,b)=>a.movement.localeCompare(b.movement,"pt"));
+  }, [movements, showArchive, search, typeFilter, groupFilter, categoryFilter, propsFilter, zoneFilter]);
 
-  const cancelEdit = () => { setEditingKey(null); setEditFields({}); };
-
-  const saveEdit = async (m) => {
-    const key = m.movement.toLowerCase().trim();
-    const newName = (editFields.name ?? '').trim();
-    const newNotes = (editFields.notes ?? '').trim();
-    if (!newName) { toast_?.('O nome não pode estar vazio', 'error'); return; }
-    try {
-      const bySeries = {};
-      m.refs.forEach(r => { if(!bySeries[r.seriesId]) bySeries[r.seriesId]=[]; bySeries[r.seriesId].push(r); });
-      for (const [seriesId, seriesRefs] of Object.entries(bySeries)) {
-        const s = series.find(x => x.id === seriesId);
-        if (!s) continue;
-        let updated = { ...s };
-        seriesRefs.forEach(r => {
-          const side = updated[r.sideKey];
-          if (!side?.movements) return;
-          const movs = [...side.movements];
-          movs[r.movIndex] = { ...movs[r.movIndex], movement: newName, notes: newNotes };
-          updated = { ...updated, [r.sideKey]: { ...side, movements: movs } };
-        });
-        await onUpdateSeries(updated);
-      }
-      toast_?.('Guardado');
-      cancelEdit();
-    } catch(e) {
-      console.error('saveEdit failed:', e);
-      toast_?.('Erro ao guardar', 'error');
-    }
-  };
-
-  const deleteMovements = async (keys) => {
-    const confirmed = await confirm_?.(`Eliminar ${keys.size} movimento${keys.size!==1?'s':''}? Esta acção remove-os de todas as séries.`);
-    if (!confirmed) return;
-    const affectedRefs = [];
-    movements.filter(m => keys.has(m.movement.toLowerCase().trim())).forEach(m => affectedRefs.push(...m.refs));
-    const bySeries = {};
-    affectedRefs.forEach(r => { if(!bySeries[r.seriesId]) bySeries[r.seriesId]=[]; bySeries[r.seriesId].push(r); });
-    for (const [seriesId, seriesRefs] of Object.entries(bySeries)) {
-      const s = series.find(x => x.id === seriesId);
-      if (!s) continue;
-      let updated = { ...s };
-      // Group by sideKey and remove by index (descending to not shift indices)
-      const bySide = {};
-      seriesRefs.forEach(r => { if(!bySide[r.sideKey]) bySide[r.sideKey]=[]; bySide[r.sideKey].push(r.movIndex); });
-      for (const [sideKey, indices] of Object.entries(bySide)) {
-        const side = updated[sideKey];
-        if (!side?.movements) continue;
-        const movs = side.movements.filter((_,i) => !indices.includes(i));
-        updated = { ...updated, [sideKey]: { ...side, movements: movs } };
-      }
-      await onUpdateSeries(updated);
-    }
-    setSelected(new Set());
-    toast_?.(`${keys.size} movimento${keys.size!==1?'s':''} eliminado${keys.size!==1?'s':''}`);
-  };
-
-  const toggleSelect = (key) => setSelected(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
+  const toggleSelect = (id) => setSelected(prev => { const n = new Set(prev); n.has(id)?n.delete(id):n.add(id); return n; });
   const toggleSelectAll = () => {
-    if (selected.size === filtered.length) setSelected(new Set());
-    else setSelected(new Set(filtered.map(m => m.movement.toLowerCase().trim())));
+    if (selected.size===visibleMovements.length) setSelected(new Set());
+    else setSelected(new Set(visibleMovements.map(m=>m.id)));
   };
+
+  const startEdit = (m) => { setEditingId(m.id); setEditFields({ movement:m.movement, modality:m.modality, notes:m.notes||'', groupName:m.groupName||'', category:m.category||'', exampleUrl:m.exampleUrl||'', props:m.props||'', targetZone:m.targetZone||'' }); };
+  const cancelEdit = () => { setEditingId(null); setEditFields({}); };
+  const saveEdit = async (m) => {
+    if (!editFields.movement?.trim()) { toast_?.('O nome não pode estar vazio','error'); return; }
+    await onSaveMovement?.({ ...m, movement:editFields.movement.trim(), modality:editFields.modality||m.modality, notes:editFields.notes||'', groupName:editFields.groupName||'', category:editFields.category||'', exampleUrl:editFields.exampleUrl||'', props:editFields.props||'', targetZone:editFields.targetZone||'' });
+    cancelEdit(); toast_?.('Guardado');
+  };
+
+  const archiveMovement = async (m) => {
+    await onSaveMovement?.({ ...m, isArchived:true });
+    toast_?.('Arquivado');
+  };
+  const restoreMovement = async (m) => {
+    await onSaveMovement?.({ ...m, isArchived:false });
+    toast_?.('Restaurado');
+  };
+  const permanentDelete = async (m) => {
+    const ok = await confirm_?.(`Eliminar permanentemente "${m.movement}"? Esta acção não pode ser revertida.`);
+    if (!ok) return;
+    await onDeleteMovement?.(m.id);
+    toast_?.('Eliminado');
+  };
+  const duplicateMovement = async (m) => {
+    const copy = { ...m, id: crypto.randomUUID ? crypto.randomUUID() : `mov-${Date.now()}`, movement: m.movement+' (cópia)', isArchived:false };
+    await onSaveMovement?.(copy);
+    toast_?.('Duplicado');
+  };
+  const archiveSelected = async () => {
+    const ok = await confirm_?.(`Arquivar ${selected.size} movimento${selected.size!==1?'s':''}?`);
+    if (!ok) return;
+    for (const id of selected) {
+      const m = movements.find(x=>x.id===id);
+      if (m) await onSaveMovement?.({ ...m, isArchived:true });
+    }
+    setSelected(new Set()); toast_?.('Arquivados');
+  };
+
+  const handleImport = async (records) => {
+    for (const rec of records) {
+      const m = { id: crypto.randomUUID ? crypto.randomUUID() : `mov-${Date.now()}-${Math.random().toString(36).slice(2)}`, movement: rec.movement, modality: rec.modality||'reformer', notes: rec.notes||'', groupName: rec.groupName||'', category: rec.category||'', exampleUrl: rec.exampleUrl||'', props: rec.props||'', targetZone: rec.targetZone||'', isArchived:false };
+      await onSaveMovement?.(m);
+    }
+    toast_?.(`${records.length} movimentos importados`);
+  };
+
+  const createMovement = async () => {
+    if (!newMov.movement.trim()) { toast_?.('Insere o nome do movimento','error'); return; }
+    const m = { id: crypto.randomUUID ? crypto.randomUUID() : `mov-${Date.now()}`, movement:newMov.movement.trim(), modality:newMov.modality||modalityOptions[0]||'reformer', notes:newMov.notes||'', groupName:newMov.groupName||'', category:newMov.category||'', exampleUrl:newMov.exampleUrl||'', props:newMov.props||'', targetZone:newMov.targetZone||'', isArchived:false };
+    await onSaveMovement?.(m);
+    setNewMov({ movement:'', modality:'', notes:'', groupName:'', category:'', exampleUrl:'', props:'', targetZone:'' });
+    setShowNewModal(false);
+    toast_?.('Movimento criado');
+  };
+
+  const modalityOptions = availableModalities.length > 0
+    ? availableModalities.map(t => typeof t === 'string' ? t : t?.name).filter(Boolean)
+    : ['reformer', 'barre', 'signature'];
 
   const TYPE_FILTERS = [
     { val:"all", label:"Todos" },
-    { val:"signature", label:"Signature" },
-    { val:"reformer", label:"Reformer" },
-    { val:"barre", label:"Barre" },
+    ...modalityOptions.map(m => ({ val: m, label: m.charAt(0).toUpperCase() + m.slice(1) })),
   ];
+
+  const inpStyle = { fontFamily:"'Satoshi',sans-serif", fontSize:13, padding:"7px 10px", borderRadius:8, border:`1px solid ${C.stone}`, outline:"none", width:"100%", boxSizing:"border-box" };
 
   return (
     <div>
+      {/* Header */}
       <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16,flexWrap:"wrap"}}>
-        <h2 style={{fontFamily:"'Clash Display', sans-serif",fontSize:26,fontWeight:500,color:C.crimson,margin:0,flex:1}}>Biblioteca de Movimentos</h2>
+        <h2 style={{fontFamily:"'Clash Display', sans-serif",fontSize:26,fontWeight:500,color:C.crimson,margin:0,flex:1}}>
+          {showArchive ? 'Arquivo de Movimentos' : 'Biblioteca de Movimentos'}
+        </h2>
         <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Pesquisar…"
-          style={{fontFamily:"'Satoshi',sans-serif",fontSize:13,padding:"8px 14px",borderRadius:8,border:`1px solid ${C.stone}`,outline:"none",background:C.white,width:200}}/>
+          style={{fontFamily:"'Satoshi',sans-serif",fontSize:13,padding:"8px 14px",borderRadius:20,border:`1px solid ${C.stone}`,outline:"none",background:C.white,width:200}}/>
+        {!showArchive&&<>
+          <Btn onClick={()=>setShowNewModal(true)}><Icon name="plus" size={14}/> Novo movimento</Btn>
+          <Btn onClick={()=>setShowImport(true)} variant="ghost">↑ Importar Excel</Btn>
+        </>}
+        <button onClick={()=>{setShowArchive(p=>!p);setSelected(new Set());}}
+          style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"7px 14px",borderRadius:10,border:`1px solid ${C.stone}`,background:"transparent",color:C.mist,cursor:"pointer"}}>
+          {showArchive?'← Biblioteca':'Arquivo'}
+        </button>
       </div>
 
-      {/* Filters + batch actions */}
-      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14,flexWrap:"wrap"}}>
-        {TYPE_FILTERS.map(f=>(
-          <button key={f.val} onClick={()=>setTypeFilter(f.val)}
-            style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:600,padding:"4px 12px",borderRadius:20,
-              border:`1px solid ${typeFilter===f.val?C.crimson:C.stone}`,
-              background:typeFilter===f.val?C.crimson:"transparent",
-              color:typeFilter===f.val?C.cream:C.mist,cursor:"pointer"}}>
-            {f.label}
-          </button>
-        ))}
-        <div style={{flex:1}}/>
-        <span style={{fontSize:12,color:C.mist}}>{filtered.length} movimento{filtered.length!==1?"s":""}</span>
-        {selected.size>0&&(
-          <button onClick={()=>deleteMovements(selected)}
-            style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:700,padding:"4px 14px",borderRadius:20,border:"1px solid #b91c1c",background:"#b91c1c",color:"#fff",cursor:"pointer"}}>
-            🗑 Eliminar {selected.size} selecionado{selected.size!==1?"s":""}
-          </button>
-        )}
-      </div>
+      {/* Filters */}
+      {(()=>{
+        const ds = {fontFamily:"'Satoshi',sans-serif",fontSize:12,padding:"5px 10px",borderRadius:8,border:`1px solid ${C.stone}`,outline:"none",background:C.white,color:C.ink,cursor:"pointer"};
+        const cats = [...new Set(movements.filter(m=>!m.isArchived).map(m=>m.category).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"pt"));
+        const propsList = availableProps.length ? availableProps : [...new Set(movements.filter(m=>!m.isArchived).map(m=>m.props).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"pt"));
+        const zones = availableZones.length ? availableZones : [...new Set(movements.filter(m=>!m.isArchived).map(m=>m.targetZone).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"pt"));
+        const activeCount = [typeFilter!=="all",groupFilter!=="all",categoryFilter!=="all",propsFilter!=="all",zoneFilter!=="all"].filter(Boolean).length;
+        return (
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14,flexWrap:"wrap",padding:"10px 14px",background:C.white,borderRadius:10,border:`1px solid ${C.stone}`}}>
+          <select value={typeFilter} onChange={e=>setTypeFilter(e.target.value)} style={ds}>
+            <option value="all">Modalidade</option>
+            {modalityOptions.map(m=><option key={m} value={m}>{m.charAt(0).toUpperCase()+m.slice(1)}</option>)}
+          </select>
+          {movementGroups.length>0&&<select value={groupFilter} onChange={e=>setGroupFilter(e.target.value)} style={ds}>
+            <option value="all">Grupo</option>
+            {movementGroups.map(g=><option key={g} value={g}>{g}</option>)}
+          </select>}
+          {cats.length>0&&<select value={categoryFilter} onChange={e=>setCategoryFilter(e.target.value)} style={ds}>
+            <option value="all">Categoria</option>
+            {cats.map(c=><option key={c} value={c}>{c}</option>)}
+          </select>}
+          {propsList.length>0&&<select value={propsFilter} onChange={e=>setPropsFilter(e.target.value)} style={ds}>
+            <option value="all">Props</option>
+            {propsList.map(p=><option key={p} value={p}>{p}</option>)}
+          </select>}
+          {zones.length>0&&<select value={zoneFilter} onChange={e=>setZoneFilter(e.target.value)} style={ds}>
+            <option value="all">Zona</option>
+            {zones.map(z=><option key={z} value={z}>{z}</option>)}
+          </select>}
 
-      <div style={{background:C.white,borderRadius:12,border:`1px solid ${C.stone}`,overflow:"hidden"}}>
-        <table style={{width:"100%",borderCollapse:"collapse",fontSize:13,tableLayout:"fixed"}}>
+          {activeCount>0&&<button onClick={()=>{setTypeFilter("all");setGroupFilter("all");setCategoryFilter("all");setPropsFilter("all");setZoneFilter("all");}} style={{...ds,color:C.crimson,borderColor:C.crimson,fontSize:11}}>× Limpar ({activeCount})</button>}
+          <div style={{flex:1}}/>
+          <span style={{fontSize:12,color:C.mist}}>{visibleMovements.length} movimento{visibleMovements.length!==1?"s":""}</span>
+          {selected.size>0&&!showArchive&&(
+            <button onClick={archiveSelected}
+              style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,fontWeight:700,padding:"4px 14px",borderRadius:20,border:`1px solid ${C.neutral}`,background:C.neutral,color:C.white,cursor:"pointer"}}>
+              Arquivar {selected.size} selecionado{selected.size!==1?"s":""}
+            </button>
+          )}
+        </div>
+        );
+      })()}
+
+      {/* Table */}
+      <div style={{background:C.white,borderRadius:12,border:`1px solid ${C.stone}`,overflow:"auto"}}>
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:13,tableLayout:"fixed",minWidth:700}}>
           <colgroup>
             <col style={{width:36}}/>
-            <col style={{width:"28%"}}/>
-            <col style={{width:"10%"}}/>
-            <col style={{width:"52%"}}/>
-            <col style={{width:44}}/>
-            <col style={{width:36}}/>
+            <col style={{width:colWidths.movimento}}/>
+            <col style={{width:56}}/>
+            <col style={{width:colWidths.categoria}}/>
+            <col style={{width:colWidths.props}}/>
+            <col style={{width:colWidths.zona}}/>
+            <col style={{width:colWidths.notas}}/>
+            <col style={{width:60}}/>
+            <col style={{width:80}}/>
           </colgroup>
           <thead>
             <tr style={{background:"#f0e8e4"}}>
               <th style={{padding:"10px 8px",textAlign:"center"}}>
-                <input type="checkbox" checked={selected.size===filtered.length&&filtered.length>0} onChange={toggleSelectAll}/>
+                <input type="checkbox" checked={selected.size===visibleMovements.length&&visibleMovements.length>0} onChange={toggleSelectAll}/>
               </th>
-              <th style={{textAlign:"left",padding:"10px 12px",fontSize:11,fontWeight:700,color:C.neutral,textTransform:"uppercase",letterSpacing:"0.06em"}}>Movimento</th>
-              <th style={{textAlign:"left",padding:"10px 8px",fontSize:11,fontWeight:700,color:C.neutral,textTransform:"uppercase",letterSpacing:"0.06em"}}>Tipo</th>
-              <th style={{textAlign:"left",padding:"10px 12px",fontSize:11,fontWeight:700,color:C.neutral,textTransform:"uppercase",letterSpacing:"0.06em"}}>Notas</th>
+              {[["movimento","Movimento"],["categoria","Categoria"],["props","Props"],["zona","Zona"],["notas","Notas"]].map(([col,lbl],ci)=>(
+                <React.Fragment key={col}>
+                  {ci===0&&null}{/* movimento is index 1, but tipo is between movimento and categoria */}
+                  {ci===1&&<th style={{textAlign:"left",padding:"10px 8px",fontSize:11,fontWeight:700,color:C.neutral,textTransform:"uppercase",letterSpacing:"0.06em",position:"relative",userSelect:"none"}}>
+                    Tipo
+                  </th>}
+                  <th style={{textAlign:"left",padding:"10px 12px",fontSize:11,fontWeight:700,color:C.neutral,textTransform:"uppercase",letterSpacing:"0.06em",position:"relative",userSelect:"none"}}>
+                    {lbl}
+                    <div onMouseDown={e=>startResize(col,e)} style={{position:"absolute",right:0,top:0,bottom:0,width:5,cursor:"col-resize",background:"transparent",zIndex:1}}/>
+                  </th>
+                </React.Fragment>
+              ))}
               <th style={{textAlign:"center",padding:"10px 8px",fontSize:11,fontWeight:700,color:C.neutral,textTransform:"uppercase",letterSpacing:"0.06em"}}>Séries</th>
-              <th style={{width:36}}></th>
+              <th style={{padding:"10px 8px"}}/>
             </tr>
           </thead>
           <tbody>
-            {filtered.map((m,i)=>{
-              const movKey = m.movement.toLowerCase().trim();
-              const isEditing = editingKey === movKey;
-              const isChecked = selected.has(movKey);
+            {visibleMovements.map((m,i)=>{
+              const isEditing = editingId===m.id;
+              const isChecked = selected.has(m.id);
+              const seriesNames = seriesForMovement(m.movement);
               return (
-                <tr key={m.movement} style={{borderTop:`1px solid ${C.stone}`,background:isEditing?`${C.cream}`:i%2===0?C.white:`${C.cream}60`}}>
-                  <td style={{padding:"8px",textAlign:"center",verticalAlign:"middle"}}>
-                    <input type="checkbox" checked={isChecked} onChange={()=>toggleSelect(movKey)} onClick={e=>e.stopPropagation()}/>
+                <tr key={m.id} style={{borderTop:`1px solid ${C.stone}`,background:isEditing?`${C.cream}`:i%2===0?C.white:`${C.cream}60`,verticalAlign:"middle"}}>
+                  <td style={{padding:"8px",textAlign:"center"}}>
+                    <input type="checkbox" checked={isChecked} onChange={()=>toggleSelect(m.id)} onClick={e=>e.stopPropagation()}/>
                   </td>
-                  <td style={{padding:"8px 12px",verticalAlign:"middle",fontWeight:600,color:C.ink}}>
+                  {/* Movimento */}
+                  <td style={{padding:"8px 12px",fontWeight:600,color:C.ink,overflow:"hidden"}}>
                     {isEditing
-                      ? <input value={editFields.name??""} onChange={e=>setEditFields(p=>({...p,name:e.target.value}))} autoFocus
-                          style={{width:"100%",fontFamily:"'Satoshi',sans-serif",fontSize:13,color:C.ink,border:`1px solid ${C.stone}`,borderRadius:6,padding:"4px 8px",outline:"none",boxSizing:"border-box"}}/>
-                      : m.movement
+                      ? <input value={editFields.movement??""} onChange={e=>setEditFields(p=>({...p,movement:e.target.value}))} autoFocus style={inpStyle}/>
+                      : <div style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={m.movement}>
+                          {m.movement}
+                          {m.groupName&&<span style={{fontSize:10,color:C.mist,marginLeft:6,fontWeight:400}}>{m.groupName}</span>}
+                        </div>
                     }
                   </td>
-                  <td style={{padding:"8px",verticalAlign:"middle"}}>
-                    <div style={{display:"flex",gap:3,flexWrap:"wrap"}}>
-                      {[...m.types].map(t=>(
-                        <span key={t} style={{fontSize:9,fontWeight:700,color:typeColor(t),background:`${typeColor(t)}15`,border:`1px solid ${typeColor(t)}40`,borderRadius:20,padding:"2px 6px",textTransform:"uppercase",letterSpacing:"0.04em",whiteSpace:"nowrap"}}>{t==="reformer"?"R":t==="barre"?"B":"✦"}</span>
-                      ))}
-                    </div>
-                  </td>
-                  <td style={{padding:"8px 12px",verticalAlign:"middle"}}>
+                  {/* Tipo */}
+                  <td style={{padding:"8px"}}>
                     {isEditing
-                      ? <textarea value={editFields.notes??""} onChange={e=>setEditFields(p=>({...p,notes:e.target.value}))} rows={2}
-                          style={{width:"100%",fontFamily:"'Satoshi',sans-serif",fontSize:12,color:C.ink,border:`1px solid ${C.stone}`,borderRadius:6,padding:"4px 8px",outline:"none",resize:"vertical",boxSizing:"border-box"}}/>
-                      : <span style={{fontSize:12,color:C.mist}}>{[...m.notes].join(' · ')}</span>
+                      ? <select value={editFields.modality||modalityOptions[0]||'reformer'} onChange={e=>setEditFields(p=>({...p,modality:e.target.value}))}
+                          style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,padding:"4px 6px",borderRadius:6,border:`1px solid ${C.stone}`,outline:"none",width:"100%"}}>
+                          {modalityOptions.map(mo=><option key={mo} value={mo}>{mo.charAt(0).toUpperCase()+mo.slice(1)}</option>)}
+                        </select>
+                      : <span style={{fontSize:11,fontWeight:700,color:typeColor(m.modality),background:`${typeColor(m.modality)}15`,border:`1px solid ${typeColor(m.modality)}40`,borderRadius:"50%",width:22,height:22,display:"inline-flex",alignItems:"center",justifyContent:"center"}}>{typeLabel(m.modality)}</span>
                     }
-                    {isEditing && (
-                      <div style={{display:"flex",gap:6,marginTop:6}}>
-                        <button onClick={()=>saveEdit(m)} style={{padding:"3px 12px",borderRadius:6,border:"none",background:C.crimson,color:C.cream,fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"'Satoshi',sans-serif"}}>Guardar</button>
-                        <button onClick={cancelEdit} style={{padding:"3px 10px",borderRadius:6,border:`1px solid ${C.stone}`,background:"transparent",color:C.ink,fontSize:11,cursor:"pointer",fontFamily:"'Satoshi',sans-serif"}}>Cancelar</button>
-                      </div>
-                    )}
                   </td>
-                  <td style={{padding:"8px",verticalAlign:"middle",textAlign:"center",position:"relative"}}>
-                    <span
-                      onMouseEnter={()=>setHovSeriesKey(movKey)}
-                      onMouseLeave={()=>setHovSeriesKey(null)}
-                      style={{cursor:"default",fontSize:14,color:C.mist,display:"inline-flex",alignItems:"center",justifyContent:"center",width:24,height:24,borderRadius:6,background:hovSeriesKey===movKey?C.stone:"transparent",transition:"background 0.15s"}}
-                      title={[...m.seriesNames].join(', ')}
-                    >
+                  {/* Categoria */}
+                  <td style={{padding:"8px",overflow:"hidden"}}>
+                    {isEditing
+                      ? <input value={editFields.category??""} onChange={e=>setEditFields(p=>({...p,category:e.target.value}))} placeholder="ex. Footwork…" style={{...inpStyle,fontSize:12}}/>
+                      : <span style={{fontSize:12,color:C.mist,display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.category}</span>
+                    }
+                  </td>
+                  {/* Props */}
+                  <td style={{padding:"8px",overflow:"hidden"}}>
+                    {isEditing
+                      ? <input value={editFields.props??""} onChange={e=>setEditFields(p=>({...p,props:e.target.value}))} placeholder="ex. ball…" style={{...inpStyle,fontSize:12}}/>
+                      : <span style={{fontSize:12,color:C.mist,display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.props}</span>
+                    }
+                  </td>
+                  {/* Zona */}
+                  <td style={{padding:"8px",overflow:"hidden"}}>
+                    {isEditing
+                      ? <input value={editFields.targetZone??""} onChange={e=>setEditFields(p=>({...p,targetZone:e.target.value}))} placeholder="ex. Core…" style={{...inpStyle,fontSize:12}}/>
+                      : <span style={{fontSize:12,color:C.mist,display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.targetZone}</span>
+                    }
+                  </td>
+                  {/* Notas */}
+                  <td style={{padding:"8px 12px",overflow:"hidden"}}>
+                    {isEditing
+                      ? <div style={{display:"flex",flexDirection:"column",gap:5}}>
+                          <textarea value={editFields.notes??""} onChange={e=>setEditFields(p=>({...p,notes:e.target.value}))} rows={2} placeholder="Notas…"
+                            style={{...inpStyle,resize:"vertical",fontSize:12}}/>
+                          <input value={editFields.exampleUrl??""} onChange={e=>setEditFields(p=>({...p,exampleUrl:e.target.value}))} placeholder="Link ou URL de vídeo…"
+                            style={{...inpStyle,fontSize:12}}/>
+                          <select value={editFields.groupName||''} onChange={e=>setEditFields(p=>({...p,groupName:e.target.value}))}
+                            style={{...inpStyle,fontSize:12}}>
+                            <option value="">Sem grupo</option>
+                            {movementGroups.map(g=><option key={g} value={g}>{g}</option>)}
+                          </select>
+                          <div style={{display:"flex",gap:6}}>
+                            <button onClick={()=>saveEdit(m)} style={{padding:"3px 12px",borderRadius:6,border:"none",background:C.crimson,color:C.cream,fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"'Satoshi',sans-serif"}}>Guardar</button>
+                            <button onClick={cancelEdit} style={{padding:"3px 10px",borderRadius:6,border:`1px solid ${C.stone}`,background:"transparent",color:C.ink,fontSize:11,cursor:"pointer",fontFamily:"'Satoshi',sans-serif"}}>Cancelar</button>
+                          </div>
+                        </div>
+                      : <div style={{display:"flex",alignItems:"flex-start",gap:6}}>
+                          <span style={{fontSize:12,color:C.mist,flex:1,overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical"}}>{m.notes}</span>
+                          {m.exampleUrl&&<a href={m.exampleUrl} target="_blank" rel="noopener noreferrer" title="Ver exemplo" style={{color:C.crimson,fontSize:11,textDecoration:"none",flexShrink:0,background:`${C.crimson}12`,border:`1px solid ${C.crimson}30`,borderRadius:4,padding:"1px 5px",fontWeight:700,fontFamily:"'Satoshi',sans-serif"}}>↗</a>}
+                        </div>
+                    }
+                  </td>
+                  {/* Séries */}
+                  <td style={{padding:"8px",textAlign:"center",position:"relative"}}>
+                    <span onMouseEnter={()=>setHovSeriesId(m.id)} onMouseLeave={()=>setHovSeriesId(null)}
+                      style={{cursor:"default",fontSize:13,color:seriesNames.length?C.crimson:C.stone,display:"inline-flex",alignItems:"center",justifyContent:"center",width:24,height:24,borderRadius:6}}
+                      title={seriesNames.join(', ')||'Não aparece em nenhuma série'}>
                       📋
                     </span>
-                    {hovSeriesKey===movKey&&(
+                    {hovSeriesId===m.id&&seriesNames.length>0&&(
                       <div style={{position:"absolute",right:0,top:"100%",zIndex:300,background:C.white,border:`1px solid ${C.stone}`,borderRadius:8,padding:"8px 12px",boxShadow:"0 4px 16px rgba(0,0,0,0.12)",minWidth:180,maxWidth:260,pointerEvents:"none"}}>
                         <div style={{fontSize:10,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Séries</div>
-                        {[...m.seriesNames].map(n=>(
-                          <div key={n} style={{fontSize:12,color:C.ink,padding:"2px 0",lineHeight:1.4}}>{n}</div>
-                        ))}
+                        {seriesNames.map(n=><div key={n} style={{fontSize:12,color:C.ink,padding:"2px 0",lineHeight:1.4}}>{n}</div>)}
                       </div>
                     )}
                   </td>
-                  <td style={{padding:"8px",verticalAlign:"middle",textAlign:"center"}}>
-                    {!isEditing && (
-                      <button onClick={()=>startEdit(m)} title="Editar"
-                        style={{background:"none",border:"none",cursor:"pointer",color:C.mist,fontSize:13,padding:"2px 5px",borderRadius:5,lineHeight:1}}>✎</button>
+                  {/* Actions */}
+                  <td style={{padding:"8px",textAlign:"center"}}>
+                    {!isEditing&&(
+                      <div style={{display:"flex",gap:4,justifyContent:"center"}}>
+                        {!showArchive&&<>
+                          <button onClick={()=>startEdit(m)} title="Editar" style={{background:"none",border:"none",cursor:"pointer",color:C.mist,fontSize:13,padding:"2px 4px",borderRadius:5}}>✎</button>
+                          <button onClick={()=>duplicateMovement(m)} title="Duplicar" style={{background:"none",border:"none",cursor:"pointer",color:C.mist,fontSize:13,padding:"2px 4px",borderRadius:5}}>⧉</button>
+                          <button onClick={()=>archiveMovement(m)} title="Arquivar" style={{background:"none",border:"none",cursor:"pointer",color:C.mist,fontSize:13,padding:"2px 4px",borderRadius:5}}>↓</button>
+                        </>}
+                        {showArchive&&<>
+                          <button onClick={()=>restoreMovement(m)} title="Restaurar" style={{background:"none",border:"none",cursor:"pointer",color:C.crimson,fontSize:12,fontWeight:700,padding:"2px 6px",borderRadius:5,fontFamily:"'Satoshi',sans-serif"}}>↺</button>
+                          <button onClick={()=>permanentDelete(m)} title="Eliminar permanentemente" style={{background:"none",border:"none",cursor:"pointer",color:"#b91c1c",fontSize:13,padding:"2px 4px",borderRadius:5}}>🗑</button>
+                        </>}
+                      </div>
                     )}
                   </td>
                 </tr>
@@ -4182,8 +5020,78 @@ const MovementLibraryPage = ({ series, onUpdateSeries, aiStyle }) => {
             })}
           </tbody>
         </table>
-        {filtered.length===0&&<div style={{padding:40,textAlign:"center",color:C.mist}}>Nenhum movimento encontrado.</div>}
+        {visibleMovements.length===0&&<div style={{padding:40,textAlign:"center",color:C.mist}}>{showArchive?'Arquivo vazio.':'Nenhum movimento encontrado.'}</div>}
       </div>
+
+      {/* New movement modal */}
+      {showNewModal&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.4)",zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={e=>{if(e.target===e.currentTarget)setShowNewModal(false);}}>
+          <div style={{background:C.cream,borderRadius:16,padding:28,width:"100%",maxWidth:440,boxShadow:"0 20px 60px rgba(0,0,0,0.2)"}}>
+            <h3 style={{fontFamily:"'Clash Display',sans-serif",fontSize:20,fontWeight:500,color:C.crimson,margin:"0 0 20px"}}>Novo Movimento</h3>
+            <div style={{display:"flex",flexDirection:"column",gap:14}}>
+              <div>
+                <div style={{fontSize:12,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:6}}>Nome *</div>
+                <input value={newMov.movement} onChange={e=>setNewMov(p=>({...p,movement:e.target.value}))} autoFocus
+                  onKeyDown={e=>e.key==='Enter'&&createMovement()} placeholder="ex. Footwork – Toes"
+                  style={inpStyle}/>
+              </div>
+              <div>
+                <div style={{fontSize:12,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:6}}>Modalidade *</div>
+                <select value={newMov.modality||modalityOptions[0]||'reformer'} onChange={e=>setNewMov(p=>({...p,modality:e.target.value}))} style={inpStyle}>
+                  {modalityOptions.map(m=>(
+                    <option key={m} value={m}>{m.charAt(0).toUpperCase()+m.slice(1)}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <div style={{fontSize:12,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:6}}>Categoria</div>
+                <input value={newMov.category} onChange={e=>setNewMov(p=>({...p,category:e.target.value}))} placeholder="ex. Footwork, Abdominal…"
+                  style={inpStyle}/>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+                <div>
+                  <div style={{fontSize:12,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:6}}>Props</div>
+                  <input value={newMov.props} onChange={e=>setNewMov(p=>({...p,props:e.target.value}))} placeholder="ex. ball, resistance band…"
+                    style={inpStyle}/>
+                </div>
+                <div>
+                  <div style={{fontSize:12,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:6}}>Zona target</div>
+                  <input value={newMov.targetZone} onChange={e=>setNewMov(p=>({...p,targetZone:e.target.value}))} placeholder="ex. Core, Legs…"
+                    style={inpStyle}/>
+                </div>
+              </div>
+              <div>
+                <div style={{fontSize:12,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:6}}>Notas</div>
+                <textarea value={newMov.notes} onChange={e=>setNewMov(p=>({...p,notes:e.target.value}))} rows={2} placeholder="Notas opcionais…"
+                  style={{...inpStyle,resize:"vertical"}}/>
+              </div>
+              <div>
+                <div style={{fontSize:12,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:6}}>Exemplo (link ou vídeo)</div>
+                <input value={newMov.exampleUrl} onChange={e=>setNewMov(p=>({...p,exampleUrl:e.target.value}))} placeholder="https://…"
+                  style={inpStyle}/>
+              </div>
+              {movementGroups.length>0&&(
+                <div>
+                  <div style={{fontSize:12,fontWeight:700,color:C.mist,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:6}}>Grupo</div>
+                  <select value={newMov.groupName} onChange={e=>setNewMov(p=>({...p,groupName:e.target.value}))} style={inpStyle}>
+                    <option value="">Sem grupo</option>
+                    {movementGroups.map(g=><option key={g} value={g}>{g}</option>)}
+                  </select>
+                </div>
+              )}
+            </div>
+            <div style={{display:"flex",justifyContent:"flex-end",gap:10,marginTop:20}}>
+              <button onClick={()=>setShowNewModal(false)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:13,fontWeight:600,padding:"9px 18px",borderRadius:10,border:`1px solid ${C.stone}`,background:"transparent",color:C.ink,cursor:"pointer"}}>Cancelar</button>
+              <button onClick={createMovement} style={{fontFamily:"'Satoshi',sans-serif",fontSize:13,fontWeight:700,padding:"9px 18px",borderRadius:10,border:"none",background:C.crimson,color:C.cream,cursor:"pointer"}}>Criar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Excel import modal */}
+      {showImport&&(
+        <ExcelImportModal entityType="movement" onImport={handleImport} onClose={()=>setShowImport(false)} availableGroups={movementGroups} availableModalities={availableModalities}/>
+      )}
     </div>
   );
 };
@@ -4210,22 +5118,43 @@ const CollapsibleSection = ({ title, defaultOpen = true, children, badge }) => {
 };
 
 // ─── PROFILE PAGE ─────────────────────────────────────────────────────────────
+const PillRow = ({ items, onRemove, newVal, onNewVal, onAdd, placeholder }) => (
+  <div>
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+      {items.map(z => (
+        <span key={z} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 12px', borderRadius: 20, background: C.cream, border: `1px solid ${C.stone}`, fontSize: 13, fontWeight: 500, color: C.ink, fontFamily: "'Satoshi',sans-serif" }}>
+          {z}
+          <button onClick={() => onRemove(z)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.mist, fontSize: 13, lineHeight: 1, padding: 0, display: 'flex', alignItems: 'center' }}>×</button>
+        </span>
+      ))}
+    </div>
+    <div style={{ display: 'flex', gap: 8 }}>
+      <input value={newVal} onChange={e => onNewVal(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Enter') onAdd(); }}
+        placeholder={placeholder} style={{ flex: 1, padding: '7px 12px', borderRadius: 8, border: `1px solid ${C.stone}`, fontFamily: "'Satoshi',sans-serif", fontSize: 13, outline: 'none' }} />
+      <button onClick={onAdd} style={{ padding: '7px 14px', borderRadius: 8, border: `1px solid ${C.stone}`, background: 'transparent', color: C.ink, fontWeight: 600, fontSize: 13, cursor: 'pointer', fontFamily: "'Satoshi',sans-serif" }}>+ Adicionar</button>
+    </div>
+  </div>
+);
+
 const ProfilePage = ({ profile, user, onProfileUpdate, studioSettings, aiStyle, onAiStyleChange, series=[], onSaveSeries, onDirtyChange }) => {
   const [editName, setEditName] = useState(profile?.name || '');
-  const [editPrefZones, setEditPrefZones] = useState(
-    profile?.settings?.preferred_zones?.length ? profile.settings.preferred_zones : DEFAULT_STUDIO_ZONES
-  );
+  const [editPrefZones, setEditPrefZones] = useState(profile?.settings?.preferred_zones || []);
   const [editPrefClassTypes, setEditPrefClassTypes] = useState((profile?.settings?.class_types || []).map(normalizeClassType));
   const [editPrefLevels, setEditPrefLevels] = useState(profile?.settings?.preferred_levels || []);
-  const [editSeriesTypes, setEditSeriesTypes] = useState(
-    profile?.settings?.series_types?.length ? profile.settings.series_types : DEFAULT_STUDIO_SERIES_TYPES
-  );
+  const [editSeriesTypes, setEditSeriesTypes] = useState(profile?.settings?.series_types || []);
   const [editPrefProps, setEditPrefProps] = useState(profile?.settings?.props || []);
   const [newPrefZone, setNewPrefZone] = useState('');
   const [newPrefClassType, setNewPrefClassType] = useState('');
   const [newPrefLevel, setNewPrefLevel] = useState('');
   const [newSeriesType, setNewSeriesType] = useState('');
   const [newPrefProp, setNewPrefProp] = useState('');
+  const [editMovementGroups, setEditMovementGroups] = useState(profile?.settings?.movement_groups || []);
+  const [editSeriesGroups, setEditSeriesGroups] = useState(profile?.settings?.series_groups || []);
+  const [editClassGroups, setEditClassGroups] = useState(profile?.settings?.class_groups || []);
+  const [newMovementGroup, setNewMovementGroup] = useState('');
+  const [newSeriesGroup, setNewSeriesGroup] = useState('');
+  const [newClassGroup, setNewClassGroup] = useState('');
   const [isPublic, setIsPublic] = useState(profile?.is_public || false);
   const [editBio, setEditBio] = useState(profile?.bio || '');
   const [editAvatarUrl, setEditAvatarUrl] = useState(profile?.avatar_url || '');
@@ -4272,6 +5201,9 @@ const ProfilePage = ({ profile, user, onProfileUpdate, studioSettings, aiStyle, 
     setEditSeriesTypes(profile?.settings?.series_types?.length ? profile.settings.series_types : DEFAULT_STUDIO_SERIES_TYPES);
     setEditPrefProps(profile?.settings?.props || []);
     setAiProfile(profile?.settings?.ai_profile || BLANK_AI);
+    setEditMovementGroups(profile?.settings?.movement_groups || []);
+    setEditSeriesGroups(profile?.settings?.series_groups || []);
+    setEditClassGroups(profile?.settings?.class_groups || []);
   // Only reset form when the profile id changes (different user), not on every content update
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile?.id]);
@@ -4285,7 +5217,7 @@ const ProfilePage = ({ profile, user, onProfileUpdate, studioSettings, aiStyle, 
       is_public: isPublic,
       bio: editBio || null,
       avatar_url: editAvatarUrl || null,
-      settings: { ...(profile?.settings || {}), preferred_zones: editPrefZones, class_types: editPrefClassTypes, preferred_levels: editPrefLevels, series_types: editSeriesTypes, props: editPrefProps, ai_profile: aiProfile, primary_color: editPrimaryColor },
+      settings: { ...(profile?.settings || {}), preferred_zones: editPrefZones, class_types: editPrefClassTypes, preferred_levels: editPrefLevels, series_types: editSeriesTypes, props: editPrefProps, ai_profile: aiProfile, primary_color: editPrimaryColor, movement_groups: editMovementGroups, series_groups: editSeriesGroups, class_groups: editClassGroups },
     }).eq('id', profile.id);
     setSaving(false);
     if (!error) {
@@ -4308,28 +5240,9 @@ const ProfilePage = ({ profile, user, onProfileUpdate, studioSettings, aiStyle, 
     autoSaveTimer.current = setTimeout(() => saveRef.current?.({silent:true}), 1500);
     return () => clearTimeout(autoSaveTimer.current);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editName, editBio, editAvatarUrl, isPublic, editPrimaryColor, JSON.stringify(editPrefZones), JSON.stringify(editPrefClassTypes), JSON.stringify(editPrefLevels), JSON.stringify(editSeriesTypes), JSON.stringify(editPrefProps), JSON.stringify(aiProfile)]);
+  }, [editName, editBio, editAvatarUrl, isPublic, editPrimaryColor, JSON.stringify(editPrefZones), JSON.stringify(editPrefClassTypes), JSON.stringify(editPrefLevels), JSON.stringify(editSeriesTypes), JSON.stringify(editPrefProps), JSON.stringify(aiProfile), JSON.stringify(editMovementGroups), JSON.stringify(editSeriesGroups), JSON.stringify(editClassGroups)]);
 
-  const classLevelOptions = studioSettings?.class_levels || DEFAULT_CLASS_LEVELS;
-
-  const PillRow = ({ items, onRemove, newVal, onNewVal, onAdd, placeholder }) => (
-    <div>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
-        {items.map(z => (
-          <span key={z} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 12px', borderRadius: 20, background: C.cream, border: `1px solid ${C.stone}`, fontSize: 13, fontWeight: 500, color: C.ink, fontFamily: "'Satoshi',sans-serif" }}>
-            {z}
-            <button onClick={() => onRemove(z)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.mist, fontSize: 13, lineHeight: 1, padding: 0, display: 'flex', alignItems: 'center' }}>×</button>
-          </span>
-        ))}
-      </div>
-      <div style={{ display: 'flex', gap: 8 }}>
-        <input value={newVal} onChange={e => onNewVal(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter') onAdd(); }}
-          placeholder={placeholder} style={{ flex: 1, padding: '7px 12px', borderRadius: 8, border: `1px solid ${C.stone}`, fontFamily: "'Satoshi',sans-serif", fontSize: 13, outline: 'none' }} />
-        <button onClick={onAdd} style={{ padding: '7px 14px', borderRadius: 8, border: `1px solid ${C.stone}`, background: 'transparent', color: C.ink, fontWeight: 600, fontSize: 13, cursor: 'pointer', fontFamily: "'Satoshi',sans-serif" }}>+ Adicionar</button>
-      </div>
-    </div>
-  );
+  const classLevelOptions = studioSettings?.class_levels?.length ? studioSettings.class_levels : (profile?.settings?.preferred_levels || []);
 
   return (
     <div style={{ maxWidth: 600 }}>
@@ -4390,54 +5303,100 @@ const ProfilePage = ({ profile, user, onProfileUpdate, studioSettings, aiStyle, 
           </label>
         </CollapsibleSection>
 
-        {/* 3. Modalidades */}
-        <CollapsibleSection title="Modalidades" defaultOpen={false}>
-          <p style={{margin:'0 0 10px',fontSize:12,color:C.mist,fontFamily:"'Satoshi',sans-serif"}}>as modalidades que dás</p>
-          <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:10}}>
-            {editPrefClassTypes.map(t => (
-              <span key={classTypeName(t)} style={{display:'inline-flex',alignItems:'center',gap:5,padding:'5px 10px',borderRadius:20,background:t.color?`${t.color}18`:C.cream,border:`1.5px solid ${t.color||C.stone}`,fontSize:13,fontWeight:500,color:C.ink,fontFamily:"'Satoshi',sans-serif"}}>
-                <input type="color" value={t.color||'#721919'} onChange={e=>setEditPrefClassTypes(p=>p.map(x=>classTypeName(x)===classTypeName(t)?{...normalizeClassType(x),color:e.target.value}:x))} style={{width:14,height:14,border:'none',padding:0,borderRadius:'50%',cursor:'pointer',background:'none',appearance:'none',WebkitAppearance:'none',flexShrink:0}} title="Escolher cor"/>
-                {classTypeName(t)}
-                <button onClick={() => setEditPrefClassTypes(p => p.filter(x => classTypeName(x) !== classTypeName(t)))} style={{background:'none',border:'none',cursor:'pointer',color:C.mist,fontSize:13,lineHeight:1,padding:0,display:'flex',alignItems:'center'}}>×</button>
-              </span>
-            ))}
-          </div>
-          <div style={{display:'flex',gap:8}}>
-            <input value={newPrefClassType} onChange={e=>setNewPrefClassType(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'){const v=newPrefClassType.trim();if(v&&!editPrefClassTypes.map(x=>classTypeName(x).toLowerCase()).includes(v.toLowerCase())){setEditPrefClassTypes(p=>[...p,{name:v,color:null}]);setNewPrefClassType('');}}}
-            } placeholder="Adicionar tipo…" style={{flex:1,padding:'7px 12px',borderRadius:8,border:`1px solid ${C.stone}`,fontFamily:"'Satoshi',sans-serif",fontSize:13,outline:'none'}}/>
-            <button onClick={()=>{const v=newPrefClassType.trim();if(v&&!editPrefClassTypes.map(x=>classTypeName(x).toLowerCase()).includes(v.toLowerCase())){setEditPrefClassTypes(p=>[...p,{name:v,color:null}]);setNewPrefClassType('');}}} style={{padding:'7px 14px',borderRadius:8,border:`1px solid ${C.stone}`,background:'transparent',color:C.ink,fontWeight:600,fontSize:13,cursor:'pointer',fontFamily:"'Satoshi',sans-serif"}}>+ Adicionar</button>
-          </div>
+        {/* 3. Classificações */}
+        <CollapsibleSection title="Classificações" defaultOpen={false}>
+          <p style={{margin:'0 0 20px',fontSize:13,color:C.mist,fontFamily:"'Satoshi',sans-serif",lineHeight:1.6}}>
+            A app tem três tipos de conteúdo: <strong style={{color:C.ink}}>movimentos</strong>, <strong style={{color:C.ink}}>séries</strong> e <strong style={{color:C.ink}}>aulas</strong>. Cada um tem metadados que permitem filtrar e organizar as bibliotecas. Todos os valores são configuráveis — podes adicionar, editar e remover qualquer opção.
+          </p>
+
+          {(()=>{
+            const fieldSep = {borderTop:`1px solid ${C.stone}`,paddingTop:18,marginTop:18};
+            const fieldTitle = (title, applies) => (
+              <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
+                <span style={{fontFamily:"'Clash Display',sans-serif",fontSize:14,fontWeight:600,color:C.ink}}>{title}</span>
+                <span style={{fontSize:10,fontWeight:700,color:C.crimson,background:`${C.crimson}10`,borderRadius:10,padding:'2px 8px',fontFamily:"'Satoshi',sans-serif",letterSpacing:'0.04em'}}>{applies}</span>
+              </div>
+            );
+            const fieldDesc = desc => <p style={{margin:'0 0 10px',fontSize:12,color:C.mist,fontFamily:"'Satoshi',sans-serif"}}>{desc}</p>;
+            return (<>
+              {/* Modalidade */}
+              <div>
+                {fieldTitle('Modalidade','movimentos · séries · aulas')}
+                {fieldDesc('Distingue conteúdo de disciplinas diferentes (ex: Reformer, Barre, Mat). Obrigatório.')}
+                <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:10}}>
+                  {editPrefClassTypes.map(t => (
+                    <span key={classTypeName(t)} style={{display:'inline-flex',alignItems:'center',gap:5,padding:'5px 10px',borderRadius:20,background:t.color?`${t.color}18`:C.cream,border:`1.5px solid ${t.color||C.stone}`,fontSize:13,fontWeight:500,color:C.ink,fontFamily:"'Satoshi',sans-serif"}}>
+                      <input type="color" value={t.color||'#721919'} onChange={e=>setEditPrefClassTypes(p=>p.map(x=>classTypeName(x)===classTypeName(t)?{...normalizeClassType(x),color:e.target.value}:x))} style={{width:14,height:14,border:'none',padding:0,borderRadius:'50%',cursor:'pointer',background:'none',appearance:'none',WebkitAppearance:'none',flexShrink:0}} title="Escolher cor"/>
+                      {classTypeName(t)}
+                      <button onClick={() => setEditPrefClassTypes(p => p.filter(x => classTypeName(x) !== classTypeName(t)))} style={{background:'none',border:'none',cursor:'pointer',color:C.mist,fontSize:13,lineHeight:1,padding:0,display:'flex',alignItems:'center'}}>×</button>
+                    </span>
+                  ))}
+                </div>
+                <div style={{display:'flex',gap:8}}>
+                  <input value={newPrefClassType} onChange={e=>setNewPrefClassType(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'){const v=newPrefClassType.trim();if(v&&!editPrefClassTypes.map(x=>classTypeName(x).toLowerCase()).includes(v.toLowerCase())){setEditPrefClassTypes(p=>[...p,{name:v,color:null}]);setNewPrefClassType('');}}}
+                  } placeholder="ex. Reformer, Barre, Mat…" style={{flex:1,padding:'7px 12px',borderRadius:8,border:`1px solid ${C.stone}`,fontFamily:"'Satoshi',sans-serif",fontSize:13,outline:'none'}}/>
+                  <button onClick={()=>{const v=newPrefClassType.trim();if(v&&!editPrefClassTypes.map(x=>classTypeName(x).toLowerCase()).includes(v.toLowerCase())){setEditPrefClassTypes(p=>[...p,{name:v,color:null}]);setNewPrefClassType('');}}} style={{padding:'7px 14px',borderRadius:8,border:`1px solid ${C.stone}`,background:'transparent',color:C.ink,fontWeight:600,fontSize:13,cursor:'pointer',fontFamily:"'Satoshi',sans-serif"}}>+ Adicionar</button>
+                </div>
+              </div>
+
+              {/* Nível */}
+              <div style={fieldSep}>
+                {fieldTitle('Nível','séries · aulas')}
+                {fieldDesc('Dificuldade da sessão (ex: Fundamentos, Intermédio, Avançado). Obrigatório em séries e aulas.')}
+                <PillRow items={editPrefLevels} onRemove={l => setEditPrefLevels(p => p.filter(x => x !== l))}
+                  newVal={newPrefLevel} onNewVal={setNewPrefLevel} placeholder="ex. Fundamentos, Intermédio, Avançado…"
+                  onAdd={() => { const v = newPrefLevel.trim(); if (v && !editPrefLevels.map(x => x.toLowerCase()).includes(v.toLowerCase())) { setEditPrefLevels(p => [...p, v]); setNewPrefLevel(''); } }} />
+              </div>
+
+              {/* Tipo */}
+              <div style={fieldSep}>
+                {fieldTitle('Tipo','séries · aulas')}
+                {fieldDesc('Natureza da sessão (ex: Warm-up, Força, Cardio, Mobilidade, Cool-down). Obrigatório em séries e aulas.')}
+                <PillRow items={editSeriesTypes} onRemove={removeSeriesType}
+                  newVal={newSeriesType} onNewVal={setNewSeriesType} placeholder="ex. Warm-up, Força, Cardio…"
+                  onAdd={() => { const v = newSeriesType.trim(); if (v && !editSeriesTypes.map(x => x.toLowerCase()).includes(v.toLowerCase())) { setEditSeriesTypes(p => [...p, v]); setNewSeriesType(''); } }} />
+              </div>
+
+              {/* Props */}
+              <div style={fieldSep}>
+                {fieldTitle('Props','movimentos · séries · aulas')}
+                {fieldDesc('Adereços necessários (ex: Caixa, Bolas, Resistance Band, Nenhum). Obrigatório, pode ter valor "Nenhum".')}
+                <PillRow items={editPrefProps} onRemove={p => setEditPrefProps(prev => prev.filter(x => x !== p))}
+                  newVal={newPrefProp} onNewVal={setNewPrefProp} placeholder="ex. Caixa, Bolas, Nenhum…"
+                  onAdd={() => { const v = newPrefProp.trim(); if (v && !editPrefProps.map(x => x.toLowerCase()).includes(v.toLowerCase())) { setEditPrefProps(p => [...p, v]); setNewPrefProp(''); } }} />
+              </div>
+
+              {/* Zona target */}
+              <div style={fieldSep}>
+                {fieldTitle('Zona target','movimentos · séries')}
+                {fieldDesc('Zonas do corpo trabalhadas (ex: Core, Posterior, Full Body). Não aparece em aulas.')}
+                <PillRow items={editPrefZones} onRemove={removeZone}
+                  newVal={newPrefZone} onNewVal={setNewPrefZone} placeholder="ex. Core, Posterior, Full Body…"
+                  onAdd={() => { const v = newPrefZone.trim(); if (v && !editPrefZones.map(x => x.toLowerCase()).includes(v.toLowerCase())) { setEditPrefZones(p => [...p, v]); setNewPrefZone(''); } }} />
+              </div>
+
+              {/* Grupos */}
+              <div style={fieldSep}>
+                {fieldTitle('Grupos','movimentos · séries · aulas')}
+                {fieldDesc('Tags editoriais livres para organizar a biblioteca (ex: Repertório STOTT, Aulas de Março). Multi-select — um item pode pertencer a vários grupos simultaneamente.')}
+                <div style={{fontSize:12,fontWeight:700,color:C.ink,marginBottom:6,fontFamily:"'Satoshi',sans-serif"}}>Movimentos</div>
+                <PillRow items={editMovementGroups} onRemove={g=>setEditMovementGroups(p=>p.filter(x=>x!==g))}
+                  newVal={newMovementGroup} onNewVal={setNewMovementGroup} placeholder="ex. Classical Repertoire, STOTT…"
+                  onAdd={()=>{ const v=newMovementGroup.trim(); if(v&&!editMovementGroups.map(x=>x.toLowerCase()).includes(v.toLowerCase())){setEditMovementGroups(p=>[...p,v]);setNewMovementGroup('');} }}/>
+                <div style={{fontSize:12,fontWeight:700,color:C.ink,margin:'12px 0 6px',fontFamily:"'Satoshi',sans-serif"}}>Séries</div>
+                <PillRow items={editSeriesGroups} onRemove={g=>setEditSeriesGroups(p=>p.filter(x=>x!==g))}
+                  newVal={newSeriesGroup} onNewVal={setNewSeriesGroup} placeholder="ex. Power, Mobilidade…"
+                  onAdd={()=>{ const v=newSeriesGroup.trim(); if(v&&!editSeriesGroups.map(x=>x.toLowerCase()).includes(v.toLowerCase())){setEditSeriesGroups(p=>[...p,v]);setNewSeriesGroup('');} }}/>
+                <div style={{fontSize:12,fontWeight:700,color:C.ink,margin:'12px 0 6px',fontFamily:"'Satoshi',sans-serif"}}>Aulas</div>
+                <PillRow items={editClassGroups} onRemove={g=>setEditClassGroups(p=>p.filter(x=>x!==g))}
+                  newVal={newClassGroup} onNewVal={setNewClassGroup} placeholder="ex. Programa Iniciantes, Desafio 30 dias…"
+                  onAdd={()=>{ const v=newClassGroup.trim(); if(v&&!editClassGroups.map(x=>x.toLowerCase()).includes(v.toLowerCase())){setEditClassGroups(p=>[...p,v]);setNewClassGroup('');} }}/>
+              </div>
+            </>);
+          })()}
         </CollapsibleSection>
 
-        {/* 4. Níveis de aula */}
-        <CollapsibleSection title="Níveis de aula" defaultOpen={false}>
-          <PillRow items={editPrefLevels} onRemove={l => setEditPrefLevels(p => p.filter(x => x !== l))}
-            newVal={newPrefLevel} onNewVal={setNewPrefLevel} placeholder="ex. Foundations, Intermediate, Advanced…"
-            onAdd={() => { const v = newPrefLevel.trim(); if (v && !editPrefLevels.map(x => x.toLowerCase()).includes(v.toLowerCase())) { setEditPrefLevels(p => [...p, v]); setNewPrefLevel(''); } }} />
-        </CollapsibleSection>
-
-        {/* 5. Tipos de série */}
-        <CollapsibleSection title="Tipos de série" defaultOpen={false}>
-          <PillRow items={editSeriesTypes} onRemove={removeSeriesType}
-            newVal={newSeriesType} onNewVal={setNewSeriesType} placeholder="ex. Warm-up, Força, Flow…"
-            onAdd={() => { const v = newSeriesType.trim(); if (v && !editSeriesTypes.map(x => x.toLowerCase()).includes(v.toLowerCase())) { setEditSeriesTypes(p => [...p, v]); setNewSeriesType(''); } }} />
-        </CollapsibleSection>
-
-        {/* 6. Props */}
-        <CollapsibleSection title="Props" defaultOpen={false}>
-          <PillRow items={editPrefProps} onRemove={p => setEditPrefProps(prev => prev.filter(x => x !== p))}
-            newVal={newPrefProp} onNewVal={setNewPrefProp} placeholder="ex. Magic Circle, Foam Roller, Resistance Band…"
-            onAdd={() => { const v = newPrefProp.trim(); if (v && !editPrefProps.map(x => x.toLowerCase()).includes(v.toLowerCase())) { setEditPrefProps(p => [...p, v]); setNewPrefProp(''); } }} />
-        </CollapsibleSection>
-
-        {/* 7. Zonas target */}
-        <CollapsibleSection title="Zonas target" defaultOpen={false}>
-          <PillRow items={editPrefZones} onRemove={removeZone}
-            newVal={newPrefZone} onNewVal={setNewPrefZone} placeholder="Adicionar zona…"
-            onAdd={() => { const v = newPrefZone.trim(); if (v && !editPrefZones.map(x => x.toLowerCase()).includes(v.toLowerCase())) { setEditPrefZones(p => [...p, v]); setNewPrefZone(''); } }} />
-        </CollapsibleSection>
-
-        {/* 8. IA — Estilo de instrução */}
+        {/* 4. IA — Estilo de instrução */}
         <CollapsibleSection title="IA — Estilo de instrução" defaultOpen={false}>
           <AiForm ai={aiProfile} setAi={setAiProfile} />
           {aiToString(aiProfile) && (
@@ -8007,8 +8966,9 @@ function HavenApp() {
   const profileDirtyRef = React.useRef(false);
   const confirm_app = useConfirm();
   const [authLoading, setAuthLoading] = useState(true);
-  const [series,  setSeries]  = useState([]);
-  const [classes, setClasses] = useState([]);
+  const [series,    setSeries]    = useState([]);
+  const [classes,   setClasses]   = useState([]);
+  const [movements, setMovements] = useState([]);
   const [aiStyle, setAiStyle] = useState("");
   const [dataLoaded, setDataLoaded] = useState(false);
   const [tourSlides, setTourSlides] = useState(null); // null = no tour; array = active tour
@@ -8026,6 +8986,10 @@ function HavenApp() {
   const [filterStatus,  setFilterStatus]  = useState(() => { try { return localStorage.getItem('haven_filterStatus') || "all"; } catch { return "all"; } }); // 'all','approved','wip'
   const [filterChoreo,  setFilterChoreo]  = useState(() => { try { return localStorage.getItem('haven_filterChoreo') || "all"; } catch { return "all"; } }); // 'all','simple','choreo'
   const [filterProp,    setFilterProp]    = useState("all");
+  const [filterZone,    setFilterZone]    = useState("all");
+  const [filterSeriesType, setFilterSeriesType] = useState("all");
+  const [filterLevel,   setFilterLevel]   = useState("all");
+  const [filterSeriesGroup, setFilterSeriesGroup] = useState("all");
   const [selectedArchive, setSelectedArchive] = useState([]);
   const [showChoreo,    setShowChoreo]    = useState(() => { try { return localStorage.getItem('showChoreo') !== 'false'; } catch(e) { return true; } });
   const [sortBy,        setSortBy]        = useState(() => { try { return localStorage.getItem('haven_sortBy') || "targetZone"; } catch { return "targetZone"; } });
@@ -8134,6 +9098,8 @@ function HavenApp() {
       if (s  && Array.isArray(s)  && s.length)  setSeries(s);
       if (cl && Array.isArray(cl))               setClasses(cl);
       if (st && typeof st.value === 'string')    setAiStyle(st.value);
+      const movs = await api.loadMovements(user.id);
+      if (movs && Array.isArray(movs)) setMovements(movs);
       let p = await api.loadProfile(user.id);
 
       // Handle pending invite code
@@ -8214,11 +9180,47 @@ function HavenApp() {
 
   const toast   = useToast();
   const confirm = useConfirm();
+  const saveMovement = async m => {
+    const toSave = m.createdBy ? m : { ...m, createdBy: user?.id };
+    setMovements(p => p.find(x=>x.id===toSave.id) ? p.map(x=>x.id===toSave.id?toSave:x) : [...p, toSave]);
+    if (user) await api.upsertMovement(toSave, user.id);
+  };
+  const deleteMovement = async id => {
+    setMovements(p => p.filter(x => x.id !== id));
+    if (user) await api.deleteMovement(id);
+  };
+
   const saveSeries = async s => {
     const toSave = s.createdBy ? s : { ...s, createdBy: user?.id };
     setSeries(p=>p.find(x=>x.id===toSave.id)?p.map(x=>x.id===toSave.id?toSave:x):[...p,toSave]);
     setEditingSeries(null); setAddingSeries(false); toast("Série guardada");
     if (user) api.upsertSeries(toSave, user.id);
+    // Auto-sync movement names to the library
+    if (user) {
+      const movRows = [];
+      if (toSave.type === 'signature' && toSave.parallelColumns?.length) {
+        toSave.parallelColumns.forEach(col => {
+          const mod = (col.type||'reformer').toLowerCase();
+          (col.movements||[]).forEach(m => { if(m.movement?.trim()) movRows.push({name:m.movement.trim(), modality:mod}); });
+        });
+      } else {
+        const mod = toSave.type || 'reformer';
+        const movArr = toSave.type==='barre' ? (toSave.barre?.movements||[]) : (toSave.reformer?.movements||[]);
+        movArr.forEach(m => { if(m.movement?.trim()) movRows.push({name:m.movement.trim(), modality:mod}); });
+      }
+      const seen = new Set();
+      for (const row of movRows) {
+        const key = `${row.name.toLowerCase()}|${row.modality}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const exists = movements.find(lm => lm.movement.toLowerCase()===row.name.toLowerCase() && lm.modality===row.modality);
+        if (!exists) {
+          const newMov = { id: crypto.randomUUID ? crypto.randomUUID() : `mov-${Date.now()}-${Math.random().toString(36).slice(2)}`, movement:row.name, modality:row.modality, notes:'', groupName:'', category:'', exampleUrl:'', props:'', targetZone:'', isArchived:false, createdBy:user.id };
+          setMovements(p => [...p, newMov]);
+          api.upsertMovement(newMov, user.id);
+        }
+      }
+    }
   };
   const saveStudioSeries = async s => {
     if (user) await api.upsertSeries(s, user.id);
@@ -8588,6 +9590,14 @@ function HavenApp() {
     if(filterChoreo==="simple" && isChoreoSeries(s))   return false;
     // Prop filter
     if(filterProp!=="all" && !(s.propTags||[]).includes(filterProp)) return false;
+    // Zone filter
+    if(filterZone!=="all") { const z=s.primaryZone||(s.targetZone||'').split(',')[0].trim(); if(z!==filterZone) return false; }
+    // Series type filter
+    if(filterSeriesType!=="all" && s.seriesType!==filterSeriesType) return false;
+    // Level filter
+    if(filterLevel!=="all" && s.level!==filterLevel) return false;
+    // Group filter
+    if(filterSeriesGroup!=="all" && s.seriesGroup!==filterSeriesGroup) return false;
     return true;
   }).sort((a,b)=>{
     let va="", vb="";
@@ -8746,7 +9756,7 @@ function HavenApp() {
       <div style={{flex:1,minWidth:0,display:"flex",alignItems:"flex-start",maxWidth:isAulaMode?"none":1400}}>
         <div style={{flex:1,minWidth:0,padding:isAulaMode?"0":"28px 32px",overflowX:"hidden"}}>
 
-        <MovDatalist series={series}/>
+        <MovDatalist series={series} movements={movements}/>
 
         {/* ── HOME ── */}
         {screen.mode==="home"&&(
@@ -8840,7 +9850,7 @@ function HavenApp() {
         {/* ── LIBRARY ── */}
         {screen.mode==="library"&&(
           editingSeries||addingSeries
-            ? <SeriesEditor series={editingSeries} onSave={saveSeries} onSaveAsNew={s=>{saveSeries(s);}} onCancel={()=>{setEditingSeries(null);setAddingSeries(false);}} onDelete={id=>{deleteSeries(id);setEditingSeries(null);setAddingSeries(false);}} aiStyle={effectiveAiStyle} studioSettings={profile?.studios?.settings} availableZones={profile?.settings?.preferred_zones?.length?profile.settings.preferred_zones:undefined} availableSeriesTypes={profile?.settings?.series_types?.length?profile.settings.series_types:undefined} availableClassTypes={profile?.settings?.class_types?.length?profile.settings.class_types.map(t=>typeof t==='string'?t:t?.name).filter(Boolean):undefined} availableProps={profile?.settings?.props?.length?profile.settings.props:undefined} onPublish={profile?.studio_id?publishToStudio:undefined}/>
+            ? <SeriesEditor series={editingSeries} onSave={saveSeries} onSaveAsNew={s=>{saveSeries(s);}} onCancel={()=>{setEditingSeries(null);setAddingSeries(false);}} onDelete={id=>{deleteSeries(id);setEditingSeries(null);setAddingSeries(false);}} aiStyle={effectiveAiStyle} studioSettings={profile?.studios?.settings} availableZones={profile?.settings?.preferred_zones?.length?profile.settings.preferred_zones:undefined} availableSeriesTypes={profile?.settings?.series_types?.length?profile.settings.series_types:undefined} availableClassTypes={profile?.settings?.class_types?.length?profile.settings.class_types.map(t=>typeof t==='string'?t:t?.name).filter(Boolean):undefined} availableProps={profile?.settings?.props?.length?profile.settings.props:undefined} availableSeriesGroups={profile?.settings?.series_groups||[]} onPublish={profile?.studio_id?publishToStudio:undefined} libraryMovements={movements}/>
             : <>
                 {/* Top bar: title + search + new */}
                 <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16,flexWrap:"wrap"}}>
@@ -8848,61 +9858,69 @@ function HavenApp() {
                   <input value={seriesSearch} onChange={e=>setSeriesSearch(e.target.value)} placeholder="Pesquisar séries…" style={{fontFamily:"'Satoshi',sans-serif",fontSize:13,padding:"7px 14px",borderRadius:20,border:`1px solid ${C.stone}`,outline:"none",background:C.white,color:C.ink,width:200,flexShrink:0}}/>
                   <Btn onClick={()=>setAddingSeries(true)}><Icon name="plus" size={14}/> Nova série</Btn>
                 </div>
-                {/* Two-column layout: left filters + right series */}
-                <div style={{display:"flex",gap:20,alignItems:"flex-start"}}>
-                  {/* Left filter panel */}
-                  <div style={{width:170,flexShrink:0,display:"flex",flexDirection:"column",gap:0}}>
-                    <CollapsibleSection title="Modalidade" defaultOpen={true}>
-                      <div style={{display:"flex",flexDirection:"column",gap:4,paddingBottom:8}}>
-                        {[["all","Todas"],...(profile?.settings?.class_types||[]).map(t=>{const n=(typeof t==='string'?t:t?.name)||'';if(!n)return null;return[n,n[0].toUpperCase()+n.slice(1)];}).filter(Boolean)].map(([val,lbl])=>(
-                          <button key={val} onClick={()=>setFilterType(val==='all'?'all':val)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 12px",borderRadius:8,border:`1px solid ${filterType===val?C.neutral:C.stone}`,background:filterType===val?C.neutral:"transparent",color:filterType===val?C.white:C.ink,cursor:"pointer",textAlign:"left"}}>{lbl}</button>
-                        ))}
-                      </div>
-                    </CollapsibleSection>
-
-                    <CollapsibleSection title="Modo" defaultOpen={false}>
-                      <div style={{display:"flex",flexDirection:"column",gap:4,paddingBottom:8}}>
-                        {[["all","Todos"],["simple","Simples"],["choreo","Coreografado"]].map(([val,lbl])=>(
-                          <button key={val} onClick={()=>setFilterChoreo(val)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 12px",borderRadius:8,border:`1px solid ${filterChoreo===val?C.neutral:C.stone}`,background:filterChoreo===val?C.neutral:"transparent",color:filterChoreo===val?C.white:C.ink,cursor:"pointer",textAlign:"left"}}>{lbl}</button>
-                        ))}
-                      </div>
-                    </CollapsibleSection>
-
-                    <CollapsibleSection title="Estado" defaultOpen={false}>
-                      <div style={{display:"flex",flexDirection:"column",gap:4,paddingBottom:8}}>
-                        {[["all","Todas"],["approved","Prontas"],["wip","WIP"]].map(([val,lbl])=>(
-                          <button key={val} onClick={()=>setFilterStatus(val)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 12px",borderRadius:8,border:`1px solid ${filterStatus===val?C.neutral:C.stone}`,background:filterStatus===val?C.neutral:"transparent",color:filterStatus===val?C.white:C.ink,cursor:"pointer",textAlign:"left"}}>{lbl}</button>
-                        ))}
-                      </div>
-                    </CollapsibleSection>
-
-                    {(profile?.settings?.props||[]).length>0&&(
-                      <CollapsibleSection title="Props" defaultOpen={false}>
-                        <div style={{display:"flex",flexDirection:"column",gap:4,paddingBottom:8}}>
-                          {[["all","Todas"],...(profile?.settings?.props||[]).map(p=>[p,p])].map(([val,lbl])=>(
-                            <button key={val} onClick={()=>setFilterProp(val)} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 12px",borderRadius:8,border:`1px solid ${filterProp===val?C.neutral:C.stone}`,background:filterProp===val?C.neutral:"transparent",color:filterProp===val?C.white:C.ink,cursor:"pointer",textAlign:"left"}}>{lbl}</button>
-                          ))}
-                        </div>
-                      </CollapsibleSection>
-                    )}
-
-                    <CollapsibleSection title="Ordenar" defaultOpen={false}>
-                      <div style={{display:"flex",flexDirection:"column",gap:4,paddingBottom:8}}>
-                        {[["name","Nome"],["createdAt","Data"],["targetZone","Zona"]].map(([val,lbl])=>(
-                          <button key={val} onClick={()=>{ if(sortBy===val) setSortOrder(p=>p==="asc"?"desc":"asc"); else { setSortBy(val); setSortOrder("asc"); }}} style={{fontFamily:"'Satoshi',sans-serif",fontSize:12,fontWeight:600,padding:"5px 12px",borderRadius:8,border:`1px solid ${sortBy===val?C.neutral:C.stone}`,background:sortBy===val?C.neutral:"transparent",color:sortBy===val?C.white:C.ink,cursor:"pointer",textAlign:"left"}}>
-                            {lbl}{sortBy===val?(sortOrder==="asc"?" ↑":" ↓"):""}
-                          </button>
-                        ))}
-                      </div>
-                    </CollapsibleSection>
-
-                    <div style={{borderTop:`1px solid ${C.stone}`,paddingTop:8,marginTop:4,display:"flex",flexDirection:"column",gap:2}}>
-                      <button onClick={()=>setFilterType('archive')} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,color:filterType==='archive'?C.crimson:C.mist,background:"none",border:"none",cursor:"pointer",padding:"4px 0",textAlign:"left",textDecoration:"underline"}}>📦 Arquivo</button>
-                      <button onClick={()=>navigate({mode:"movements",cls:null,fromLibrary:true})} style={{fontFamily:"'Satoshi',sans-serif",fontSize:11,color:C.mist,background:"none",border:"none",cursor:"pointer",padding:"4px 0",textAlign:"left",textDecoration:"underline"}}>Movimentos →</button>
+                {/* Filter bar */}
+                {(()=>{
+                  const ds = {fontFamily:"'Satoshi',sans-serif",fontSize:12,padding:"5px 10px",borderRadius:8,border:`1px solid ${C.stone}`,outline:"none",background:C.white,color:C.ink,cursor:"pointer"};
+                  const classTypes = (profile?.settings?.class_types||[]).map(t=>typeof t==='string'?t:t?.name).filter(Boolean);
+                  const zones = profile?.settings?.preferred_zones?.length ? profile.settings.preferred_zones : [...new Set(series.filter(s=>!s.isArchived).map(s=>s.primaryZone||(s.targetZone||'').split(',')[0].trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"pt"));
+                  const seriesTypes = profile?.settings?.series_types?.length ? profile.settings.series_types : [...new Set(series.filter(s=>!s.isArchived).map(s=>s.seriesType).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"pt"));
+                  const propsList = [...new Set(series.filter(s=>!s.isArchived).flatMap(s=>s.propTags||[]))].sort((a,b)=>a.localeCompare(b,"pt"));
+                  const levels = [...new Set(series.filter(s=>!s.isArchived).map(s=>s.level).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"pt"));
+                  const groups = (profile?.settings?.series_groups||[]);
+                  const activeCount = [filterType!=="all",filterZone!=="all",filterSeriesType!=="all",filterProp!=="all",filterLevel!=="all",filterSeriesGroup!=="all",filterChoreo!=="all",filterStatus!=="all"].filter(Boolean).length;
+                  return (
+                  <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",marginBottom:12,padding:"10px 14px",background:C.white,borderRadius:10,border:`1px solid ${C.stone}`}}>
+                    {classTypes.length>0&&<select value={filterType} onChange={e=>setFilterType(e.target.value)} style={ds}>
+                      <option value="all">Modalidade</option>
+                      {classTypes.map(t=><option key={t} value={t}>{t}</option>)}
+                    </select>}
+                    {zones.length>0&&<select value={filterZone} onChange={e=>setFilterZone(e.target.value)} style={ds}>
+                      <option value="all">Zona</option>
+                      {zones.map(z=><option key={z} value={z}>{z}</option>)}
+                    </select>}
+                    {seriesTypes.length>0&&<select value={filterSeriesType} onChange={e=>setFilterSeriesType(e.target.value)} style={ds}>
+                      <option value="all">Tipo</option>
+                      {seriesTypes.map(t=><option key={t} value={t}>{t}</option>)}
+                    </select>}
+                    {propsList.length>0&&<select value={filterProp} onChange={e=>setFilterProp(e.target.value)} style={ds}>
+                      <option value="all">Props</option>
+                      {propsList.map(p=><option key={p} value={p}>{p}</option>)}
+                    </select>}
+                    {levels.length>0&&<select value={filterLevel} onChange={e=>setFilterLevel(e.target.value)} style={ds}>
+                      <option value="all">Nível</option>
+                      {levels.map(l=><option key={l} value={l}>{l}</option>)}
+                    </select>}
+                    {groups.length>0&&<select value={filterSeriesGroup} onChange={e=>setFilterSeriesGroup(e.target.value)} style={ds}>
+                      <option value="all">Grupo</option>
+                      {groups.map(g=><option key={g} value={g}>{g}</option>)}
+                    </select>}
+                    <select value={filterChoreo} onChange={e=>setFilterChoreo(e.target.value)} style={ds}>
+                      <option value="all">Modo</option>
+                      <option value="simple">Simples</option>
+                      <option value="choreo">Coreografado</option>
+                    </select>
+                    <select value={filterStatus} onChange={e=>setFilterStatus(e.target.value)} style={ds}>
+                      <option value="all">Estado</option>
+                      <option value="approved">Prontas</option>
+                      <option value="wip">WIP</option>
+                    </select>
+                    <div style={{display:"flex",alignItems:"center",gap:4}}>
+                      <select value={sortBy} onChange={e=>{setSortBy(e.target.value);}} style={ds}>
+                        <option value="targetZone">Ordenar: Zona</option>
+                        <option value="name">Ordenar: Nome</option>
+                        <option value="createdAt">Ordenar: Data</option>
+                      </select>
+                      <button onClick={()=>setSortOrder(p=>p==="asc"?"desc":"asc")} style={{...ds,padding:"5px 8px",fontWeight:700}}>{sortOrder==="asc"?"↑":"↓"}</button>
                     </div>
+                    {activeCount>0&&<button onClick={()=>{setFilterType("all");setFilterZone("all");setFilterSeriesType("all");setFilterProp("all");setFilterLevel("all");setFilterSeriesGroup("all");setFilterChoreo("all");setFilterStatus("all");}} style={{...ds,color:C.crimson,borderColor:C.crimson,fontSize:11}}>× Limpar ({activeCount})</button>}
+                    <div style={{flex:1}}/>
+                    <button onClick={()=>setFilterType(filterType==='archive'?'all':'archive')} style={{...ds,color:filterType==='archive'?C.crimson:C.mist,borderColor:filterType==='archive'?C.crimson:C.stone}}>📦 Arquivo</button>
+                    <button onClick={()=>navigate({mode:"movements",cls:null,fromLibrary:true})} style={{...ds,color:C.mist}}>Movimentos →</button>
                   </div>
-                  {/* Right: series list */}
-                  <div style={{flex:1,minWidth:0}}>
+                  );
+                })()}
+                {/* Series list */}
+                <div style={{flex:1,minWidth:0}}>
                     {filterType === "archive" ? (
                       (() => {
                         const archivedSeries = series.filter(s => s.isArchived);
@@ -8987,7 +10005,6 @@ function HavenApp() {
                         })()}
                       </div>
                     )}
-                  </div>
                 </div>
               </>
         )}
@@ -9022,13 +10039,13 @@ function HavenApp() {
 
         {/* ── MOVEMENTS ── */}
         {screen.mode==="movements"&&(
-          <MovementLibraryPage series={series} onUpdateSeries={saveSeries} aiStyle={effectiveAiStyle}/>
+          <MovementLibraryPage series={series} onUpdateSeries={saveSeries} aiStyle={effectiveAiStyle} movements={movements} onSaveMovement={saveMovement} onDeleteMovement={deleteMovement} movementGroups={profile?.settings?.movement_groups||[]} availableModalities={profile?.settings?.class_types||[]} availableProps={profile?.settings?.props||[]} availableZones={profile?.settings?.preferred_zones||[]}/>
         )}
 
         {/* ── BUILDER ── */}
         {screen.mode==="builder"&&(
           <ClassBuilder
-            allSeries={series} classes={classes}
+            allSeries={series} allMovements={movements} classes={classes}
             onSave={c=>saveClass(c)}
             onDeleteClass={deleteClass}
             onPermanentDeleteClass={permanentDeleteClass}
@@ -9036,6 +10053,9 @@ function HavenApp() {
             studioSettings={profile?.studios?.settings}
             profileClassTypes={profile?.settings?.class_types}
             profileLevels={profile?.settings?.preferred_levels}
+            profileSeriesTypes={profile?.settings?.series_types||[]}
+            profileZones={profile?.settings?.preferred_zones||[]}
+            classGroups={profile?.settings?.class_groups||[]}
             onPublishClass={publishClassToStudio}
             onUnpublishClass={unpublishClassFromStudio}
             hasStudio={!!profile?.studio_id}
@@ -9051,6 +10071,7 @@ function HavenApp() {
         {screen.mode==="aula"&&screen.cls&&(
           <AulaView
             cls={screen.cls} allSeries={screen.cls?.visibility==='studio'?[...series,...studioSeriesCache.filter(ss=>!series.find(s=>s.id===ss.id))]:series}
+            allMovements={movements}
             onBack={goBack}
             onDeleteClass={async id=>{ await deleteClass(id); goBack(); }}
             onUpdateSeries={saveSeries}
@@ -9064,6 +10085,9 @@ function HavenApp() {
             studioSettings={profile?.studios?.settings}
             readOnly={!!screen.readOnly}
             profileClassTypes={profile?.settings?.class_types}
+            profileLevels={profile?.settings?.preferred_levels||[]}
+            profileSeriesTypes={profile?.settings?.series_types||[]}
+            profileZones={profile?.settings?.preferred_zones||[]}
             onPublishClass={profile?.studio_id?publishClassToStudio:undefined}
             onUnpublishClass={profile?.studio_id?unpublishClassFromStudio:undefined}
             onDuplicateClass={!screen.readOnly?duplicateClass:undefined}
